@@ -25,7 +25,7 @@ async function get(url, { type = 'text', timeout = 15000, retries = 1 } = {}) {
     try {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), timeout);
-      const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: type === 'json' ? 'application/json,text/plain,*/*' : '*/*', 'Accept-Language': 'en-US,en;q=0.9' }, signal: ctl.signal });
+      const res = await fetch(url, { headers: type === 'json' ? { 'User-Agent': UA, Accept: 'application/json,text/plain,*/*', 'Accept-Language': 'en-US,en;q=0.9' } : { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/rss+xml,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Upgrade-Insecure-Requests': '1', 'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'none' }, signal: ctl.signal });
       clearTimeout(t);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return type === 'json' ? await res.json() : await res.text();
@@ -227,7 +227,7 @@ function parseRss(xml) {
     const it = m[0];
     const tag = (n) => { const r = it.match(new RegExp(`<${n}\\b[^>]*>([\\s\\S]*?)<\\/${n}>`)); return r ? decodeEntities(r[1]) : ''; };
     const srcUrl = (it.match(/<source[^>]*url="([^"]+)"/) || [])[1] || '';
-    items.push({ title: tag('title'), link: tag('link'), pubDate: tag('pubDate'), source: tag('source'), sourceUrl: srcUrl, description: tag('description') });
+    items.push({ title: tag('title'), link: tag('link'), pubDate: tag('pubDate'), source: tag('source'), sourceUrl: srcUrl, description: tag('description'), content: tag('content:encoded') });
   }
   return items;
 }
@@ -280,6 +280,7 @@ const DIRECT_FEEDS = [
   { name: 'OilPrice.com', url: 'https://oilprice.com/rss/main', source: 'OilPrice.com' },
   { name: 'Natural Gas Intelligence', url: 'https://naturalgasintel.com/feed/', source: 'Natural Gas Intelligence' }
 ];
+const READER_VERSION = 2;
 const MAX_NEW_ARTICLES = 30;   // per refresh; earlier results are cached by link
 const READ_CONCURRENCY = 5;
 
@@ -342,28 +343,43 @@ function extractArticle(html) {
 }
 
 const GAS_SENTENCE = /(natural gas|nat-?gas|henry hub|\blng\b|feedgas|storage|inventor|injection|withdrawal|heating|weather|temperature|forecast|production|output|futures|nymex|prices?|demand|supply|freeport|el ni)/i;
+const PRICE_ACTION = new Set([LEX.length - 2, LEX.length - 1]);
 function scoreBody(text) {
   const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/).filter((x) => x.length > 30 && GAS_SENTENCE.test(x));
   let sum = 0, hitSentences = 0; const hits = new Map();
   for (const sen of sentences) {
-    const r = scoreHeadline(sen);
-    if (r.hits.length) { sum += r.score; hitSentences++; r.hits.forEach((h) => hits.set(h, (hits.get(h) || 0) + 1)); }
+    let sc = 0, fundamental = false; const found = [];
+    LEX.forEach(([re, w], i) => { const m = sen.match(re); if (m) { sc += PRICE_ACTION.has(i) ? w * 0.5 : w; if (!PRICE_ACTION.has(i)) fundamental = true; found.push(m[0].toLowerCase()); } });
+    if (!found.length) continue;
+    hitSentences++; sum += clamp(sc, -2, 2);
+    if (fundamental) found.forEach((h) => hits.set(h, (hits.get(h) || 0) + 1));
   }
-  const score = clamp(sum / Math.max(4, Math.sqrt(sentences.length) * 2), -2.5, 2.5);
+  // average over sentences that carry a signal, scaled up when many sentences agree
+  const avg = sum / Math.max(3, hitSentences);
+  const coverage = Math.min(1, hitSentences / 6);
+  const score = clamp(avg * 1.6 * (0.5 + 0.5 * coverage), -2.5, 2.5);
   const top = [...hits.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([h]) => h);
   return { score, sentences: sentences.length, hitSentences, top };
 }
 
-async function readArticle(item) {
-  let url = item.link;
-  try { url = await resolveGoogleNews(item.link); } catch (e) { return { status: 'headline', reason: e.message }; }
-  let html;
-  try { html = await get(url, { timeout: 12000, retries: 0 }); } catch (e) { return { status: 'headline', url, reason: e.message }; }
-  const { text, paywall } = extractArticle(html);
+const titleKey = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 90);
+async function readArticle(item, feedText) {
+  return { v: READER_VERSION, ...(await readArticleInner(item, feedText)) };
+}
+async function readArticleInner(item, feedText) {
+  let url = item.link, text = '', paywall = false, reason = '', via = 'page';
+  try { url = await resolveGoogleNews(item.link); } catch (e) { reason = e.message; }
+  if (!reason) {
+    try { ({ text, paywall } = extractArticle(await get(url, { timeout: 12000, retries: 0 }))); }
+    catch (e) { reason = e.message; }
+  }
+  const pageWords = text ? text.split(/\s+/).length : 0;
+  const fw = feedText ? feedText.split(/\s+/).length : 0;
+  if (fw > Math.max(pageWords, 60)) { text = feedText; via = 'publisher feed'; paywall = false; }
   const words = text ? text.split(/\s+/).length : 0;
-  if (words < 60) return { status: 'headline', url, reason: paywall ? 'paywall' : 'no article text found', words };
+  if (words < 60) return { status: 'headline', url, reason: reason || (paywall ? 'paywall' : 'no article text found'), words };
   const body = scoreBody(text);
-  return { status: paywall || words < 250 ? 'partial' : 'full', url, words, bodyScore: round(body.score, 2), sentences: body.sentences, signalSentences: body.hitSentences, keyPhrases: body.top };
+  return { status: words < 250 || (paywall && via === 'page') ? 'partial' : 'full', via, url, words, bodyScore: round(body.score, 2), sentences: body.sentences, signalSentences: body.hitSentences, keyPhrases: body.top };
 }
 
 async function pool(items, n, fn) {
@@ -372,6 +388,7 @@ async function pool(items, n, fn) {
   return out;
 }
 
+const FEEDTEXT = new Map();
 async function loadNews(prev, now) {
   const status = [];
   const prevAt = prev?.news?.fetchedAt ? Date.parse(prev.news.fetchedAt) : 0;
@@ -389,6 +406,7 @@ async function loadNews(prev, now) {
   for (const f of DIRECT_FEEDS) {
     try {
       const got = parseRss(await get(f.url, { timeout: 12000, retries: 0 })).map((x) => ({ ...x, source: x.source || f.source, sourceUrl: f.url, direct: true }));
+      for (const x of got) { const txt = decodeEntities(x.content || x.description || ''); if (txt.split(/\s+/).length > 60) FEEDTEXT.set(titleKey(decodeEntities(x.title)), txt); }
       all.push(...got); status.push({ name: `${f.name} feed`, ok: true });
     } catch (e) { status.push({ name: `${f.name} feed`, ok: false, error: e.message }); }
   }
@@ -399,7 +417,7 @@ async function loadNews(prev, now) {
     let title = decodeEntities(it.title); const source = it.source;
     const dash = title.lastIndexOf(' - ');
     if (dash > 20 && source && title.slice(dash + 3).trim().toLowerCase() === source.toLowerCase()) title = title.slice(0, dash);
-    if (!RELEVANT.test(title) && !(it.direct && RELEVANT.test(it.description || '') && /gas|lng/i.test(title))) continue;
+    if (!RELEVANT.test(title)) continue;
     if (!isTrusted(source, it.sourceUrl)) continue;
     const t = Date.parse(it.pubDate);
     if (!isFinite(t) || now - t > 7 * 864e5 || t - now > 36e5) continue;
@@ -413,7 +431,7 @@ async function loadNews(prev, now) {
   const top = items.slice(0, 50);
 
   // Read full articles: reuse earlier reads, read new ones (newest first)
-  const cache = new Map((prev?.news?.items || []).filter((x) => x.read).map((x) => [x.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 90), x.read]));
+  const cache = new Map((prev?.news?.items || []).filter((x) => x.read && x.read.v === READER_VERSION).map((x) => [x.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 90), x.read]));
   const toRead = [];
   for (const it of top) {
     const c = cache.get(it._key);
@@ -421,7 +439,7 @@ async function loadNews(prev, now) {
     else if (toRead.length < MAX_NEW_ARTICLES) toRead.push(it);
   }
   if (OFFLINE) toRead.forEach((it) => { it.read = { status: 'headline', reason: 'offline test' }; });
-  else await pool(toRead, READ_CONCURRENCY, async (it) => { it.read = await readArticle(it); });
+  else await pool(toRead, READ_CONCURRENCY, async (it) => { it.read = await readArticle(it, FEEDTEXT.get(titleKey(it.title))); });
   for (const it of top) {
     delete it._key;
     if (!it.read) it.read = { status: 'headline', reason: 'not read yet (queued for next refresh)' };
