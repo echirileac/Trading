@@ -69,6 +69,12 @@ function marketStatus(now) {
   if (hm >= 17 * 60 && hm < 18 * 60) return 'break';
   return 'open';
 }
+function nextSessions(now, h, everyDay) {
+  // h-th next daily close after today (weekends skipped unless the market trades every day, e.g. crypto)
+  let d = new Date(new Date(now).toISOString().slice(0, 10) + 'T00:00:00Z');
+  for (let k = 0; k < h;) { d = new Date(d.getTime() + 864e5); if (everyDay || (d.getUTCDay() !== 0 && d.getUTCDay() !== 6)) k++; }
+  return d;
+}
 function targetSettle(now, h) {
   // NG settles at 14:30 ET. Horizon h = the h-th settlement at least ~6 hours from now (weekends skipped; US holidays not modelled).
   const p = nyParts(now);
@@ -266,11 +272,43 @@ const LEX = [
   [/\b(rall(y|ies|ied)|surg(e|es|ed)|jump(s|ed)?|soar(s|ed)?|climb(s|ed)?|rebound(s|ed)?|bounce(s|d)?|reclaim(s|ed)?|gain(s|ed)?|higher|rises?|rose|spikes?)\b/i, +0.45],
   [/\b(fall(s)?|fell|drop(s|ped)?|slide(s)?|slid|slump(s|ed)?|tumble(s|d)?|plunge(s|d)?|sink(s)?|sank|retreat(s|ed)?|lower|decline(s|d)?|weak(er)?|nosediv\w*|pressure(d)?)\b/i, -0.45]
 ];
-function scoreHeadline(title) {
+function scoreHeadline(title, lex = LEX) {
   let s = 0; const hits = [];
-  for (const [re, w] of LEX) { const m = title.match(re); if (m) { s += w; hits.push(m[0].toLowerCase()); } }
+  for (const [re, w] of lex) { const m = title.match(re); if (m) { s += w; hits.push(m[0].toLowerCase()); } }
   return { score: clamp(s, -2.5, 2.5), hits };
 }
+
+const PRICE_UP = LEX[LEX.length - 2], PRICE_DOWN = LEX[LEX.length - 1];
+const GENERIC = [
+  [/\b(upgrade[sd]?|beats? (estimates|expectations|forecasts)|tops? estimates|record high|all[- ]time high|strong demand|buybacks?|raises? (guidance|outlook|forecast)|bullish|breaks? out|breakout|inflows?)\b/i, +1.0],
+  [/\b(downgrade[sd]?|miss(es|ed)? (estimates|expectations|forecasts)|cuts? (guidance|outlook|forecast)|bearish|sell-?off|recession (fears?|risk)|weak demand|profit warning|outflows?|investigation|lawsuit|recall|bankruptcy)\b/i, -1.0],
+  [/\b(support (holds|level)|oversold|bargain hunting|short covering)\b/i, +0.4],
+  [/\b(resistance|overbought|profit[- ]taking)\b/i, -0.4]
+];
+const RATES_RISK = [ // rate cuts help risk assets and gold
+  [/\b(rate cuts?|dovish|stimulus|easing|soft landing)\b/i, +0.6],
+  [/\b(rate hikes?|hawkish|tightening|higher for longer|sticky inflation)\b/i, -0.6]
+];
+const CAT_LEX = {
+  energy: [
+    [/\b(opec\+? (cuts?|curbs?)|output cuts?|supply (disruption|outage|risk)s?|inventor(y|ies) (draw|drop|fall)s?|crude draws?|sanctions?|attack on|escalat\w*|hurricane)\b/i, +1.0],
+    [/\b(opec\+? (hikes?|raises?|boosts?)|output (hike|increase)s?|inventor(y|ies) (build|rise)s?|crude builds?|glut|oversuppl\w*|ceasefire|peace (talks|deal|hopes)|demand (worries|concerns))\b/i, -1.0]
+  ],
+  metal: [
+    [/\b(safe[- ]haven|geopolitical (tension|risk)s?|dollar (weakens|slips|falls|drops)|weaker dollar|central bank (buying|purchases)|haven demand)\b/i, +1.0],
+    [/\b(dollar (strengthens|rises|gains|jumps)|stronger dollar|risk[- ]on|yields? (rise|climb|jump)|etf outflows?)\b/i, -1.0],
+    ...RATES_RISK
+  ],
+  crypto: [
+    [/\b(etf (inflows?|approval)|institutional (buying|adoption)|halving|treasury (buys|purchases))\b/i, +1.0],
+    [/\b(hack(ed)?|exploit|etf outflows?|crackdown|ban(s|ned)?|liquidations?)\b/i, -1.0],
+    ...RATES_RISK
+  ],
+  equity: [...RATES_RISK],
+  index: [...RATES_RISK],
+  fx: []
+};
+function lexFor(category) { return [...(CAT_LEX[category] || []), ...GENERIC, PRICE_UP, PRICE_DOWN]; }
 
 // Publisher feeds with direct article links (no Google redirect to resolve)
 const DIRECT_FEEDS = [
@@ -343,13 +381,14 @@ function extractArticle(html) {
 }
 
 const GAS_SENTENCE = /(natural gas|nat-?gas|henry hub|\blng\b|feedgas|storage|inventor|injection|withdrawal|heating|weather|temperature|forecast|production|output|futures|nymex|prices?|demand|supply|freeport|el ni)/i;
-const PRICE_ACTION = new Set([LEX.length - 2, LEX.length - 1]);
-function scoreBody(text) {
-  const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/).filter((x) => x.length > 30 && GAS_SENTENCE.test(x));
+function scoreBody(text, prof = GAS_PROFILE) {
+  const LEXP = prof.lex;
+  const PRICE_ACTION = new Set([LEXP.length - 2, LEXP.length - 1]);
+  const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/).filter((x) => x.length > 30 && prof.sentence.test(x));
   let sum = 0, hitSentences = 0; const hits = new Map();
   for (const sen of sentences) {
     let sc = 0, fundamental = false; const found = [];
-    LEX.forEach(([re, w], i) => { const m = sen.match(re); if (m) { sc += PRICE_ACTION.has(i) ? w * 0.5 : w; if (!PRICE_ACTION.has(i)) fundamental = true; found.push(m[0].toLowerCase()); } });
+    LEXP.forEach(([re, w], i) => { const m = sen.match(re); if (m) { sc += PRICE_ACTION.has(i) ? w * 0.5 : w; if (!PRICE_ACTION.has(i)) fundamental = true; found.push(m[0].toLowerCase()); } });
     if (!found.length) continue;
     hitSentences++; sum += clamp(sc, -2, 2);
     if (fundamental) found.forEach((h) => hits.set(h, (hits.get(h) || 0) + 1));
@@ -363,10 +402,10 @@ function scoreBody(text) {
 }
 
 const titleKey = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 90);
-async function readArticle(item, feedText) {
-  return { v: READER_VERSION, ...(await readArticleInner(item, feedText)) };
+async function readArticle(item, feedText, prof) {
+  return { v: READER_VERSION, ...(await readArticleInner(item, feedText, prof)) };
 }
-async function readArticleInner(item, feedText) {
+async function readArticleInner(item, feedText, prof) {
   let url = item.link, text = '', paywall = false, reason = '', via = 'page';
   try { url = await resolveGoogleNews(item.link); } catch (e) { reason = e.message; }
   if (!reason) {
@@ -380,12 +419,12 @@ async function readArticleInner(item, feedText) {
   if (words < 60) {
     // Paywalled publishers (e.g. NGI) only expose a lead summary in their feed: use it rather than nothing.
     if (fw >= 20) {
-      const body = scoreBody(feedText);
+      const body = scoreBody(feedText, prof);
       return { status: 'summary', via: 'publisher feed summary', url, words: fw, reason: reason || 'paywall', bodyScore: round(body.score, 2), keyPhrases: body.top };
     }
     return { status: 'headline', url, reason: reason || (paywall ? 'paywall' : 'no article text found'), words };
   }
-  const body = scoreBody(text);
+  const body = scoreBody(text, prof);
   return { status: words < 250 || (paywall && via === 'page') ? 'partial' : 'full', via, url, words, bodyScore: round(body.score, 2), sentences: body.sentences, signalSentences: body.hitSentences, keyPhrases: body.top };
 }
 
@@ -395,8 +434,24 @@ async function pool(items, n, fn) {
   return out;
 }
 
+const GAS_PROFILE = { id: 'NATGAS', queries: QUERIES, relevant: RELEVANT, lex: LEX, sentence: GAS_SENTENCE, directFeeds: DIRECT_FEEDS, maxStories: 50 };
+const GENERAL_FEEDS = DIRECT_FEEDS.filter((f) => !/naturalgasintel/.test(f.url));
+function escapeRe(x) { return x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function profileFor(m) {
+  const kw = (m.keywords && m.keywords.length ? m.keywords : [m.name.split(/[\s(),.\-\/]+/).filter((w) => w.length > 3 && !/^(inc|corp|class|common|stock|spot|the|limited|group|holdings?|plc|index|performance|ordinary|shares?)$/i.test(w)).slice(0, 3).join(' '), ...m.symbol.split(/[\/:]/).filter((w) => w.length > 2)]).filter(Boolean);
+  const relevant = new RegExp(kw.map((k) => `\\b${escapeRe(k)}`).join('|'), 'i');
+  const q = m.newsQuery || kw[0];
+  return {
+    id: m.id,
+    queries: [`"${q}" when:3d`, `${q.replace(/ price$/i, '')} price outlook when:3d`],
+    relevant, lex: lexFor(m.category),
+    sentence: new RegExp(`${relevant.source}|price|market|demand|supply|rate|forecast|outlook|investor|trader`, 'i'),
+    directFeeds: m.category === 'energy' || m.category === 'metal' ? GENERAL_FEEDS : [],
+    maxStories: 25, maxReads: 10
+  };
+}
 const FEEDTEXT = new Map();
-async function loadNews(prev, now) {
+async function loadNews(prev, now, prof = GAS_PROFILE) {
   const status = [];
   const prevAt = prev?.news?.fetchedAt ? Date.parse(prev.news.fetchedAt) : 0;
   const minuteSlot = new Date(now).getUTCMinutes() % NEWS_EVERY_MIN < 5;
@@ -405,12 +460,12 @@ async function loadNews(prev, now) {
   if (!due) return { ...prev.news, reused: true, status: [{ name: 'News (reused, refreshes every ~15 min)', ok: true }] };
 
   const all = [];
-  for (const q of QUERIES) {
+  for (const q of prof.queries) {
     const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
     try { all.push(...parseRss(await get(url))); status.push({ name: `Google News: ${q}`, ok: true }); }
     catch (e) { status.push({ name: `Google News: ${q}`, ok: false, error: e.message }); }
   }
-  for (const f of DIRECT_FEEDS) {
+  for (const f of prof.directFeeds) {
     try {
       const got = parseRss(await get(f.url, { timeout: 12000, retries: 0 })).map((x) => ({ ...x, source: x.source || f.source, sourceUrl: f.url, direct: true }));
       for (const x of got) { const txt = decodeEntities(x.content || x.description || ''); if (txt.split(/\s+/).length >= 20) FEEDTEXT.set(titleKey(decodeEntities(x.title)), txt); }
@@ -424,18 +479,18 @@ async function loadNews(prev, now) {
     let title = decodeEntities(it.title); const source = it.source;
     const dash = title.lastIndexOf(' - ');
     if (dash > 20 && source && title.slice(dash + 3).trim().toLowerCase() === source.toLowerCase()) title = title.slice(0, dash);
-    if (!RELEVANT.test(title)) continue;
+    if (!prof.relevant.test(title)) continue;
     if (!isTrusted(source, it.sourceUrl)) continue;
     const t = Date.parse(it.pubDate);
     if (!isFinite(t) || now - t > 7 * 864e5 || t - now > 36e5) continue;
     const key = title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 90);
     if (seen.has(key)) continue;
     seen.add(key);
-    const sc = scoreHeadline(title);
+    const sc = scoreHeadline(title, prof.lex);
     items.push({ title, source, link: it.link, publishedAt: new Date(t).toISOString(), headlineScore: round(sc.score, 2), hits: sc.hits, _key: key });
   }
   items.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
-  const top = items.slice(0, 50);
+  const top = items.slice(0, prof.maxStories || 50);
 
   // Read full articles: reuse earlier reads, read new ones (newest first)
   const cache = new Map((prev?.news?.items || []).filter((x) => x.read && x.read.v === READER_VERSION).map((x) => [x.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 90), x.read]));
@@ -443,10 +498,10 @@ async function loadNews(prev, now) {
   for (const it of top) {
     const c = cache.get(it._key);
     if (c && (c.status !== 'headline' || now - Date.parse(it.publishedAt) > 6 * 36e5)) it.read = c;
-    else if (toRead.length < MAX_NEW_ARTICLES) toRead.push(it);
+    else if (toRead.length < (prof.maxReads ?? MAX_NEW_ARTICLES)) toRead.push(it);
   }
   if (OFFLINE) toRead.forEach((it) => { it.read = { status: 'headline', reason: 'offline test' }; });
-  else await pool(toRead, READ_CONCURRENCY, async (it) => { it.read = await readArticle(it, FEEDTEXT.get(titleKey(it.title))); });
+  else await pool(toRead, READ_CONCURRENCY, async (it) => { it.read = await readArticle(it, FEEDTEXT.get(titleKey(it.title)), prof); });
   for (const it of top) {
     delete it._key;
     if (!it.read) it.read = { status: 'headline', reason: 'not read yet (queued for next refresh)' };
@@ -459,7 +514,7 @@ async function loadNews(prev, now) {
   status.push({ name: `Article reader: ${full} full, ${part} partial, ${summ} paywalled (summary only) of ${top.length} stories`, ok: full + part > 0 || !top.length, error: full + part ? '' : 'no article bodies could be read' });
   const failReasons = {};
   for (const x of top) if (x.read.status === 'headline' && x.read.reason) failReasons[x.read.reason.slice(0, 60)] = (failReasons[x.read.reason.slice(0, 60)] || 0) + 1;
-  if (Object.keys(failReasons).length) console.log(`::notice title=Articles not read::${Object.entries(failReasons).map(([k, v]) => `${v}x ${k}`).join(' | ')}`);
+  if (Object.keys(failReasons).length) console.log(`::notice title=Articles not read (${prof.id})::${Object.entries(failReasons).map(([k, v]) => `${v}x ${k}`).join(' | ')}`);
   if (!top.length && prev?.news?.items?.length) return { ...prev.news, reused: true, status: [...status, { name: 'No fresh trusted headlines; kept previous', ok: false }] };
   return { fetchedAt: new Date(now).toISOString(), items: top, reused: false, status };
 }
@@ -473,12 +528,12 @@ function rsi(closes, n = 14) {
   const rs = g / l; return 100 - 100 / (1 + rs);
 }
 
-function buildForecast(px, news, now) {
+function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   const closes = px.daily.map((r) => r.c);
   const series = [...closes];
   // replace/append today's live price
   const lastDay = new Date(px.daily.at(-1).t).toISOString().slice(0, 10);
-  const today = (() => { const p = nyParts(new Date(now)); return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`; })();
+  const today = opts.calendar === 'ng' ? (() => { const p = nyParts(new Date(now)); return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`; })() : (opts.today || new Date(now).toISOString().slice(0, 10));
   if (lastDay >= today) series[series.length - 1] = px.last; else series.push(px.last);
   const rets = [];
   for (let i = 1; i < series.length; i++) rets.push(clamp(Math.log(series[i] / series[i - 1]), -0.12, 0.12)); // caps contract-roll jumps
@@ -513,7 +568,7 @@ function buildForecast(px, news, now) {
   const horizons = {};
   for (const h of [1, 3, 5]) {
     const mu = driftPerDay * h, sd = sigma * Math.sqrt(h);
-    const target = targetSettle(new Date(now), h);
+    const target = opts.calendar === 'ng' ? targetSettle(new Date(now), h) : nextSessions(now, h, opts.calendar === 'daily');
     horizons[h] = {
       days: h,
       targetDate: target.toISOString().slice(0, 10),
@@ -556,55 +611,153 @@ function siteUrl() {
   return name.toLowerCase() === `${owner.toLowerCase()}.github.io` ? `https://${owner}.github.io/` : `https://${owner}.github.io/${name}/`;
 }
 
-async function main() {
-  const now = Date.now();
-  let prev = null;
-  const base = siteUrl();
-  if (base && !OFFLINE) { try { prev = await get(`${base}data/latest.json?t=${now}`, { type: 'json', retries: 0 }); if (prev?.price) { await mkdir(dirname(OUT), { recursive: true }); await writeFile(OUT, JSON.stringify(prev)); } else prev = null; } catch { /* first run */ } }
-  if (!prev) { try { prev = JSON.parse(await readFile(OUT, 'utf8')); } catch { /* none */ } }
+const DATA_DIR = join(ROOT, 'site', 'data');
+const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.645. Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%).';
 
-  const px = await loadPrices(prev, now);
-  const news = await loadNews(prev, now);
-  const fc = buildForecast(px, news, now);
+async function loadPrev(base, rel, now) {
+  if (base && !OFFLINE) { try { const j = await get(`${base}data/${rel}?t=${now}`, { type: 'json', retries: 0 }); if (j?.price) return j; } catch { /* none */ } }
+  try { const j = JSON.parse(await readFile(join(DATA_DIR, rel), 'utf8')); if (j?.price) return j; } catch { /* none */ }
+  return null;
+}
+async function save(rel, obj) { const f = join(DATA_DIR, rel); await mkdir(dirname(f), { recursive: true }); await writeFile(f, JSON.stringify(obj)); }
 
+function packOutput(m, px, news, fc, now, market, extra = {}) {
   const daily = px.daily.slice(-260).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), o: round(r.o), h: round(r.h), l: round(r.l), c: round(r.c) }));
-  const lastSession = px.intraday.length ? (() => {
-    const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < 24 * 36e5).map((x) => [x.t, round(x.c)]);
-  })() : [];
-
-  const out = {
+  const lastSession = px.intraday.length ? (() => { const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < 24 * 36e5).map((x) => [x.t, round(x.c, 5)]); })() : [];
+  const dec = m.category === 'fx' ? (px.last >= 20 ? 3 : 5) : px.last >= 100 ? 2 : px.last >= 1 ? 3 : 5;
+  return {
     generatedAt: new Date(now).toISOString(),
-    instrument: 'Henry Hub natural gas, NYMEX front-month futures (NG=F)',
-    market: marketStatus(new Date(now)),
+    meta: { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', provider: m.provider, decimals: dec, ...extra.meta },
+    instrument: m.instrument || `${m.name} (${m.symbol})`,
+    market,
     price: {
-      last: round(px.last), prevClose: round(px.prevClose),
-      change: px.prevClose ? round(px.last - px.prevClose) : null,
+      last: round(px.last, 6), prevClose: round(px.prevClose, 6),
+      change: px.prevClose ? round(px.last - px.prevClose, 6) : null,
       changePct: px.prevClose ? round(100 * (px.last / px.prevClose - 1), 2) : null,
       asOf: new Date(px.lastTime).toISOString(), source: px.source, stale: px.stale,
-      daily, intraday: lastSession
+      daily, intraday: lastSession, ...extra.price
     },
     forecast: fc,
     news: { fetchedAt: news.fetchedAt, items: news.items },
     sources: [...px.status, ...news.status],
-    method: 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.645. Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%).'
+    method: METHOD
   };
-  await mkdir(dirname(OUT), { recursive: true });
-  await writeFile(OUT, JSON.stringify(out));
-  console.log(`OK ${out.generatedAt} last=${out.price.last} bias=${fc.bias} score=${fc.score} news=${news.items?.length} reused=${!!news.reused}`);
-  for (const s of out.sources) if (!s.ok) console.log(`::warning title=${s.name}::${(s.error || 'no answer').replace(/\n/g, ' ')}`);
+}
+
+// ---------- NATGAS (CNBC quote + self-maintained history) ----------
+const NATGAS = { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy', provider: 'cnbc', instrument: 'Henry Hub natural gas, NYMEX front-month futures (NG=F)' };
+async function buildNatgas(base, now) {
+  const prev = (await loadPrev(base, 'm/NATGAS.json', now)) || (await loadPrev(base, 'latest.json', now));
+  const px = await loadPrices(prev, now);
+  const news = await loadNews(prev, now, GAS_PROFILE);
+  const fc = buildForecast(px, news, now, { calendar: 'ng' });
+  const out = packOutput(NATGAS, px, news, fc, now, marketStatus(new Date(now)));
+  await save('m/NATGAS.json', out);
+  await save('latest.json', out); // kept for older links
+  return out;
+}
+
+// ---------- Twelve Data markets ----------
+const TD_KEY = process.env.TWELVE_DATA_KEY || '';
+const TD_DAILY_BUDGET = 760, TD_PER_RUN = 7; // free plan: 800 credits/day, 8/minute
+let tdCredits = TD_PER_RUN;
+async function td(path, params) {
+  if (tdCredits <= 0) throw new Error('per-minute API budget used; next refresh');
+  tdCredits--;
+  const u = new URL('https://api.twelvedata.com' + path);
+  for (const [k, v] of Object.entries(params)) if (v != null && v !== '') u.searchParams.set(k, v);
+  u.searchParams.set('apikey', TD_KEY);
+  const j = await get(u.toString(), { type: 'json', timeout: 15000, retries: 0 });
+  if (j?.status === 'error' || (j?.code && j?.message)) throw new Error(`Twelve Data ${j.code || ''}: ${j.message}`);
+  return j;
+}
+const tdArgs = (m) => ({ symbol: m.symbol, exchange: ['equity', 'etf', 'index'].includes(m.category) ? m.exchange : '' });
+const weekendClosed = (now) => { const d = new Date(now), w = d.getUTCDay(), h = d.getUTCHours(); return w === 6 || (w === 0 && h < 21) || (w === 5 && h >= 21); };
+const num = (v) => { const x = parseFloat(v); return isFinite(x) ? x : null; };
+
+async function buildTwelveData(m, prev, now, plan) {
+  const status = [];
+  const byDate = new Map((prev?.price?.daily || []).map((r) => [r.date, { t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c }]));
+  let last = prev?.price?.last ?? null, prevClose = prev?.price?.prevClose ?? null, lastTime = prev?.price?.asOf ? Date.parse(prev.price.asOf) : now;
+  let market = prev?.market || 'closed', historyDate = prev?.meta?.historyDate || '', quotedAt = prev?.price?.quotedAt ? Date.parse(prev.price.quotedAt) : 0;
+  let intraday = (prev?.price?.intraday || []).filter(([t]) => now - t < 24 * 36e5).map(([t, c]) => ({ t, c }));
+  const todayUTC = new Date(now).toISOString().slice(0, 10);
+  if (!TD_KEY) status.push({ name: 'Twelve Data', ok: false, error: 'API key missing: add the TWELVE_DATA_KEY repository secret' });
+  else {
+    if ((historyDate !== todayUTC || byDate.size < 30) && tdCredits > 0) {
+      try {
+        const j = await td('/time_series', { ...tdArgs(m), interval: '1day', outputsize: 260 });
+        for (const v of j.values || []) byDate.set(v.datetime.slice(0, 10), { t: Date.parse(v.datetime.slice(0, 10) + 'T22:00:00Z'), o: num(v.open), h: num(v.high), l: num(v.low), c: num(v.close) });
+        historyDate = todayUTC; status.push({ name: 'Twelve Data daily history', ok: true });
+        if (last == null && j.values?.length) { last = num(j.values[0].close); lastTime = Date.parse(j.values[0].datetime); }
+      } catch (e) { status.push({ name: 'Twelve Data daily history', ok: false, error: e.message }); }
+    }
+    const due = now - quotedAt >= (plan.intervalMin - 1) * 60e3 && !(m.category !== 'crypto' && weekendClosed(now) && last != null && now - quotedAt < 12 * 36e5);
+    if (due && tdCredits <= 0) status.push({ name: 'Twelve Data quote (queued for the next refresh: per-minute API limit)', ok: true });
+    else if (due) {
+      try {
+        const q = await td('/quote', tdArgs(m));
+        last = num(q.close); prevClose = num(q.previous_close) ?? prevClose; lastTime = (q.last_quote_at || q.timestamp) * 1000 || now; quotedAt = now;
+        market = q.is_market_open ? 'open' : 'closed';
+        const day = String(q.datetime || todayUTC).slice(0, 10);
+        const bar = byDate.get(day) || { t: Date.parse(day + 'T22:00:00Z'), o: num(q.open) ?? last };
+        bar.c = last; bar.h = Math.max(bar.h ?? last, num(q.high) ?? last, last); bar.l = Math.min(bar.l ?? last, num(q.low) ?? last, last);
+        byDate.set(day, bar);
+        if (market === 'open') intraday.push({ t: now, c: last });
+        status.push({ name: 'Twelve Data live quote', ok: true });
+      } catch (e) { status.push({ name: 'Twelve Data live quote', ok: false, error: e.message }); }
+    } else status.push({ name: `Twelve Data quote (refreshes every ${plan.intervalMin} min to stay on the free plan)`, ok: true });
+  }
+  const daily = [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([, r]) => r).filter((r) => r.c != null).slice(-260);
+  if (!daily.length || last == null) return { error: status.find((x) => !x.ok)?.error || 'no price data yet', status };
+  if (prevClose == null && daily.length > 1) prevClose = daily.at(-2).c;
+  const px = { daily, intraday, last, prevClose, lastTime, source: 'Twelve Data', stale: !TD_KEY, status };
+  const prof = profileFor(m);
+  prof.maxReads = Math.min(prof.maxReads, plan.readsLeft);
+  const news = await loadNews(prev, now, prof);
+  plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
+  const fc = buildForecast(px, news, now, { calendar: m.category === 'crypto' ? 'daily' : 'weekday', today: daily.at(-1) ? new Date(daily.at(-1).t).toISOString().slice(0, 10) : todayUTC });
+  return { out: packOutput({ ...m, provider: 'twelvedata' }, px, news, fc, now, market, { meta: { historyDate }, price: { quotedAt: quotedAt ? new Date(quotedAt).toISOString() : null } }) };
+}
+
+function summary(out, m, error) {
+  if (!out) return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', error };
+  const h = out.forecast.horizons;
+  return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', last: out.price.last, changePct: out.price.changePct, decimals: out.meta.decimals,
+    market: out.market, bias: out.forecast.bias, score: out.forecast.score, h: Object.fromEntries(Object.entries(h).map(([k, v]) => [k, { center: v.center, changePct: v.changePct, pUp: v.pUp }])), asOf: out.price.asOf, error };
+}
+
+async function main() {
+  const now = Date.now();
+  const base = siteUrl();
+  let watch = { markets: [] };
+  try { watch = JSON.parse(await readFile(join(ROOT, 'watchlist.json'), 'utf8')); } catch { /* default */ }
+  const markets = (watch.markets || []).filter((m) => m.provider !== 'natgas');
+  const index = { generatedAt: new Date(now).toISOString(), keyConfigured: !!TD_KEY, maxMarkets: 8, markets: [] };
+
+  try { const out = await buildNatgas(base, now); index.markets.push(summary(out, NATGAS)); console.log(`OK NATGAS last=${out.price.last} bias=${out.forecast.bias}`); for (const s of out.sources) if (!s.ok) console.log(`::warning title=NATGAS ${s.name}::${(s.error || 'no answer').replace(/\n/g, ' ')}`); }
+  catch (e) { index.markets.push(summary(null, NATGAS, e.message)); console.log(`::error title=NATGAS failed::${e.message}`); FAILED.length = 0; }
+
+  const n = Math.max(1, markets.length);
+  const plan = { intervalMin: Math.max(10, Math.ceil((n * 1440) / (TD_DAILY_BUDGET - n) / 5) * 5), readsLeft: 30 };
+  index.quoteIntervalMin = plan.intervalMin;
+  // markets quoted longest ago go first so the per-minute API budget is shared fairly
+  const prevs = await Promise.all(markets.map((m) => loadPrev(base, `m/${m.id}.json`, now)));
+  const order = markets.map((m, i) => i).sort((a, b) => Date.parse(prevs[a]?.price?.quotedAt || 0) - Date.parse(prevs[b]?.price?.quotedAt || 0));
+  const results = new Array(markets.length);
+  for (const i of order) {
+    const m = markets[i];
+    try {
+      const r = await buildTwelveData(m, prevs[i], now, plan);
+      if (r.out) { await save(`m/${m.id}.json`, r.out); results[i] = summary(r.out, m, r.out.sources.find((x) => !x.ok && /Twelve Data/.test(x.name))?.error); console.log(`OK ${m.id} last=${r.out.price.last} bias=${r.out.forecast.bias}`); }
+      else { results[i] = summary(null, m, r.error); console.log(`::warning title=${m.id}::${r.error}`); }
+    } catch (e) { results[i] = summary(null, m, e.message); console.log(`::warning title=${m.id} failed::${e.message}`); }
+  }
+  index.markets.push(...results);
+  await save('index.json', index);
 }
 
 main().catch(async (e) => {
-  // Never leave the site without data: publish an error state the page can show, and surface details as public annotations.
-  console.log(`::error title=Forecast build failed::${String(e?.message || e).replace(/\n/g, ' ')}`);
-  for (const s of FAILED) console.log(`::warning title=${s.name}::${(s.error || 'no answer').replace(/\n/g, ' ')}`);
-  try {
-    let prevOut = null;
-    try { prevOut = JSON.parse(await readFile(OUT, 'utf8')); } catch { /* none */ }
-    if (!prevOut?.price) {
-      await mkdir(dirname(OUT), { recursive: true });
-      await writeFile(OUT, JSON.stringify({ generatedAt: new Date().toISOString(), error: String(e?.message || e), sources: FAILED }));
-    }
-  } catch { /* ignore */ }
+  console.log(`::error title=Build failed::${String(e?.message || e).replace(/\n/g, ' ')}`);
   process.exit(0);
 });

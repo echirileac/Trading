@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NATGAS live outlook · 1 / 3 / 5-day forecast</title>
+<title>Market watch · live 1 / 3 / 5-day forecasts</title>
 <meta name="description" content="Live Henry Hub natural gas price with 1, 3 and 5-day forecast ranges built from prices and trusted news.">
 <meta name="theme-color" content="#121214">
 <style>
@@ -85,14 +85,57 @@
   .disc { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
   .banner { display: none; background: #3a2a10; border: 1px solid #6b4e1c; color: #f3d28b; border-radius: 10px; padding: 8px 12px; font-size: 13px; }
   .banner.show { display: block; }
+  .wl { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+  .wl-card { flex: 0 0 auto; min-width: 150px; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; color: var(--fg); font: inherit; cursor: pointer; }
+  .wl-card[aria-current="true"] { border-color: var(--accent); background: var(--panel2); }
+  .wl-card .n { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+  .wl-card .s { font-size: 11px; color: var(--muted); }
+  .wl-card .p { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  .wl-card .c { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .wl-card .b { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .wl-add { flex: 0 0 auto; min-width: 120px; border: 1px dashed var(--line); background: transparent; color: var(--muted); border-radius: 12px; font: 600 14px var(--font); cursor: pointer; }
+  .wl-add:hover, .wl-card:hover { border-color: var(--accent); }
+  .search { display: none; }
+  .search.open { display: grid; gap: 10px; }
+  .search input { width: 100%; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; color: var(--fg); font: 16px var(--font); padding: 12px 14px; }
+  .search input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filters button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 4px 10px; font: 12px var(--font); cursor: pointer; }
+  .filters button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+  .results { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; }
+  .results li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 2px; border-top: 1px solid var(--line); }
+  .results li:first-child { border-top: 0; }
+  .results .rn { font-size: 14px; } .results .rm { font-size: 12px; color: var(--muted); }
+  .btn { background: var(--panel2); border: 1px solid var(--line); color: var(--fg); border-radius: 9px; padding: 7px 12px; font: 600 13px var(--font); cursor: pointer; white-space: nowrap; text-decoration: none; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.ghost { background: transparent; color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
+  .top-actions { display: flex; gap: 8px; align-items: center; }
   @media (max-width: 520px) { .price { font-size: 40px; } .fc-center { font-size: 30px; } }
 </style>
 </head>
 <body>
 <div class="wrap">
+  <nav class="wl" id="wl" aria-label="Watchlist"></nav>
+
+  <section class="card search" id="search" aria-label="Search markets">
+    <div class="fc-head"><b style="color:var(--fg);font-size:15px">Add a market</b><button class="btn ghost" id="search-close" type="button">Close</button></div>
+    <input id="q" type="search" placeholder="Search: gold, EUR/USD, Apple, bitcoin, DAX, oil…" autocomplete="off" aria-label="Search markets">
+    <div class="filters" id="filters">
+      <button type="button" data-f="" aria-pressed="true">All</button>
+      <button type="button" data-f="commodity" aria-pressed="false">Commodities</button>
+      <button type="button" data-f="fx" aria-pressed="false">Forex</button>
+      <button type="button" data-f="index" aria-pressed="false">Indices</button>
+      <button type="button" data-f="equity" aria-pressed="false">Stocks &amp; ETFs</button>
+      <button type="button" data-f="crypto" aria-pressed="false">Crypto</button>
+    </div>
+    <ul class="results" id="results"></ul>
+    <p class="hint" id="search-hint">Search results come from Twelve Data. "Add" opens a pre-filled request on GitHub: press <b>Create</b> there and the market appears here in about 2 minutes. Up to 8 markets on the free data plan; some indices need a paid plan.</p>
+  </section>
+
   <header class="top">
-    <div class="sym"><span class="dot" id="dot"></span>NATGAS <span class="pill">Henry Hub · NYMEX front month</span></div>
-    <div class="status" id="status">Loading…</div>
+    <div class="sym"><span class="dot" id="dot"></span><span id="m-name">Loading…</span> <span class="pill" id="m-pill"></span></div>
+    <div class="top-actions"><span class="status" id="status">Loading…</span><a class="btn ghost" id="remove" href="#" target="_blank" rel="noopener" hidden>Remove</a></div>
   </header>
   <div class="banner" id="banner"></div>
 
@@ -121,14 +164,14 @@
 
   <section class="card">
     <h2>Price and forecast cone</h2>
-    <p class="note">Recent daily settlements, the live price, and the selected horizon's 68% (darker) and 90% (lighter) ranges.</p>
+    <p class="note">Recent daily closes, the live price, and the selected horizon's 68% (darker) and 90% (lighter) ranges.</p>
     <div class="chart" id="chart"></div>
   </section>
 
   <div class="grid2">
     <section class="card">
       <h2>Latest session</h2>
-      <p class="note" id="intra-note">Today's range, where price opened and where it is now versus the previous settlement.</p>
+      <p class="note" id="intra-note">Today's range, where price opened and where it is now versus the previous close.</p>
       <div class="spark" id="intra"></div>
     </section>
     <section class="card">
@@ -161,13 +204,13 @@
     <summary>How the forecast works</summary>
     <p id="method"></p>
     <ul>
-      <li>Prices: NYMEX Henry Hub front-month futures (Yahoo Finance NG=F, with CNBC and Stooq as fallbacks), refreshed about every 5 minutes.</li>
-      <li>News: stories from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence, Rigzone and others), refreshed about every 15 minutes. The server opens each article and reads its full text where the publisher allows it; every gas-related sentence is scored with a natural-gas keyword list (weather, storage, production, LNG, geopolitics, price action). The article body counts for 70% of a story's score and the headline 30%; paywalled stories fall back to the headline. Stories are weighted by recency.</li>
+      <li>Prices: NATGAS uses the NYMEX Henry Hub front-month futures quote from CNBC plus its own daily history; every other market comes from Twelve Data (daily history once a day, live quotes every 10–15 minutes to stay within the free plan).</li>
+      <li>News: stories from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence, Rigzone and others) found with a search built for each market, refreshed about every 15 minutes. The server opens each article and reads its full text where the publisher allows it; every relevant sentence is scored with a keyword list for that kind of market (natural gas: weather, storage, production, LNG; oil: OPEC, inventories; metals: dollar, rates, safe-haven demand; stocks and indices: earnings, guidance, rates; crypto: ETF flows, regulation; plus general market language). The article body counts for 70% of a story's score and the headline 30%; paywalled stories fall back to the headline. Stories are weighted by recency.</li>
       <li>The page itself checks for new data every minute.</li>
       <li>It is a mechanical keyword model, not a human reading. It can be wrong when an article is mixed, quotes opposing views, or is mainly about something else.</li>
     </ul>
   </details>
-  <p class="disc">Not financial advice. CFDs are leveraged and natural gas often moves 5–10% in a week. A CFD quote can differ slightly from the futures price, and the contract rolls to the next month a few days before expiry.</p>
+  <p class="disc">Not financial advice. CFDs are leveraged and can move fast against you. A broker's CFD quote can differ slightly from the market prices shown here, and futures-based CFDs roll to the next contract a few days before expiry.</p>
 </div>
 
 <script>
@@ -177,7 +220,9 @@
   let DATA = null, lastFetch = 0;
   let H = Number((location.hash.match(/^#([135])d$/) || [])[1] || 3);
 
-  const usd = (v, d = 3) => (v == null || !isFinite(v) ? '—' : '$' + v.toFixed(d));
+  let DEC = 3, CUR = '$';
+  const usd = (v, d) => (v == null || !isFinite(v) ? '—' : CUR + Number(v).toLocaleString('en-US', { minimumFractionDigits: d === undefined ? DEC : DEC > 3 ? DEC - 1 : d, maximumFractionDigits: d === undefined ? DEC : DEC > 3 ? DEC - 1 : d }));
+  const fmtNum = (v, dec) => (v == null || !isFinite(v) ? '—' : Number(v).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec }));
   const sp = (v, d = 2) => (v == null || !isFinite(v) ? '' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d) + '%');
   const cls = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
   const ago = (iso) => {
@@ -195,25 +240,134 @@
     return n;
   };
 
+  // ---------- watchlist + market loading ----------
+  let INDEX = null, CUR_ID = null;
+  const REPO = (() => { const owner = location.hostname.split('.')[0]; const name = location.pathname.split('/').filter(Boolean)[0] || ''; return { owner, name }; })();
+  const issueUrl = (title, obj) => `https://github.com/${REPO.owner}/${REPO.name}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent('Requested from the market watch page. Press "Create" to apply - an automatic job updates the watchlist and closes this issue.\n\n```json\n' + JSON.stringify(obj, null, 2) + '\n```\n')}`;
+  function parseHash() {
+    const m = location.hash.slice(1).match(/^([A-Za-z0-9-]+)?(?:\/([135])d)?$/) || [];
+    const legacy = location.hash.match(/^#([135])d$/);
+    if (legacy) return { id: null, h: +legacy[1] };
+    return { id: m[1] || null, h: m[2] ? +m[2] : null };
+  }
+  function setHash() { history.replaceState(null, '', `#${CUR_ID}/${H}d`); }
+  { const ph = parseHash(); if (ph.h) H = ph.h; CUR_ID = ph.id; }
+
   async function load() {
     try {
-      const r = await fetch('data/latest.json?t=' + Date.now(), { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const r = await fetch('data/index.json?t=' + Date.now(), { cache: 'no-store' });
+      if (r.ok) INDEX = await r.json();
+    } catch { /* older deployments have no index */ }
+    if (!INDEX) INDEX = { markets: [{ id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month' }] };
+    if (!CUR_ID || !INDEX.markets.some((m) => m.id === CUR_ID)) CUR_ID = INDEX.markets[0]?.id || 'NATGAS';
+    drawWatchlist();
+    await loadMarket();
+  }
+  async function loadMarket() {
+    try {
+      let r = await fetch(`data/m/${CUR_ID}.json?t=` + Date.now(), { cache: 'no-store' });
+      if (!r.ok && CUR_ID === 'NATGAS') r = await fetch('data/latest.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error(r.status === 404 ? 'not built yet' : 'HTTP ' + r.status);
       DATA = await r.json();
       lastFetch = Date.now();
       render();
     } catch (e) {
-      $('status').textContent = 'Could not refresh (' + e.message + '), retrying in a minute';
+      DATA = null;
+      const s = INDEX?.markets.find((m) => m.id === CUR_ID);
+      setHeader(s || { id: CUR_ID, name: CUR_ID });
+      $('status').textContent = '';
+      const b = $('banner'); b.className = 'banner show';
+      b.textContent = s?.error ? `${s.name}: ${s.error}` : `${s?.name || CUR_ID}: ${e.message === 'not built yet' ? 'data is being prepared, it appears within a few minutes of adding a market' : 'could not load (' + e.message + ')'}.`;
     }
+  }
+  function select(id) { if (id === CUR_ID) return; CUR_ID = id; setHash(); drawWatchlist(); loadMarket(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+
+  function setHeader(meta) {
+    const isNG = meta.id === 'NATGAS';
+    $('m-name').textContent = isNG ? 'NATGAS' : meta.name;
+    $('m-pill').textContent = isNG ? 'Henry Hub · NYMEX front month' : [meta.symbol, meta.exchange, catName(meta.category)].filter(Boolean).join(' · ');
+    document.title = `${isNG ? 'NATGAS' : meta.symbol} · live 1 / 3 / 5-day forecast`;
+    const rm = $('remove');
+    if (isNG) rm.hidden = true;
+    else { rm.hidden = false; rm.href = issueUrl(`watchlist: remove ${meta.id}`, { action: 'remove', id: meta.id }); rm.title = `Remove ${meta.name} from the watchlist (opens GitHub)`; }
+  }
+  const catName = (c) => ({ energy: 'Energy', metal: 'Metal', fx: 'Forex', crypto: 'Crypto', equity: 'Stock', etf: 'ETF', index: 'Index' }[c] || '');
+
+  function drawWatchlist() {
+    const nav = $('wl'); nav.replaceChildren();
+    for (const m of INDEX.markets) {
+      const b = el('button', { class: 'wl-card', type: 'button', 'aria-current': String(m.id === CUR_ID) });
+      const biasCol = m.score > 0.15 ? 'var(--up)' : m.score < -0.15 ? 'var(--down)' : 'var(--muted)';
+      const dot = el('span', { class: 'b' }); dot.style.background = biasCol;
+      const name = el('div', { class: 'n' }); name.append(dot, document.createTextNode(m.id === 'NATGAS' ? 'NATGAS' : m.name));
+      const dec = m.decimals ?? 3;
+      b.append(name, el('div', { class: 's' }, m.id === 'NATGAS' ? 'Henry Hub' : m.symbol),
+        el('div', { class: 'p' }, m.last != null ? fmtNum(m.last, dec) : (m.error ? 'No data' : '…')),
+        el('div', { class: 'c ' + cls(m.changePct) }, m.changePct != null ? sp(m.changePct) + (m.h?.[H] ? ` · ${H}d ${Math.round(100 * m.h[H].pUp)}% up` : '') : (m.error ? 'see details' : 'preparing')));
+      b.addEventListener('click', () => select(m.id));
+      nav.append(b);
+    }
+    const add = el('button', { class: 'wl-add', type: 'button' }, '+ Add market');
+    add.addEventListener('click', openSearch);
+    nav.append(add);
+  }
+
+  // ---------- search ----------
+  let COMMODITIES = null, FILTER = '', st;
+  function openSearch() { $('search').classList.add('open'); $('q').focus(); if (!$('results').children.length) runSearch(); }
+  $('search-close').addEventListener('click', () => $('search').classList.remove('open'));
+  $('q').addEventListener('input', () => { clearTimeout(st); st = setTimeout(runSearch, 300); });
+  document.querySelectorAll('#filters button').forEach((b) => b.addEventListener('click', () => {
+    FILTER = b.dataset.f; document.querySelectorAll('#filters button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); runSearch();
+  }));
+  function catOf(r) {
+    const t = (r.instrument_type || r.category || '').toLowerCase();
+    if (r._commodity) return /metal/.test(t) ? 'metal' : 'energy';
+    if (/physical currency/.test(t)) return 'fx';
+    if (/digital currency/.test(t)) return 'crypto';
+    if (/index/.test(t)) return 'index';
+    if (/etf/.test(t)) return 'etf';
+    return 'equity';
+  }
+  async function runSearch() {
+    const q = $('q').value.trim();
+    const ul = $('results');
+    let rows = [];
+    try {
+      if (!COMMODITIES) COMMODITIES = (await fetch('https://api.twelvedata.com/commodities').then((r) => r.json())).data || [];
+      const ql = q.toLowerCase();
+      const com = COMMODITIES.filter((c) => !q || c.symbol.toLowerCase().includes(ql) || c.name.toLowerCase().includes(ql) || (c.category || '').toLowerCase().includes(ql))
+        .map((c) => ({ symbol: c.symbol, instrument_name: c.name, instrument_type: c.category, exchange: '', _commodity: true }));
+      let api = [];
+      if (q.length >= 2) api = (await fetch(`https://api.twelvedata.com/symbol_search?symbol=${encodeURIComponent(q)}&outputsize=30`).then((r) => r.json())).data || [];
+      rows = [...com, ...api];
+    } catch (e) { ul.replaceChildren(el('li', {}, 'Search is unavailable right now (' + e.message + ').')); return; }
+    const want = (r) => { const c = catOf(r); return !FILTER || (FILTER === 'commodity' ? ['metal', 'energy'].includes(c) : FILTER === 'equity' ? ['equity', 'etf'].includes(c) : c === FILTER); };
+    const prefer = (r) => (r._commodity ? 0 : /physical currency|digital currency|index/i.test(r.instrument_type) ? 1 : /^(NASDAQ|NYSE|XETR|LSE|Euronext|BVB)$/i.test(r.exchange) ? 2 : 3);
+    rows = rows.filter(want).filter((r) => !/warrant|certificate|structured|bond/i.test(r.instrument_type || '')).sort((a, b) => prefer(a) - prefer(b)).slice(0, 25);
+    const have = new Set(INDEX.markets.map((m) => m.symbol + '|' + (m.exchange || '')));
+    ul.replaceChildren(...rows.map((r) => {
+      const cat = catOf(r);
+      const li = el('li');
+      const left = el('div');
+      left.append(el('div', { class: 'rn' }, `${r.instrument_name}`), el('div', { class: 'rm' }, [r.symbol, r.exchange, r.country, catName(cat)].filter(Boolean).join(' · ')));
+      const exch = ['equity', 'etf', 'index'].includes(cat) ? r.exchange : '';
+      const already = have.has(r.symbol + '|' + exch) || have.has(r.symbol + '|');
+      const full = INDEX.markets.filter((m) => m.id !== 'NATGAS').length >= (INDEX.maxMarkets || 8);
+      const btn = already ? el('span', { class: 'rm' }, 'On your list')
+        : el('a', { class: 'btn', target: '_blank', rel: 'noopener', href: issueUrl(`watchlist: add ${r.symbol}`, { action: 'add', symbol: r.symbol, name: r.instrument_name, exchange: exch, type: r.instrument_type || '', category: cat }), title: full ? 'Watchlist is full (8 markets): remove one first' : 'Opens a pre-filled request on GitHub' }, full ? 'List full' : 'Add');
+      li.append(left, btn); return li;
+    }));
+    if (!rows.length) ul.replaceChildren(el('li', {}, q ? 'No matches. Try the symbol (e.g. XAU/USD, EUR/USD, AAPL, BTC/USD).' : 'Type to search.'));
   }
 
   function setTabs() {
     document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-selected', String(+b.dataset.h === H)));
   }
   document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
-    H = +b.dataset.h; history.replaceState(null, '', '#' + H + 'd'); render();
+    H = +b.dataset.h; setHash(); drawWatchlist(); render();
   }));
-  window.addEventListener('hashchange', () => { const m = location.hash.match(/^#([135])d$/); if (m) { H = +m[1]; render(); } });
+  window.addEventListener('hashchange', () => { const ph = parseHash(); if (ph.h) H = ph.h; if (ph.id && ph.id !== CUR_ID) { CUR_ID = ph.id; drawWatchlist(); loadMarket(); } else render(); });
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 120); });
 
   function statusLine() {
@@ -237,14 +391,20 @@
       b.textContent = 'The price sources did not answer on the last server refresh (' + ago(DATA.generatedAt) + '). The page will fill in automatically once they do.';
       return;
     }
+    const meta = DATA.meta || { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy' };
+    const isNG = meta.id === 'NATGAS';
+    DEC = meta.decimals && !isNG ? meta.decimals : 3;
+    CUR = isNG || (meta.category !== 'fx' && /\/USD$/.test(meta.symbol || '')) || /^(NASDAQ|NYSE|NYSE ARCA|CBOE|AMEX|BATS)$/i.test(meta.exchange || '') ? '$' : '';
+    setHeader(meta);
     statusLine();
     const p = DATA.price, f = DATA.forecast, h = f.horizons[H];
+    const closeWord = isNG ? 'settlement' : 'close';
     $('price').textContent = usd(p.last);
     $('chg').className = 'chg ' + cls(p.change);
-    $('chg').textContent = p.change == null ? '' : `${p.change > 0 ? '+' : p.change < 0 ? '−' : ''}${Math.abs(p.change).toFixed(3)} (${sp(p.changePct)})`;
-    $('asof').textContent = `Last trade ${new Date(p.asOf).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })} · vs previous settlement ${usd(p.prevClose)} · ${p.source || ''}`;
+    $('chg').textContent = p.change == null ? '' : `${p.change > 0 ? '+' : p.change < 0 ? '−' : ''}${Math.abs(p.change).toFixed(DEC)} (${sp(p.changePct)})`;
+    $('asof').textContent = `Last trade ${new Date(p.asOf).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })} · vs previous ${closeWord} ${usd(p.prevClose)} · ${p.source || ''}`;
 
-    $('fc-title').textContent = `${H}-day forecast · settlement ${dayName(h.targetDate)}`;
+    $('fc-title').textContent = `${H}-day forecast · ${closeWord} ${dayName(h.targetDate)}`;
     const bc = f.score > 0.15 ? 'up' : f.score < -0.15 ? 'down' : 'flat';
     $('bias').textContent = f.bias; $('bias').className = 'bias ' + bc;
     $('fc-center').textContent = usd(h.center, 2);
@@ -283,9 +443,9 @@
     box.append(svg);
     // y ticks
     const step = niceStep((hi - lo) / 5);
-    const ticks = []; for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) ticks.push(+v.toFixed(4));
-    const probe = el('svg:text', { class: 'tick' }, '$' + hi.toFixed(2)); svg.append(probe);
-    const mL = probe.getComputedTextLength() + 10; probe.remove();
+    const ticks = []; for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) ticks.push(+v.toFixed(8));
+    const probe = el('svg:text', { class: 'tick' }, usd(hi, 2)); svg.append(probe);
+    const mL = probe.getComputedTextLength() + 14; probe.remove();
     const mR = 8, mT = 10, mB = 24;
     const plotW = W - mL - mR, fW = plotW * (W < 520 ? 0.3 : 0.24), hW = plotW - fW;
     // history and forecast get fixed shares of the width so the cone stays readable at every horizon
@@ -293,7 +453,7 @@
     const y = (v) => mT + (1 - (v - lo) / (hi - lo)) * (Ht - mT - mB);
     for (const t of ticks) {
       svg.append(el('svg:line', { x1: mL, x2: W - mR, y1: y(t), y2: y(t), class: 'grid' }));
-      svg.append(el('svg:text', { x: mL - 8, y: y(t), dy: '0.32em', 'text-anchor': 'end', class: 'tick' }, '$' + t.toFixed(2)));
+      svg.append(el('svg:text', { x: mL - 8, y: y(t), dy: '0.32em', 'text-anchor': 'end', class: 'tick' }, usd(t, 2)));
     }
     // cone
     const x0 = n - 1;
@@ -424,7 +584,7 @@
     const lp = pts.at(-1);
     s2.append(el('svg:circle', { cx: xs(lp[0]), cy: ys(lp[1]), r: 3.5, fill: col }));
     const lastY = ys(lp[1]);
-    s2.append(el('svg:text', { x: W - rPad + 6, y: Math.abs(lastY - (showPrev ? ys(prev) : -99)) < 13 ? lastY + (lastY < ys(prev) ? -8 : 8) : lastY, dy: '0.32em', class: 'tick', fill: col }, lp[1].toFixed(3)));
+    s2.append(el('svg:text', { x: W - rPad + 6, y: Math.abs(lastY - (showPrev ? ys(prev) : -99)) < 13 ? lastY + (lastY < ys(prev) ? -8 : 8) : lastY, dy: '0.32em', class: 'tick', fill: col }, usd(lp[1])));
     const fmtT = (t) => new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     s2.append(el('svg:text', { x: m, y: Ht - 2, class: 'tick' }, fmtT(t0)));
     s2.append(el('svg:text', { x: W - rPad, y: Ht - 2, 'text-anchor': 'end', class: 'tick' }, fmtT(t1)));
@@ -505,6 +665,7 @@
   setTabs();
   load();
   setInterval(load, 60 * 1000);
+  window.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); openSearch(); } });
   setInterval(statusLine, 15 * 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastFetch > 30000) load(); });
 })();

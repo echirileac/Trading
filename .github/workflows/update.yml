@@ -32,6 +32,7 @@ jobs:
         run: node scripts/update.mjs
         env:
           NEWS_EVERY_MIN: "15"
+          TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
           # SITE_URL: "https://your-custom-domain.example/"   # only if you use a custom domain
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

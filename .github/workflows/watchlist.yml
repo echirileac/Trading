@@ -1,0 +1,53 @@
+name: Watchlist change
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: watchlist
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: startsWith(github.event.issue.title, 'watchlist:')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE: ${{ github.event.issue.number }}
+    steps:
+      - name: Only the repository owner can change the watchlist
+        if: github.event.issue.user.login != github.repository_owner
+        run: |
+          gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --comment "Only the repository owner can change this watchlist."
+          exit 1
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - id: apply
+        name: Update watchlist.json
+        run: node scripts/watchlist.mjs
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+      - name: Commit, rebuild the site, close the issue
+        env:
+          MESSAGE: ${{ steps.apply.outputs.message }}
+          CHANGED: ${{ steps.apply.outputs.changed }}
+        run: |
+          if [ "$CHANGED" = "true" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add watchlist.json
+            git commit -m "Watchlist: $(echo "$MESSAGE" | head -c 120)"
+            git push
+            gh workflow run update.yml --repo "$GITHUB_REPOSITORY" --ref main
+          fi
+          gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --comment "$MESSAGE"

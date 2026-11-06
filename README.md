@@ -1,4 +1,4 @@
-# NATGAS live outlook
+# Market watch: live CFD outlooks
 
 A free, self-updating web page for Henry Hub natural gas (the NATGAS CFD's underlying): live front-month price, 1 / 3 / 5-day forecast ranges, the signals behind them, and the latest headlines from trusted outlets.
 
@@ -17,6 +17,13 @@ A free, self-updating web page for Henry Hub natural gas (the NATGAS CFD's under
 4. Go to **Actions**, open **Update NATGAS forecast**, click **Run workflow**. After ~1 minute the page is live at `https://echirileac.github.io/Trading/`.
 
 From then on it refreshes itself every ~5 minutes.
+
+## Watchlist: any market (added November 2026)
+
+- NATGAS is built in. Add up to 8 more markets (stocks, ETFs, indices, forex, crypto, metals, oil) from the page: **+ Add market** → search → **Add**. That opens a pre-filled GitHub issue; press **Create** and the `Watchlist change` workflow updates `watchlist.json`, rebuilds the site and closes the issue (about 2 minutes). Only the repository owner's requests are applied.
+- Remove a market with the **Remove** button next to its name (same GitHub flow), or edit `watchlist.json` directly.
+- Prices for these markets come from **Twelve Data**. Add your free API key once: GitHub repo → Settings → Secrets and variables → Actions → **New repository secret**, name `TWELVE_DATA_KEY`.
+- Free plan limits (800 requests/day, 8/minute) mean live quotes refresh every 10–15 minutes depending on how many markets you watch; daily history is fetched once a day. Some indices need a paid Twelve Data plan.
 
 ## Good to know
 
