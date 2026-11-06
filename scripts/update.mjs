@@ -213,9 +213,13 @@ const QUERIES = [
 ];
 const RELEVANT = /(natural gas|nat-?gas|henry hub|\blng\b|feedgas|natgas|nymex|\bttf\b|european gas|storage (build|injection|draw|withdrawal)|\bgas (futures|market|storage|output|production|demand|exports?|supply|rig))/i;
 
+const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"', mdash: '-', ndash: '-', hellip: '...', eacute: 'e', ntilde: 'n', deg: ' deg' };
 function decodeEntities(s) {
-  return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/<[^>]+>/g, '').trim();
+  return String(s).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, ' ')
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n))
+    .replace(/&([a-z]+);/gi, (m, n) => NAMED[n.toLowerCase()] ?? m)
+    .replace(/\s+/g, ' ').trim();
 }
 function parseRss(xml) {
   const items = [];
@@ -223,7 +227,7 @@ function parseRss(xml) {
     const it = m[0];
     const tag = (n) => { const r = it.match(new RegExp(`<${n}\\b[^>]*>([\\s\\S]*?)<\\/${n}>`)); return r ? decodeEntities(r[1]) : ''; };
     const srcUrl = (it.match(/<source[^>]*url="([^"]+)"/) || [])[1] || '';
-    items.push({ title: tag('title'), link: tag('link'), pubDate: tag('pubDate'), source: tag('source'), sourceUrl: srcUrl });
+    items.push({ title: tag('title'), link: tag('link'), pubDate: tag('pubDate'), source: tag('source'), sourceUrl: srcUrl, description: tag('description') });
   }
   return items;
 }
@@ -268,11 +272,112 @@ function scoreHeadline(title) {
   return { score: clamp(s, -2.5, 2.5), hits };
 }
 
+// Publisher feeds with direct article links (no Google redirect to resolve)
+const DIRECT_FEEDS = [
+  { name: 'EIA Today in Energy', url: 'https://www.eia.gov/rss/todayinenergy.xml', source: 'EIA' },
+  { name: 'Nasdaq commodities (Barchart, RTTNews)', url: 'https://www.nasdaq.com/feed/rssoutbound?category=Commodities', source: 'Nasdaq' },
+  { name: 'Rigzone', url: 'https://www.rigzone.com/news/rss/rigzone_latest.aspx', source: 'Rigzone' },
+  { name: 'OilPrice.com', url: 'https://oilprice.com/rss/main', source: 'OilPrice.com' },
+  { name: 'Natural Gas Intelligence', url: 'https://naturalgasintel.com/feed/', source: 'Natural Gas Intelligence' }
+];
+const MAX_NEW_ARTICLES = 30;   // per refresh; earlier results are cached by link
+const READ_CONCURRENCY = 5;
+
+// Google News RSS links point to news.google.com; resolve them to the publisher's URL.
+async function resolveGoogleNews(link) {
+  const m = String(link).match(/news\.google\.com\/(?:rss\/)?articles\/([^?#]+)/);
+  if (!m) return link;
+  const id = m[1];
+  const page = await get(`https://news.google.com/rss/articles/${id}?oc=5&hl=en-US&gl=US&ceid=US:en`, { timeout: 10000, retries: 0 });
+  const sig = (page.match(/data-n-a-sg="([^"]+)"/) || [])[1];
+  const ts = (page.match(/data-n-a-ts="([^"]+)"/) || [])[1];
+  if (!sig || !ts) {
+    const direct = (page.match(/data-n-au="([^"]+)"/) || [])[1];
+    if (direct) return direct;
+    throw new Error('google redirect: no signature');
+  }
+  const inner = JSON.stringify(['garturlreq', [['X', 'X', ['X', 'X'], null, null, 1, 1, 'US:en', null, 1, null, null, null, null, null, 0, 1], 'X', 'X', 1, [1, 1, 1], 1, 1, null, 0, 0, null, 0], id, Number(ts), sig]);
+  const body = 'f.req=' + encodeURIComponent(JSON.stringify([[['Fbv4je', inner, null, 'generic']]]));
+  const res = await fetch('https://news.google.com/_/DotsSplashUi/data/batchexecute', {
+    method: 'POST', body, signal: AbortSignal.timeout(10000),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'User-Agent': UA, Referer: 'https://news.google.com/' }
+  });
+  const txt = await res.text();
+  for (const line of txt.split('\n')) {
+    if (!line.startsWith('[[')) continue;
+    try {
+      const arr = JSON.parse(line);
+      const row = arr.find((r) => r[0] === 'wrb.fr' && typeof r[2] === 'string');
+      const url = row && JSON.parse(row[2])[1];
+      if (typeof url === 'string' && /^https?:\/\//.test(url)) return url;
+    } catch { /* try next line */ }
+  }
+  throw new Error(`google redirect: HTTP ${res.status}, no url`);
+}
+
+// Pull the article body out of a publisher page: JSON-LD articleBody first, else <article>/<p> text.
+function extractArticle(html) {
+  let best = '';
+  for (const m of html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      const walk = (o) => {
+        if (!o || typeof o !== 'object') return;
+        if (Array.isArray(o)) return o.forEach(walk);
+        if (typeof o.articleBody === 'string' && o.articleBody.length > best.length) best = o.articleBody;
+        Object.values(o).forEach((v) => typeof v === 'object' && walk(v));
+      };
+      walk(JSON.parse(m[1].trim()));
+    } catch { /* bad json */ }
+  }
+  best = decodeEntities(best);
+  const clean = html.replace(/<(script|style|noscript|svg|nav|footer|header|aside|form)\b[\s\S]*?<\/\1>/gi, ' ');
+  const scopes = [...clean.matchAll(/<article\b[\s\S]*?<\/article>/gi)].map((m) => m[0]);
+  const paras = (src) => [...src.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)].map((m) => decodeEntities(m[1]))
+    .filter((t) => t.length > 60 && !/(cookie|subscribe|sign up|newsletter|all rights reserved|enable javascript|log ?in to|create an account|advertis)/i.test(t));
+  let fromHtml = paras(scopes.sort((a, b) => b.length - a.length)[0] || '').join('\n');
+  if (fromHtml.length < 400) fromHtml = paras(clean).join('\n');
+  const text = best.length > fromHtml.length * 0.8 ? best : fromHtml;
+  const paywall = /(subscribe to (continue|read)|to continue reading|unlock this article|subscriber[- ]only|premium content|keep reading)/i.test(html);
+  return { text: text.slice(0, 30000), paywall };
+}
+
+const GAS_SENTENCE = /(natural gas|nat-?gas|henry hub|\blng\b|feedgas|storage|inventor|injection|withdrawal|heating|weather|temperature|forecast|production|output|futures|nymex|prices?|demand|supply|freeport|el ni)/i;
+function scoreBody(text) {
+  const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/).filter((x) => x.length > 30 && GAS_SENTENCE.test(x));
+  let sum = 0, hitSentences = 0; const hits = new Map();
+  for (const sen of sentences) {
+    const r = scoreHeadline(sen);
+    if (r.hits.length) { sum += r.score; hitSentences++; r.hits.forEach((h) => hits.set(h, (hits.get(h) || 0) + 1)); }
+  }
+  const score = clamp(sum / Math.max(4, Math.sqrt(sentences.length) * 2), -2.5, 2.5);
+  const top = [...hits.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([h]) => h);
+  return { score, sentences: sentences.length, hitSentences, top };
+}
+
+async function readArticle(item) {
+  let url = item.link;
+  try { url = await resolveGoogleNews(item.link); } catch (e) { return { status: 'headline', reason: e.message }; }
+  let html;
+  try { html = await get(url, { timeout: 12000, retries: 0 }); } catch (e) { return { status: 'headline', url, reason: e.message }; }
+  const { text, paywall } = extractArticle(html);
+  const words = text ? text.split(/\s+/).length : 0;
+  if (words < 60) return { status: 'headline', url, reason: paywall ? 'paywall' : 'no article text found', words };
+  const body = scoreBody(text);
+  return { status: paywall || words < 250 ? 'partial' : 'full', url, words, bodyScore: round(body.score, 2), sentences: body.sentences, signalSentences: body.hitSentences, keyPhrases: body.top };
+}
+
+async function pool(items, n, fn) {
+  const out = new Array(items.length); let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k]); } }));
+  return out;
+}
+
 async function loadNews(prev, now) {
   const status = [];
   const prevAt = prev?.news?.fetchedAt ? Date.parse(prev.news.fetchedAt) : 0;
   const minuteSlot = new Date(now).getUTCMinutes() % NEWS_EVERY_MIN < 5;
-  const due = !prev?.news?.items?.length || now - prevAt > (NEWS_EVERY_MIN - 1) * 60e3 || (minuteSlot && now - prevAt > 9 * 60e3);
+  const prevHasReads = (prev?.news?.items || []).some((x) => x.read);
+  const due = !prev?.news?.items?.length || !prevHasReads || now - prevAt > (NEWS_EVERY_MIN - 1) * 60e3 || (minuteSlot && now - prevAt > 9 * 60e3);
   if (!due) return { ...prev.news, reused: true, status: [{ name: 'News (reused, refreshes every ~15 min)', ok: true }] };
 
   const all = [];
@@ -281,19 +386,20 @@ async function loadNews(prev, now) {
     try { all.push(...parseRss(await get(url))); status.push({ name: `Google News: ${q}`, ok: true }); }
     catch (e) { status.push({ name: `Google News: ${q}`, ok: false, error: e.message }); }
   }
-  try {
-    const eia = parseRss(await get('https://www.eia.gov/rss/todayinenergy.xml')).map((x) => ({ ...x, source: x.source || 'EIA', sourceUrl: 'https://www.eia.gov' }));
-    all.push(...eia); status.push({ name: 'EIA Today in Energy RSS', ok: true });
-  } catch (e) { status.push({ name: 'EIA Today in Energy RSS', ok: false, error: e.message }); }
+  for (const f of DIRECT_FEEDS) {
+    try {
+      const got = parseRss(await get(f.url, { timeout: 12000, retries: 0 })).map((x) => ({ ...x, source: x.source || f.source, sourceUrl: f.url, direct: true }));
+      all.push(...got); status.push({ name: `${f.name} feed`, ok: true });
+    } catch (e) { status.push({ name: `${f.name} feed`, ok: false, error: e.message }); }
+  }
 
   const seen = new Set();
   const items = [];
   for (const it of all) {
-    // Google News titles end with " - Source"
-    let title = it.title; let source = it.source;
+    let title = decodeEntities(it.title); const source = it.source;
     const dash = title.lastIndexOf(' - ');
     if (dash > 20 && source && title.slice(dash + 3).trim().toLowerCase() === source.toLowerCase()) title = title.slice(0, dash);
-    if (!RELEVANT.test(title)) continue;
+    if (!RELEVANT.test(title) && !(it.direct && RELEVANT.test(it.description || '') && /gas|lng/i.test(title))) continue;
     if (!isTrusted(source, it.sourceUrl)) continue;
     const t = Date.parse(it.pubDate);
     if (!isFinite(t) || now - t > 7 * 864e5 || t - now > 36e5) continue;
@@ -301,11 +407,35 @@ async function loadNews(prev, now) {
     if (seen.has(key)) continue;
     seen.add(key);
     const sc = scoreHeadline(title);
-    items.push({ title, source, link: it.link, publishedAt: new Date(t).toISOString(), score: round(sc.score, 2), hits: sc.hits });
+    items.push({ title, source, link: it.link, publishedAt: new Date(t).toISOString(), headlineScore: round(sc.score, 2), hits: sc.hits, _key: key });
   }
   items.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
-  if (!items.length && prev?.news?.items?.length) return { ...prev.news, reused: true, status: [...status, { name: 'No fresh trusted headlines; kept previous', ok: false }] };
-  return { fetchedAt: new Date(now).toISOString(), items: items.slice(0, 60), reused: false, status };
+  const top = items.slice(0, 50);
+
+  // Read full articles: reuse earlier reads, read new ones (newest first)
+  const cache = new Map((prev?.news?.items || []).filter((x) => x.read).map((x) => [x.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 90), x.read]));
+  const toRead = [];
+  for (const it of top) {
+    const c = cache.get(it._key);
+    if (c && (c.status !== 'headline' || now - Date.parse(it.publishedAt) > 6 * 36e5)) it.read = c;
+    else if (toRead.length < MAX_NEW_ARTICLES) toRead.push(it);
+  }
+  if (OFFLINE) toRead.forEach((it) => { it.read = { status: 'headline', reason: 'offline test' }; });
+  else await pool(toRead, READ_CONCURRENCY, async (it) => { it.read = await readArticle(it); });
+  for (const it of top) {
+    delete it._key;
+    if (!it.read) it.read = { status: 'headline', reason: 'not read yet (queued for next refresh)' };
+    const body = it.read.status !== 'headline' && it.read.bodyScore != null;
+    // headline sets the angle; the article body carries most of the weight once read
+    it.score = round(body ? clamp(0.3 * it.headlineScore + 0.7 * it.read.bodyScore, -2.5, 2.5) : it.headlineScore, 2);
+  }
+  const full = top.filter((x) => x.read.status === 'full').length, part = top.filter((x) => x.read.status === 'partial').length;
+  status.push({ name: `Article reader: ${full} full + ${part} partial of ${top.length} articles`, ok: full + part > 0 || !top.length, error: full + part ? '' : 'no article bodies could be read' });
+  const failReasons = {};
+  for (const x of top) if (x.read.status === 'headline' && x.read.reason) failReasons[x.read.reason.slice(0, 60)] = (failReasons[x.read.reason.slice(0, 60)] || 0) + 1;
+  if (Object.keys(failReasons).length) console.log(`::notice title=Articles not read::${Object.entries(failReasons).map(([k, v]) => `${v}x ${k}`).join(' | ')}`);
+  if (!top.length && prev?.news?.items?.length) return { ...prev.news, reused: true, status: [...status, { name: 'No fresh trusted headlines; kept previous', ok: false }] };
+  return { fetchedAt: new Date(now).toISOString(), items: top, reused: false, status };
 }
 
 // ---------- signals + forecast ----------
@@ -346,7 +476,7 @@ function buildForecast(px, news, now) {
   const momSig = Math.tanh(ret5 / (sigma * Math.sqrt(5)));
   const rsiSig = r == null ? 0 : r < 30 ? clamp((30 - r) / 15, 0, 1) : r > 70 ? -clamp((r - 70) / 15, 0, 1) : 0;
   const signals = [
-    { id: 'news', name: 'News sentiment', weight: 0.45, value: newsSig, detail: `${recent.length} trusted headlines in the last 72h, recency-weighted score ${newsRaw.toFixed(2)}` },
+    { id: 'news', name: 'News sentiment', weight: 0.45, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && n.read.status !== 'headline').length} read in full or in part), recency-weighted score ${newsRaw.toFixed(2)}` },
     { id: 'trend', name: 'Trend vs 20-day average', weight: 0.2, value: trendSig, detail: s20 ? `Price ${(100 * (last / s20 - 1)).toFixed(1)}% vs 20-day average $${s20.toFixed(3)}` : 'Not enough history' },
     { id: 'momentum', name: '5-day momentum', weight: 0.15, value: momSig, detail: `${(100 * (Math.exp(ret5) - 1)).toFixed(1)}% over 5 sessions` },
     { id: 'rsi', name: 'Overbought / oversold (RSI 14)', weight: 0.2, value: rsiSig, detail: r == null ? 'Not enough history' : `RSI ${r.toFixed(0)} (below 30 oversold, above 70 overbought)` }

@@ -73,6 +73,9 @@
   .news a { text-decoration: none; font-size: 14px; line-height: 1.4; }
   .news a:hover { text-decoration: underline; }
   .meta { font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .rd { font-size: 11px; color: var(--muted); }
+  .rd-full { color: var(--accent); }
+  .kp { font-size: 12px; color: var(--muted); }
   .chip { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; border: 1px solid currentColor; }
   .sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
   .sources li::before { content: "●"; margin-right: 6px; color: var(--up); }
@@ -125,7 +128,7 @@
   <div class="grid2">
     <section class="card">
       <h2>Latest session</h2>
-      <p class="note">5-minute prices; dashed line is the previous settlement.</p>
+      <p class="note" id="intra-note">Today's range, where price opened and where it is now versus the previous settlement.</p>
       <div class="spark" id="intra"></div>
     </section>
     <section class="card">
@@ -149,7 +152,7 @@
   </div>
 
   <section class="card">
-    <h2>Latest trusted headlines</h2>
+    <h2>Latest trusted news</h2>
     <p class="note" id="news-note"></p>
     <ul class="news" id="news"></ul>
   </section>
@@ -159,9 +162,9 @@
     <p id="method"></p>
     <ul>
       <li>Prices: NYMEX Henry Hub front-month futures (Yahoo Finance NG=F, with CNBC and Stooq as fallbacks), refreshed about every 5 minutes.</li>
-      <li>News: headlines from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence and others), refreshed about every 15 minutes. Each headline is scored with a natural-gas keyword list (weather, storage, production, LNG, geopolitics, price action) and weighted by recency.</li>
+      <li>News: stories from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence, Rigzone and others), refreshed about every 15 minutes. The server opens each article and reads its full text where the publisher allows it; every gas-related sentence is scored with a natural-gas keyword list (weather, storage, production, LNG, geopolitics, price action). The article body counts for 70% of a story's score and the headline 30%; paywalled stories fall back to the headline. Stories are weighted by recency.</li>
       <li>The page itself checks for new data every minute.</li>
-      <li>It is a mechanical model. It does not read full articles, and it can be wrong when news is mixed, sarcastic or about something else.</li>
+      <li>It is a mechanical keyword model, not a human reading. It can be wrong when an article is mixed, quotes opposing views, or is mainly about something else.</li>
     </ul>
   </details>
   <p class="disc">Not financial advice. CFDs are leveraged and natural gas often moves 5–10% in a week. A CFD quote can differ slightly from the futures price, and the contract rolls to the next month a few days before expiry.</p>
@@ -353,39 +356,86 @@
   // ---------- intraday ----------
   function drawIntraday() {
     const box = $('intra'); box.replaceChildren();
-    const pts = DATA.price.intraday || [];
-    if (pts.length < 2) { box.append(el('p', { class: 'note' }, 'No intraday prices on the last refresh.')); return; }
-    const W = Math.max(280, box.clientWidth), Ht = 150, m = 6;
-    const ys = pts.map((p) => p[1]).concat(DATA.price.prevClose ? [DATA.price.prevClose] : []);
-    let lo = Math.min(...ys), hi = Math.max(...ys); const pad = (hi - lo) * 0.1 || 0.01; lo -= pad; hi += pad;
-    const t0 = pts[0][0], t1 = pts.at(-1)[0];
-    const x = (t) => m + ((t - t0) / Math.max(1, t1 - t0)) * (W - 2 * m - 48);
-    const y = (v) => m + (1 - (v - lo) / (hi - lo)) * (Ht - 2 * m - 14);
-    const svg = el('svg:svg', { viewBox: `0 0 ${W} ${Ht}`, width: '100%' }); box.append(svg);
-    const up = pts.at(-1)[1] >= (DATA.price.prevClose ?? pts[0][1]);
+    const p = DATA.price;
+    const bar = (p.daily || []).at(-1) || {};
+    const last = p.last, prev = p.prevClose;
+    const lo = Math.min(...[bar.l, last, prev].filter((v) => v != null && isFinite(v)));
+    const hi = Math.max(...[bar.h, last, prev].filter((v) => v != null && isFinite(v)));
+    const W = Math.max(280, box.clientWidth);
+    const up = prev == null || last >= prev;
     const col = up ? 'var(--up)' : 'var(--down)';
-    if (DATA.price.prevClose) {
-      svg.append(el('svg:line', { x1: m, x2: W - 48, y1: y(DATA.price.prevClose), y2: y(DATA.price.prevClose), stroke: '#ffffff55', 'stroke-dasharray': '3 3' }));
-      svg.append(el('svg:text', { x: W - 44, y: y(DATA.price.prevClose), dy: '0.32em', class: 'tick' }, usd(DATA.price.prevClose, 2)));
+
+    // 1) Day range bar: low ... high, with open, previous settlement and live price marked
+    const H1 = 92, padX = 14, y0 = 40;
+    const x = (v) => padX + ((v - lo) / Math.max(1e-6, hi - lo)) * (W - 2 * padX);
+    const svg = el('svg:svg', { viewBox: `0 0 ${W} ${H1}`, width: '100%' }); box.append(svg);
+    svg.append(el('svg:rect', { x: padX, y: y0 - 4, width: W - 2 * padX, height: 8, rx: 4, fill: '#ffffff14' }));
+    if (bar.l != null && bar.h != null) svg.append(el('svg:rect', { x: x(bar.l), y: y0 - 4, width: Math.max(2, x(bar.h) - x(bar.l)), height: 8, rx: 4, fill: '#ffffff30' }));
+    if (prev != null) {
+      svg.append(el('svg:rect', { x: Math.min(x(prev), x(last)), y: y0 - 4, width: Math.abs(x(last) - x(prev)), height: 8, fill: col, 'fill-opacity': '0.55' }));
+      svg.append(el('svg:line', { x1: x(prev), x2: x(prev), y1: y0 - 14, y2: y0 + 14, stroke: '#ffffffaa', 'stroke-dasharray': '3 2' }));
     }
-    svg.append(el('svg:path', { d: 'M' + pts.map((p) => `${x(p[0])},${y(p[1])}`).join('L'), fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    if (bar.o != null) svg.append(el('svg:line', { x1: x(bar.o), x2: x(bar.o), y1: y0 - 9, y2: y0 + 9, stroke: '#ffffff80', 'stroke-width': 2 }));
+    svg.append(el('svg:circle', { cx: x(last), cy: y0, r: 7, fill: col, stroke: '#121214', 'stroke-width': 2 }));
+    // labels above (live, prev) and below (low, high, open) with collision avoidance
+    const placeRow = (items, y, anchorEdges) => {
+      const placed = [];
+      for (const it of items) {
+        const t = el('svg:text', { x: x(it.v), y, 'text-anchor': 'middle', class: 'tick', fill: it.fill || null, 'font-weight': it.bold ? '700' : null }, it.text);
+        svg.append(t);
+        let bb = t.getBBox();
+        if (bb.x < 0) { t.setAttribute('x', bb.width / 2 + 1); bb = t.getBBox(); }
+        if (bb.x + bb.width > W) { t.setAttribute('x', W - bb.width / 2 - 1); bb = t.getBBox(); }
+        if (placed.some((q) => !(bb.x + bb.width + 6 < q.x || q.x + q.width + 6 < bb.x))) { t.remove(); continue; }
+        placed.push(bb);
+      }
+    };
+    placeRow([
+      { v: last, text: 'Now ' + usd(last), fill: col, bold: true },
+      ...(prev != null ? [{ v: prev, text: 'Prev ' + usd(prev, 2) }] : [])
+    ], y0 - 20);
+    placeRow([
+      ...(bar.l != null ? [{ v: bar.l, text: 'Low ' + usd(bar.l) }] : []),
+      ...(bar.h != null ? [{ v: bar.h, text: 'High ' + usd(bar.h) }] : []),
+      ...(bar.o != null ? [{ v: bar.o, text: 'Open ' + usd(bar.o) }] : [])
+    ], y0 + 30);
+
+    // 2) Intraday line, only once enough samples exist
+    const pts = (p.intraday || []).filter((q) => q && isFinite(q[1]));
+    const span = pts.length > 1 ? pts.at(-1)[0] - pts[0][0] : 0;
+    if (pts.length < 6 || span < 30 * 60e3) {
+      box.append(el('p', { class: 'note', style: 'margin:8px 0 0' }, 'The intraday line appears once the server has collected about 30 minutes of prices (one point every ~5 minutes while the market is open).'));
+      return;
+    }
+    const Ht = 140, m = 6, rPad = 56;
+    let a = Math.min(...pts.map((q) => q[1])), b = Math.max(...pts.map((q) => q[1]));
+    const showPrev = prev != null && prev >= a - (b - a) * 0.6 && prev <= b + (b - a) * 0.6;
+    if (showPrev) { a = Math.min(a, prev); b = Math.max(b, prev); }
+    const pad = (b - a) * 0.12 || 0.01; a -= pad; b += pad;
+    const t0 = pts[0][0], t1 = pts.at(-1)[0];
+    const xs = (t) => m + ((t - t0) / Math.max(1, t1 - t0)) * (W - m - rPad);
+    const ys = (v) => m + (1 - (v - a) / (b - a)) * (Ht - 2 * m - 16);
+    const s2 = el('svg:svg', { viewBox: `0 0 ${W} ${Ht}`, width: '100%', style: 'margin-top:8px' }); box.append(s2);
+    if (showPrev) {
+      s2.append(el('svg:line', { x1: m, x2: W - rPad, y1: ys(prev), y2: ys(prev), stroke: '#ffffff55', 'stroke-dasharray': '3 3' }));
+      s2.append(el('svg:text', { x: W - rPad + 6, y: ys(prev), dy: '0.32em', class: 'tick' }, 'Prev'));
+    }
+    s2.append(el('svg:path', { d: 'M' + pts.map((q) => `${xs(q[0])},${ys(q[1])}`).join('L'), fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
     const lp = pts.at(-1);
-    svg.append(el('svg:circle', { cx: x(lp[0]), cy: y(lp[1]), r: 3.5, fill: col }));
+    s2.append(el('svg:circle', { cx: xs(lp[0]), cy: ys(lp[1]), r: 3.5, fill: col }));
+    const lastY = ys(lp[1]);
+    s2.append(el('svg:text', { x: W - rPad + 6, y: Math.abs(lastY - (showPrev ? ys(prev) : -99)) < 13 ? lastY + (lastY < ys(prev) ? -8 : 8) : lastY, dy: '0.32em', class: 'tick', fill: col }, lp[1].toFixed(3)));
     const fmtT = (t) => new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    svg.append(el('svg:text', { x: m, y: Ht - 2, class: 'tick' }, fmtT(t0)));
-    svg.append(el('svg:text', { x: W - 48, y: Ht - 2, 'text-anchor': 'end', class: 'tick' }, fmtT(t1)));
-    const hiP = pts.reduce((a, b) => (b[1] > a[1] ? b : a)), loP = pts.reduce((a, b) => (b[1] < a[1] ? b : a));
-    const pcY = DATA.price.prevClose ? y(DATA.price.prevClose) : -99;
-    if (Math.abs(y(hiP[1]) - pcY) > 13) svg.append(el('svg:text', { x: W - 44, y: y(hiP[1]), dy: '0.32em', class: 'tick' }, 'H ' + hiP[1].toFixed(3)));
-    if (Math.abs(y(loP[1]) - pcY) > 13) svg.append(el('svg:text', { x: W - 44, y: y(loP[1]), dy: '0.32em', class: 'tick' }, 'L ' + loP[1].toFixed(3)));
+    s2.append(el('svg:text', { x: m, y: Ht - 2, class: 'tick' }, fmtT(t0)));
+    s2.append(el('svg:text', { x: W - rPad, y: Ht - 2, 'text-anchor': 'end', class: 'tick' }, fmtT(t1)));
     const tip = el('div', { class: 'tip' }); tip.hidden = true; box.append(tip);
-    svg.addEventListener('pointermove', (ev) => {
-      const r = svg.getBoundingClientRect(); const px = (ev.clientX - r.left) * (W / r.width);
-      const t = t0 + ((px - m) / (W - 2 * m - 48)) * (t1 - t0);
-      const pt = pts.reduce((a, b) => (Math.abs(b[0] - t) < Math.abs(a[0] - t) ? b : a));
+    s2.addEventListener('pointermove', (ev) => {
+      const r = s2.getBoundingClientRect(); const px = (ev.clientX - r.left) * (W / r.width);
+      const t = t0 + ((px - m) / (W - m - rPad)) * (t1 - t0);
+      const pt = pts.reduce((u, v) => (Math.abs(v[0] - t) < Math.abs(u[0] - t) ? v : u));
       showTip(box, tip, ev, [new Date(pt[0]).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }), usd(pt[1])]);
     });
-    svg.addEventListener('pointerleave', () => { tip.hidden = true; });
+    s2.addEventListener('pointerleave', () => { tip.hidden = true; });
   }
 
   // ---------- signals ----------
@@ -423,17 +473,24 @@
   // ---------- news ----------
   function drawNews() {
     const items = DATA.news.items || [];
+    const nFull = items.filter((n) => n.read && n.read.status === 'full').length;
+    const nPart = items.filter((n) => n.read && n.read.status === 'partial').length;
     $('news-note').textContent = items.length
-      ? `${items.length} headlines from trusted outlets, fetched ${ago(DATA.news.fetchedAt)}. Tags show how the model scored each headline for price direction.`
+      ? `${items.length} stories from trusted outlets, fetched ${ago(DATA.news.fetchedAt)}. ${nFull} read in full, ${nPart} partly (paywall or short), the rest scored on the headline only. Tags show how the model scored each story for price direction.`
       : 'No trusted headlines on the last refresh.';
     const ul = $('news'); ul.replaceChildren();
-    for (const n of items.slice(0, 25)) {
+    for (const n of items.slice(0, 30)) {
       const li = el('li');
-      const a = el('a', { href: n.link, target: '_blank', rel: 'noopener noreferrer' }, n.title);
+      const href = (n.read && n.read.url) || n.link;
+      const a = el('a', { href, target: '_blank', rel: 'noopener noreferrer' }, n.title);
       const meta = el('div', { class: 'meta' });
       const tag = n.score > 0.3 ? ['Bullish', 'up'] : n.score < -0.3 ? ['Bearish', 'down'] : ['Neutral', 'flat'];
-      meta.append(el('span', { class: 'chip ' + tag[1] }, tag[0]), el('span', {}, n.source), el('span', {}, ago(n.publishedAt)));
-      li.append(a, meta); ul.append(li);
+      const r = n.read || { status: 'headline' };
+      const readTxt = r.status === 'full' ? `Full article · ${r.words} words` : r.status === 'partial' ? `Partly read · ${r.words} words` : 'Headline only';
+      meta.append(el('span', { class: 'chip ' + tag[1] }, tag[0]), el('span', { class: 'rd rd-' + r.status, title: r.reason || '' }, readTxt), el('span', {}, n.source), el('span', {}, ago(n.publishedAt)));
+      li.append(a, meta);
+      if (r.keyPhrases && r.keyPhrases.length) li.append(el('div', { class: 'kp' }, 'Signals in the text: ' + r.keyPhrases.join(', ')));
+      ul.append(li);
     }
   }
 
