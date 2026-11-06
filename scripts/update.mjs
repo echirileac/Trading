@@ -393,7 +393,7 @@ async function loadNews(prev, now) {
   const status = [];
   const prevAt = prev?.news?.fetchedAt ? Date.parse(prev.news.fetchedAt) : 0;
   const minuteSlot = new Date(now).getUTCMinutes() % NEWS_EVERY_MIN < 5;
-  const prevHasReads = (prev?.news?.items || []).some((x) => x.read);
+  const prevHasReads = (prev?.news?.items || []).some((x) => x.read && x.read.v === READER_VERSION);
   const due = !prev?.news?.items?.length || !prevHasReads || now - prevAt > (NEWS_EVERY_MIN - 1) * 60e3 || (minuteSlot && now - prevAt > 9 * 60e3);
   if (!due) return { ...prev.news, reused: true, status: [{ name: 'News (reused, refreshes every ~15 min)', ok: true }] };
 
