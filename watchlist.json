@@ -1,4 +1,19 @@
 {
   "note": "Markets shown on the site. NATGAS is built in. Add or remove others from the site's search (it opens a GitHub issue) or by editing this file. Free Twelve Data plan: up to 8 markets.",
-  "markets": []
+  "markets": [
+    {
+      "id": "WTI-USD",
+      "symbol": "WTI/USD",
+      "name": "Crude Oil WTI Spot",
+      "category": "energy",
+      "exchange": "",
+      "type": "Energy Resource",
+      "provider": "twelvedata",
+      "newsQuery": "oil prices",
+      "keywords": [
+        "crude oil",
+        "WTI"
+      ]
+    }
+  ]
 }
