@@ -14,6 +14,7 @@ const OUT = join(ROOT, 'site', 'data', 'latest.json');
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36';
 const NEWS_EVERY_MIN = Number(process.env.NEWS_EVERY_MIN || 15);
 const OFFLINE = process.env.OFFLINE_FIXTURES; // folder with fixtures for local testing
+const FAILED = []; // every failed source, for diagnostics
 
 // ---------- helpers ----------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -24,7 +25,7 @@ async function get(url, { type = 'text', timeout = 15000, retries = 1 } = {}) {
     try {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), timeout);
-      const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: '*/*' }, signal: ctl.signal });
+      const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: type === 'json' ? 'application/json,text/plain,*/*' : '*/*', 'Accept-Language': 'en-US,en;q=0.9' }, signal: ctl.signal });
       clearTimeout(t);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return type === 'json' ? await res.json() : await res.text();
@@ -104,6 +105,14 @@ async function stooqDaily() {
     .filter((x) => isFinite(x.c));
   return rows.slice(-260);
 }
+async function fredDaily() {
+  // Henry Hub SPOT price, daily (EIA via FRED). Lags 1-3 days; used only if futures sources fail.
+  const csv = await get('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DHHNGSP');
+  const rows = csv.trim().split(/\r?\n/).slice(1).map((l) => { const [D, v] = l.split(','); return { t: Date.parse(D + 'T22:00:00Z'), c: parseFloat(v) }; })
+    .filter((x) => isFinite(x.c) && isFinite(x.t));
+  if (rows.length < 30) throw new Error('fred: too few rows');
+  return rows.slice(-260).map((r) => ({ ...r, o: r.c, h: r.c, l: r.c }));
+}
 async function cnbcLast() {
   const j = await get('https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=%40NG.1&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json', { type: 'json' });
   const q = j?.FormattedQuoteResult?.FormattedQuote?.[0];
@@ -130,16 +139,21 @@ async function loadPrices(prev) {
     try { daily = await stooqDaily(); source = 'Stooq (NG.F)'; status.push({ name: 'Stooq daily', ok: true }); }
     catch (e) { status.push({ name: 'Stooq daily', ok: false, error: e.message }); }
   }
+  if (!daily) {
+    try { daily = await fredDaily(); source = 'FRED Henry Hub spot (fallback, lags 1-3 days)'; status.push({ name: 'FRED Henry Hub spot', ok: true }); }
+    catch (e) { status.push({ name: 'FRED Henry Hub spot', ok: false, error: e.message }); }
+  }
   if (meta.regularMarketPrice) { last = meta.regularMarketPrice; prevClose = meta.chartPreviousClose ?? meta.previousClose ?? null; }
   if (intraday?.length) last = intraday.at(-1).c;
   if (last == null) {
     try { const c = await cnbcLast(); last = c.last; prevClose = c.prev; source = source || 'CNBC (@NG.1)'; status.push({ name: 'CNBC quote', ok: true }); }
     catch (e) { status.push({ name: 'CNBC quote', ok: false, error: e.message }); }
   }
+  if (last == null && daily?.length && /FRED/.test(source || '')) { last = daily.at(-1).c; prevClose = daily.at(-2)?.c ?? null; }
   let stale = false;
   if (!daily && prev?.price?.daily) { daily = prev.price.daily.map((r) => ({ t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c })); stale = true; }
   if (last == null && prev?.price?.last != null) { last = prev.price.last; prevClose = prev.price.prevClose; stale = true; }
-  if (!daily || last == null) throw new Error('No price data from any source');
+  if (!daily || last == null) { FAILED.push(...status.filter((x) => !x.ok)); throw new Error('No price data from any source'); }
   // previous close: last completed daily bar before today
   if (prevClose == null && daily.length > 1) prevClose = daily.at(-2).c;
   const lastTime = intraday?.length ? intraday.at(-1).t : (meta.regularMarketTime ? meta.regularMarketTime * 1000 : daily.at(-1).t);
@@ -348,7 +362,7 @@ async function main() {
   const now = Date.now();
   let prev = null;
   const base = siteUrl();
-  if (base && !OFFLINE) { try { prev = await get(`${base}data/latest.json?t=${now}`, { type: 'json', retries: 0 }); } catch { /* first run */ } }
+  if (base && !OFFLINE) { try { prev = await get(`${base}data/latest.json?t=${now}`, { type: 'json', retries: 0 }); if (prev?.price) { await mkdir(dirname(OUT), { recursive: true }); await writeFile(OUT, JSON.stringify(prev)); } else prev = null; } catch { /* first run */ } }
   if (!prev) { try { prev = JSON.parse(await readFile(OUT, 'utf8')); } catch { /* none */ } }
 
   const px = await loadPrices(prev);
@@ -379,7 +393,20 @@ async function main() {
   await mkdir(dirname(OUT), { recursive: true });
   await writeFile(OUT, JSON.stringify(out));
   console.log(`OK ${out.generatedAt} last=${out.price.last} bias=${fc.bias} score=${fc.score} news=${news.items?.length} reused=${!!news.reused}`);
-  for (const s of out.sources) if (!s.ok) console.warn(`WARN ${s.name}: ${s.error || ''}`);
+  for (const s of out.sources) if (!s.ok) console.log(`::warning title=${s.name}::${(s.error || 'no answer').replace(/\n/g, ' ')}`);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch(async (e) => {
+  // Never leave the site without data: publish an error state the page can show, and surface details as public annotations.
+  console.log(`::error title=Forecast build failed::${String(e?.message || e).replace(/\n/g, ' ')}`);
+  for (const s of FAILED) console.log(`::warning title=${s.name}::${(s.error || 'no answer').replace(/\n/g, ' ')}`);
+  try {
+    let prevOut = null;
+    try { prevOut = JSON.parse(await readFile(OUT, 'utf8')); } catch { /* none */ }
+    if (!prevOut?.price) {
+      await mkdir(dirname(OUT), { recursive: true });
+      await writeFile(OUT, JSON.stringify({ generatedAt: new Date().toISOString(), error: String(e?.message || e), sources: FAILED }));
+    }
+  } catch { /* ignore */ }
+  process.exit(0);
+});

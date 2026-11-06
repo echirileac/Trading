@@ -228,6 +228,12 @@
   function render() {
     setTabs();
     if (!DATA) return;
+    if (!DATA.price) {
+      $('status').textContent = 'Waiting for price data';
+      const b = $('banner'); b.className = 'banner show';
+      b.textContent = 'The price sources did not answer on the last server refresh (' + ago(DATA.generatedAt) + '). The page will fill in automatically once they do.';
+      return;
+    }
     statusLine();
     const p = DATA.price, f = DATA.forecast, h = f.horizons[H];
     $('price').textContent = usd(p.last);
