@@ -314,6 +314,24 @@
 
   // ---------- search ----------
   let COMMODITIES = null, FILTER = '', st;
+  // Common CFD names -> the market most people mean (shown first)
+  const ALIASES = [
+    [/^(gold|xau)/i, { symbol: 'XAU/USD', instrument_name: 'Gold Spot (US dollar)', instrument_type: 'Precious Metal', _commodity: true }],
+    [/^(silver|xag)/i, { symbol: 'XAG/USD', instrument_name: 'Silver Spot (US dollar)', instrument_type: 'Precious Metal', _commodity: true }],
+    [/^(platinum|xpt)/i, { symbol: 'XPT/USD', instrument_name: 'Platinum Spot (US dollar)', instrument_type: 'Precious Metal', _commodity: true }],
+    [/^(palladium|xpd)/i, { symbol: 'XPD/USD', instrument_name: 'Palladium Spot (US dollar)', instrument_type: 'Precious Metal', _commodity: true }],
+    [/^(copper)/i, { symbol: 'HG1', instrument_name: 'Copper Spot', instrument_type: 'Industrial Metal', _commodity: true }],
+    [/^(oil|crude|wti|us ?oil|usoil)/i, { symbol: 'WTI/USD', instrument_name: 'Crude Oil WTI Spot', instrument_type: 'Energy Resource', _commodity: true }],
+    [/^(bitcoin|btc)/i, { symbol: 'BTC/USD', instrument_name: 'Bitcoin / US Dollar', instrument_type: 'Digital Currency', exchange: '' }],
+    [/^(ethereum|eth)/i, { symbol: 'ETH/USD', instrument_name: 'Ethereum / US Dollar', instrument_type: 'Digital Currency', exchange: '' }],
+    [/^(solana|sol)/i, { symbol: 'SOL/USD', instrument_name: 'Solana / US Dollar', instrument_type: 'Digital Currency', exchange: '' }],
+    [/^(dax|de ?40|ger ?40|germany ?40)/i, { symbol: 'GDAXI', instrument_name: 'DAX index (Germany 40)', instrument_type: 'Index', exchange: 'XETR' }],
+    [/^(s&p|sp ?500|spx|us ?500)/i, { symbol: 'SPX', instrument_name: 'S&P 500 index (US 500)', instrument_type: 'Index', exchange: 'NYSE' }],
+    [/^(nasdaq|ndx|us ?tech|us ?100)/i, { symbol: 'NDX', instrument_name: 'Nasdaq 100 index (US Tech 100)', instrument_type: 'Index', exchange: 'NASDAQ' }],
+    [/^(dow|djia|dji|us ?30)/i, { symbol: 'DJI', instrument_name: 'Dow Jones Industrial Average (US 30)', instrument_type: 'Index', exchange: 'NYSE' }],
+    [/^(ftse|uk ?100)/i, { symbol: 'FTSE', instrument_name: 'FTSE 100 index (UK 100)', instrument_type: 'Index', exchange: 'LSE' }],
+    [/^(nikkei|jp ?225|n225)/i, { symbol: 'N225', instrument_name: 'Nikkei 225 index (Japan 225)', instrument_type: 'Index', exchange: 'JPX' }]
+  ];
   function openSearch() { $('search').classList.add('open'); $('q').focus(); if (!$('results').children.length) runSearch(); }
   $('search-close').addEventListener('click', () => $('search').classList.remove('open'));
   $('q').addEventListener('input', () => { clearTimeout(st); st = setTimeout(runSearch, 300); });
@@ -340,11 +358,12 @@
         .map((c) => ({ symbol: c.symbol, instrument_name: c.name, instrument_type: c.category, exchange: '', _commodity: true }));
       let api = [];
       if (q.length >= 2) api = (await fetch(`https://api.twelvedata.com/symbol_search?symbol=${encodeURIComponent(q)}&outputsize=30`).then((r) => r.json())).data || [];
-      rows = [...com, ...api];
+      const al = q ? ALIASES.filter(([re]) => re.test(q)).map(([, r]) => ({ ...r, exchange: r.exchange || '', _alias: true })) : [];
+      rows = [...al, ...com, ...api].filter((r, i, arr) => arr.findIndex((x) => x.symbol === r.symbol && (x.exchange || '') === (r.exchange || '')) === i);
     } catch (e) { ul.replaceChildren(el('li', {}, 'Search is unavailable right now (' + e.message + ').')); return; }
     const want = (r) => { const c = catOf(r); return !FILTER || (FILTER === 'commodity' ? ['metal', 'energy'].includes(c) : FILTER === 'equity' ? ['equity', 'etf'].includes(c) : c === FILTER); };
     const Q = q.toUpperCase();
-    const prefer = (r) => (r.symbol.toUpperCase() === Q || r.symbol.toUpperCase().replace('/', '') === Q.replace('/', '') ? -3
+    const prefer = (r) => (r._alias ? -4 : r.symbol.toUpperCase() === Q && !/stock/i.test(r.instrument_type || '') || r.symbol.toUpperCase().replace('/', '') === Q.replace('/', '') ? -3
       : r._commodity && /\/USD$/.test(r.symbol) && !/gram/i.test(r.instrument_name) ? -2
       : /\/USD$/.test(r.symbol) && /physical currency|digital currency/i.test(r.instrument_type) ? -1
       : r._commodity ? 0 : /physical currency|digital currency|index/i.test(r.instrument_type) ? 1 : /^(NASDAQ|NYSE|XETR|LSE|Euronext|BVB)$/i.test(r.exchange) ? 2 : 3);
