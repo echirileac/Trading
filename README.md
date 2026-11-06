@@ -27,7 +27,8 @@ From then on it refreshes itself every ~5 minutes.
 
 ## Good to know
 
-- GitHub's scheduler can start runs several minutes late at busy times; the page shows how old its data is and warns if it's over 30 minutes.
+- Refresh timing: GitHub's own 5-minute schedule is unreliable, so the `Refresh ticker` workflow starts an update every 5 minutes. It runs ~5.5 hours, then starts a fresh copy of itself; every update also restarts it if it ever stops. To pause the site's updates, disable both `Refresh ticker` and `Update NATGAS forecast` on the Actions tab.
+- The page shows how old its data is and warns if it's over 30 minutes.
 - GitHub pauses scheduled workflows in a repo with no commits for 60 days. If that happens, click **Enable workflow** on the Actions tab (or push any small change).
 - The price feed (Yahoo Finance's public chart endpoint) is unofficial and free. If it stops answering, the script falls back to CNBC and Stooq, then to the last good price, and the page flags it.
 - The trusted-outlet list and the keyword scoring live at the top of `scripts/update.mjs` (`TRUSTED`, `QUERIES`, `LEX`) — edit them to tune the model.

@@ -1,0 +1,39 @@
+name: Refresh ticker
+
+# Starts "Update NATGAS forecast" every 5 minutes. GitHub's own */5 schedule is
+# unreliable (often late or skipped), so this job keeps one runner ticking for
+# ~5.5 hours, then hands over to a fresh ticker run. Only one ticker runs at a time.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"   # backup: restarts the ticker if the chain ever stops
+  push:
+    branches: [main]
+    paths: [".github/workflows/ticker.yml"]
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: ticker
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Start an update every 5 minutes
+        run: |
+          end=$(( $(date +%s) + 330 * 60 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            gh workflow run update.yml --repo "$GITHUB_REPOSITORY" --ref main || echo "::warning::dispatch failed, retrying next tick"
+            sleep 300
+          done
+      - name: Hand over to the next ticker
+        if: always()
+        run: gh workflow run ticker.yml --repo "$GITHUB_REPOSITORY" --ref main
