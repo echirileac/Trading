@@ -122,76 +122,78 @@ async function yahoo(range, interval) {
   }
   throw err;
 }
-async function stooqDaily() {
-  const csv = await get('https://stooq.com/q/d/l/?s=ng.f&i=d');
-  const lines = csv.trim().split(/\r?\n/);
-  if (!/^Date,/i.test(lines[0])) throw new Error('stooq: unexpected format');
-  const rows = lines.slice(1).map((l) => { const [D, o, h, lo, c] = l.split(','); return { t: Date.parse(D + 'T22:00:00Z'), o: +o, h: +h, l: +lo, c: +c }; })
-    .filter((x) => isFinite(x.c));
-  return rows.slice(-260);
-}
-async function fredDaily() {
-  // Henry Hub SPOT price, daily (EIA via FRED). Lags 1-3 days; used only if futures sources fail.
-  const csv = await get('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DHHNGSP&cosd=' + new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10), { timeout: 45000 });
-  const rows = csv.trim().split(/\r?\n/).slice(1).map((l) => { const [D, v] = l.split(','); return { t: Date.parse(D + 'T22:00:00Z'), c: parseFloat(v) }; })
-    .filter((x) => isFinite(x.c) && isFinite(x.t));
-  if (rows.length < 30) throw new Error('fred: too few rows');
-  return rows.slice(-260).map((r) => ({ ...r, o: r.c, h: r.c, l: r.c }));
-}
 async function cnbcLast() {
   const j = await get('https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=%40NG.1&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json', { type: 'json' });
   const q = j?.FormattedQuoteResult?.FormattedQuote?.[0];
-  const last = parseFloat(String(q?.last).replace(/[^0-9.]/g, ''));
-  const prev = parseFloat(String(q?.previous_day_closing).replace(/[^0-9.]/g, ''));
-  if (!isFinite(last)) throw new Error('cnbc: no price');
-  return { last, prev: isFinite(prev) ? prev : null };
+  const num = (v) => { const x = parseFloat(String(v ?? '').replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : null; };
+  const last = num(q?.last);
+  if (last == null) throw new Error('cnbc: no price');
+  return { last, prev: num(q?.previous_day_closing), open: num(q?.open), high: num(q?.high), low: num(q?.low) };
+}
+function sessionDate(now) {
+  // NY date the current/next NG session settles on (after 17:00 ET or at weekends it's the next weekday)
+  const p = nyParts(now);
+  let d = new Date(Date.UTC(p.y, p.m - 1, p.d));
+  const wk = (x) => x.getUTCDay() === 0 || x.getUTCDay() === 6;
+  if (p.h >= 17 || wk(d)) { do { d = new Date(d.getTime() + 864e5); } while (wk(d)); }
+  return d.toISOString().slice(0, 10);
+}
+async function seedDaily() {
+  const j = JSON.parse(await readFile(join(ROOT, 'data', 'seed-daily.json'), 'utf8'));
+  return j.rows.map(([D, o, h, l, c]) => ({ t: Date.parse(D + 'T22:00:00Z'), o, h, l, c }));
 }
 
-async function loadPrices(prev) {
+async function loadPrices(prev, now) {
   const status = [];
-  let daily = null, intraday = null, meta = {}, last = null, prevClose = null, source = null;
+  let daily = null, intraday = null, meta = {}, last = null, prevClose = null, source = null, q = null;
   try {
     const d = await yahoo('1y', '1d');
     daily = d.rows; meta = d.meta; source = 'Yahoo Finance (NG=F)';
     status.push({ name: 'Yahoo Finance daily', ok: true });
   } catch (e) { status.push({ name: 'Yahoo Finance daily', ok: false, error: e.message }); }
-  try {
-    const i = await yahoo('5d', '5m');
-    intraday = i.rows; meta = { ...meta, ...i.meta };
-    status.push({ name: 'Yahoo Finance intraday', ok: true });
-  } catch (e) { status.push({ name: 'Yahoo Finance intraday', ok: false, error: e.message }); }
-  if (!daily) {
-    try { daily = await stooqDaily(); source = 'Stooq (NG.F)'; status.push({ name: 'Stooq daily', ok: true }); }
-    catch (e) { status.push({ name: 'Stooq daily', ok: false, error: e.message }); }
-  }
-  if (!daily) {
-    try { daily = await fredDaily(); source = 'FRED Henry Hub spot (fallback, lags 1-3 days)'; status.push({ name: 'FRED Henry Hub spot', ok: true }); }
-    catch (e) { status.push({ name: 'FRED Henry Hub spot', ok: false, error: e.message }); }
+  if (daily) {
+    try { const i = await yahoo('5d', '5m'); intraday = i.rows; meta = { ...meta, ...i.meta }; status.push({ name: 'Yahoo Finance intraday', ok: true }); }
+    catch (e) { status.push({ name: 'Yahoo Finance intraday', ok: false, error: e.message }); }
   }
   if (meta.regularMarketPrice) { last = meta.regularMarketPrice; prevClose = meta.chartPreviousClose ?? meta.previousClose ?? null; }
   if (intraday?.length) last = intraday.at(-1).c;
   if (last == null) {
-    try { const c = await cnbcLast(); last = c.last; prevClose = c.prev; source = source || 'CNBC (@NG.1)'; status.push({ name: 'CNBC quote', ok: true }); }
-    catch (e) { status.push({ name: 'CNBC quote', ok: false, error: e.message }); }
+    try { q = await cnbcLast(); last = q.last; prevClose = q.prev; status.push({ name: 'CNBC live quote (@NG.1)', ok: true }); }
+    catch (e) { status.push({ name: 'CNBC live quote (@NG.1)', ok: false, error: e.message }); }
   }
-  if (last == null && daily?.length && /FRED/.test(source || '')) { last = daily.at(-1).c; prevClose = daily.at(-2)?.c ?? null; }
   let stale = false;
-  if (!daily && prev?.price?.daily) {
-    // keep a self-built history going from the last published data, updating today's bar with the live price
-    daily = prev.price.daily.map((r) => ({ t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c }));
-    if (last != null) {
-      const today = new Date(Date.now()).toISOString().slice(0, 10);
-      const lastBar = daily.at(-1);
-      if (new Date(lastBar.t).toISOString().slice(0, 10) === today) { lastBar.c = last; lastBar.h = Math.max(lastBar.h ?? last, last); lastBar.l = Math.min(lastBar.l ?? last, last); }
-      else if (![0, 6].includes(new Date().getUTCDay())) daily.push({ t: Date.parse(today + 'T22:00:00Z'), o: last, h: last, l: last, c: last });
-      source = (prev.price.source || '') + ' + live quote';
-    } else stale = true;
-  }
   if (last == null && prev?.price?.last != null) { last = prev.price.last; prevClose = prev.price.prevClose; stale = true; }
-  if (!daily || last == null) { FAILED.push(...status.filter((x) => !x.ok)); throw new Error('No price data from any source'); }
-  // previous close: last completed daily bar before today
+
+  if (!daily) {
+    // Self-maintained history: bootstrap file + bars kept from earlier runs, with today's bar updated from the live quote.
+    const byDate = new Map();
+    try { for (const r of await seedDaily()) byDate.set(new Date(r.t).toISOString().slice(0, 10), r); } catch { /* no seed */ }
+    for (const r of prev?.price?.daily || []) byDate.set(r.date, { t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c });
+    if (last != null && !stale) {
+      const sd = sessionDate(new Date(now));
+      const bar = byDate.get(sd) || { t: Date.parse(sd + 'T22:00:00Z'), o: q?.open ?? last, h: last, l: last, c: last };
+      bar.c = last;
+      bar.h = Math.max(bar.h ?? last, q?.high ?? last, last);
+      bar.l = Math.min(bar.l ?? last, q?.low ?? last, last);
+      byDate.set(sd, bar);
+    }
+    daily = [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([, r]) => r).slice(-260);
+    source = 'CNBC live quote + self-maintained daily history';
+    if (prevClose == null) {
+      const sd = sessionDate(new Date(now));
+      const before = daily.filter((r) => new Date(r.t).toISOString().slice(0, 10) < sd);
+      prevClose = before.at(-1)?.c ?? null;
+    }
+  }
+  if (!intraday?.length) {
+    // Build the session chart from our own samples (one per run) when Yahoo intraday isn't available.
+    const pts = (prev?.price?.intraday || []).filter(([t]) => now - t < 24 * 36e5);
+    if (last != null && !stale && marketStatus(new Date(now)) === 'open') pts.push([now, last]);
+    intraday = pts.map(([t, c]) => ({ t, c }));
+  }
+  if (!daily?.length || last == null) { FAILED.push(...status.filter((x) => !x.ok)); throw new Error('No price data from any source'); }
   if (prevClose == null && daily.length > 1) prevClose = daily.at(-2).c;
-  const lastTime = intraday?.length ? intraday.at(-1).t : (meta.regularMarketTime ? meta.regularMarketTime * 1000 : daily.at(-1).t);
+  const lastTime = intraday?.length ? intraday.at(-1).t : (meta.regularMarketTime ? meta.regularMarketTime * 1000 : now);
   return { daily, intraday: intraday || [], last, prevClose, lastTime, source: source || prev?.price?.source, stale, status };
 }
 
@@ -316,9 +318,9 @@ function buildForecast(px, news, now) {
   // replace/append today's live price
   const lastDay = new Date(px.daily.at(-1).t).toISOString().slice(0, 10);
   const today = (() => { const p = nyParts(new Date(now)); return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`; })();
-  if (lastDay === today) series[series.length - 1] = px.last; else series.push(px.last);
+  if (lastDay >= today) series[series.length - 1] = px.last; else series.push(px.last);
   const rets = [];
-  for (let i = 1; i < series.length; i++) rets.push(Math.log(series[i] / series[i - 1]));
+  for (let i = 1; i < series.length; i++) rets.push(clamp(Math.log(series[i] / series[i - 1]), -0.12, 0.12)); // caps contract-roll jumps
   const sigma20 = stdev(rets.slice(-20));
   const sigma60 = stdev(rets.slice(-60));
   const sigma = clamp(Math.sqrt(0.6 * sigma20 ** 2 + 0.4 * sigma60 ** 2), 0.012, 0.09);
@@ -400,11 +402,11 @@ async function main() {
   if (base && !OFFLINE) { try { prev = await get(`${base}data/latest.json?t=${now}`, { type: 'json', retries: 0 }); if (prev?.price) { await mkdir(dirname(OUT), { recursive: true }); await writeFile(OUT, JSON.stringify(prev)); } else prev = null; } catch { /* first run */ } }
   if (!prev) { try { prev = JSON.parse(await readFile(OUT, 'utf8')); } catch { /* none */ } }
 
-  const px = await loadPrices(prev);
+  const px = await loadPrices(prev, now);
   const news = await loadNews(prev, now);
   const fc = buildForecast(px, news, now);
 
-  const daily = px.daily.slice(-90).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), o: round(r.o), h: round(r.h), l: round(r.l), c: round(r.c) }));
+  const daily = px.daily.slice(-260).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), o: round(r.o), h: round(r.h), l: round(r.l), c: round(r.c) }));
   const lastSession = px.intraday.length ? (() => {
     const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < 24 * 36e5).map((x) => [x.t, round(x.c)]);
   })() : [];
