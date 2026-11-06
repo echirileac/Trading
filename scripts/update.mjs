@@ -27,7 +27,7 @@ async function get(url, { type = 'text', timeout = 15000, retries = 1 } = {}) {
       const t = setTimeout(() => ctl.abort(), timeout);
       const res = await fetch(url, { headers: type === 'json' ? { 'User-Agent': UA, Accept: 'application/json,text/plain,*/*', 'Accept-Language': 'en-US,en;q=0.9' } : { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/rss+xml,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Upgrade-Insecure-Requests': '1', 'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'none' }, signal: ctl.signal });
       clearTimeout(t);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) { let msg = ''; try { const t = await res.text(); msg = (JSON.parse(t).message || '').slice(0, 160); } catch { /* not json */ } throw new Error(`HTTP ${res.status}${msg ? ' - ' + msg : ''}`); }
       return type === 'json' ? await res.json() : await res.text();
     } catch (e) {
       lastErr = e;
