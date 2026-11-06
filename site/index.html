@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NATGAS live outlook · 1 / 3 / 5-day forecast</title>
+<meta name="description" content="Live Henry Hub natural gas price with 1, 3 and 5-day forecast ranges built from prices and trusted news.">
+<meta name="theme-color" content="#121214">
+<style>
+  :root {
+    --bg: #121214; --panel: #1b1b1f; --panel2: #232328; --line: #2e2e35; --fg: #f2f2f4; --muted: #9a9aa5;
+    --up: #3fb950; --down: #f0605d; --neutral: #c9a227; --accent: #7aa2ff;
+    --r: 14px; --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 14px; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .sym { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 700; letter-spacing: .02em; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 4px rgba(255,255,255,.05); }
+  .dot.open { background: var(--up); }
+  .pill { font-size: 12px; font-weight: 500; color: var(--fg); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; letter-spacing: 0; }
+  .status { font-size: 12px; color: var(--muted); }
+  .hero { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .price { font-size: 48px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .chg { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+  .asof { width: 100%; font-size: 12px; color: var(--muted); margin-top: -6px; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 4px; }
+  .seg button { appearance: none; border: 0; background: transparent; color: var(--muted); font: 600 15px var(--font); padding: 10px 0; border-radius: 9px; cursor: pointer; }
+  .seg button[aria-selected="true"] { background: var(--panel2); color: var(--fg); box-shadow: 0 1px 0 rgba(255,255,255,.06) inset; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; min-width: 0; }
+  .card h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  .note { font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px; }
+  .fc-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .bias { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; border: 1px solid currentColor; }
+  .fc-main { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 14px; flex-wrap: wrap; }
+  .fc-center { font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fc-pct { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .prob-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--panel2); }
+  .prob-bar span { display: block; height: 100%; transition: width .4s ease; }
+  .prob-lbl { display: flex; justify-content: space-between; font-size: 12px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .ranges { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .ranges div { background: var(--panel2); border-radius: 10px; padding: 10px 12px; }
+  .ranges small { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .ranges b { font-size: 16px; font-variant-numeric: tabular-nums; }
+  .chart, .spark { position: relative; width: 100%; }
+  .chart svg, .spark svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: var(--font); }
+  .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .grid { stroke: #ffffff12; }
+  .tip { position: absolute; pointer-events: none; background: #0d0d10ee; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; z-index: 3; }
+  .tip .h { color: var(--muted); font-size: 11px; }
+  .sig { display: grid; grid-template-columns: 1fr; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .sig:first-of-type { border-top: 0; }
+  .sig-top { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+  .sig-top span:last-child { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .sig-detail { font-size: 12px; color: var(--muted); }
+  .dbar { position: relative; height: 8px; background: var(--panel2); border-radius: 999px; }
+  .dbar::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--muted); opacity: .6; }
+  .dbar i { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  td { padding: 8px 4px; border-top: 1px solid var(--line); }
+  tr:first-child td { border-top: 0; }
+  td.r { text-align: right; }
+  td .k { font-size: 11px; border-radius: 999px; padding: 2px 8px; border: 1px solid currentColor; }
+  tr.now td { color: var(--accent); font-weight: 600; }
+  .news { list-style: none; margin: 0; padding: 0; }
+  .news li { padding: 10px 0; border-top: 1px solid var(--line); display: grid; gap: 4px; }
+  .news li:first-child { border-top: 0; }
+  .news a { text-decoration: none; font-size: 14px; line-height: 1.4; }
+  .news a:hover { text-decoration: underline; }
+  .meta { font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .chip { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; border: 1px solid currentColor; }
+  .sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+  .sources li::before { content: "●"; margin-right: 6px; color: var(--up); }
+  .sources li.bad::before { color: var(--down); }
+  details.method summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+  details.method p, details.method li { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .disc { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
+  .banner { display: none; background: #3a2a10; border: 1px solid #6b4e1c; color: #f3d28b; border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+  .banner.show { display: block; }
+  @media (max-width: 520px) { .price { font-size: 40px; } .fc-center { font-size: 30px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="sym"><span class="dot" id="dot"></span>NATGAS <span class="pill">Henry Hub · NYMEX front month</span></div>
+    <div class="status" id="status">Loading…</div>
+  </header>
+  <div class="banner" id="banner"></div>
+
+  <section class="hero" aria-live="polite">
+    <div class="price" id="price">—</div>
+    <div class="chg" id="chg"></div>
+    <div class="asof" id="asof"></div>
+  </section>
+
+  <nav class="seg" role="tablist" aria-label="Forecast horizon">
+    <button role="tab" data-h="1">1 day</button>
+    <button role="tab" data-h="3">3 days</button>
+    <button role="tab" data-h="5">5 days</button>
+  </nav>
+
+  <section class="card" aria-live="polite">
+    <div class="fc-head"><span id="fc-title">Forecast</span><span class="bias" id="bias">—</span></div>
+    <div class="fc-main"><div class="fc-center" id="fc-center">—</div><div class="fc-pct" id="fc-pct"></div></div>
+    <div class="prob-bar"><span id="pb-down" style="background:var(--down)"></span><span id="pb-up" style="background:var(--up)"></span></div>
+    <div class="prob-lbl"><span class="down" id="p-down"></span><span class="up" id="p-up"></span></div>
+    <div class="ranges">
+      <div><small>Likely range (68%)</small><b id="r68">—</b></div>
+      <div><small>Wide range (90%)</small><b id="r90">—</b></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Price and forecast cone</h2>
+    <p class="note">Recent daily settlements, the live price, and the selected horizon's 68% (darker) and 90% (lighter) ranges.</p>
+    <div class="chart" id="chart"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Latest session</h2>
+      <p class="note">5-minute prices; dashed line is the previous settlement.</p>
+      <div class="spark" id="intra"></div>
+    </section>
+    <section class="card">
+      <h2>What the model sees</h2>
+      <p class="note" id="score-note"></p>
+      <div id="signals"></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Key levels</h2>
+      <p class="note">Computed from recent prices; distance is from the live price.</p>
+      <table id="levels"></table>
+    </section>
+    <section class="card">
+      <h2>Data sources</h2>
+      <p class="note" id="src-note"></p>
+      <ul class="sources" id="sources"></ul>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Latest trusted headlines</h2>
+    <p class="note" id="news-note"></p>
+    <ul class="news" id="news"></ul>
+  </section>
+
+  <details class="card method">
+    <summary>How the forecast works</summary>
+    <p id="method"></p>
+    <ul>
+      <li>Prices: NYMEX Henry Hub front-month futures (Yahoo Finance NG=F, with CNBC and Stooq as fallbacks), refreshed about every 5 minutes.</li>
+      <li>News: headlines from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence and others), refreshed about every 15 minutes. Each headline is scored with a natural-gas keyword list (weather, storage, production, LNG, geopolitics, price action) and weighted by recency.</li>
+      <li>The page itself checks for new data every minute.</li>
+      <li>It is a mechanical model. It does not read full articles, and it can be wrong when news is mixed, sarcastic or about something else.</li>
+    </ul>
+  </details>
+  <p class="disc">Not financial advice. CFDs are leveraged and natural gas often moves 5–10% in a week. A CFD quote can differ slightly from the futures price, and the contract rolls to the next month a few days before expiry.</p>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const NS = 'http://www.w3.org/2000/svg';
+  let DATA = null, lastFetch = 0;
+  let H = Number((location.hash.match(/^#([135])d$/) || [])[1] || 3);
+
+  const usd = (v, d = 3) => (v == null || !isFinite(v) ? '—' : '$' + v.toFixed(d));
+  const sp = (v, d = 2) => (v == null || !isFinite(v) ? '' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d) + '%');
+  const cls = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
+  const ago = (iso) => {
+    const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    if (s < 86400) return Math.round(s / 3600) + ' h ago';
+    return Math.round(s / 86400) + ' d ago';
+  };
+  const dayName = (ymd) => new Date(ymd + 'T12:00:00Z').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const el = (tag, attrs = {}, text) => {
+    const n = tag.startsWith('svg:') ? document.createElementNS(NS, tag.slice(4)) : document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v);
+    if (text != null) n.textContent = text;
+    return n;
+  };
+
+  async function load() {
+    try {
+      const r = await fetch('data/latest.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      DATA = await r.json();
+      lastFetch = Date.now();
+      render();
+    } catch (e) {
+      $('status').textContent = 'Could not refresh (' + e.message + '), retrying in a minute';
+    }
+  }
+
+  function setTabs() {
+    document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-selected', String(+b.dataset.h === H)));
+  }
+  document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+    H = +b.dataset.h; history.replaceState(null, '', '#' + H + 'd'); render();
+  }));
+  window.addEventListener('hashchange', () => { const m = location.hash.match(/^#([135])d$/); if (m) { H = +m[1]; render(); } });
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 120); });
+
+  function statusLine() {
+    if (!DATA) return;
+    const mk = { open: 'Market open', closed: 'Market closed', break: 'Daily break (17:00–18:00 ET)' }[DATA.market] || '';
+    $('status').textContent = `${mk} · data ${ago(DATA.generatedAt)} · page checks every minute`;
+    $('dot').className = 'dot' + (DATA.market === 'open' ? ' open' : '');
+    const age = (Date.now() - Date.parse(DATA.generatedAt)) / 60000;
+    const b = $('banner');
+    if (DATA.price.stale) { b.textContent = 'Price sources did not answer on the last refresh; showing the last good price.'; b.className = 'banner show'; }
+    else if (age > 30) { b.textContent = `The server has not refreshed for ${Math.round(age)} minutes. GitHub's scheduler sometimes runs late; numbers below may be out of date.`; b.className = 'banner show'; }
+    else b.className = 'banner';
+  }
+
+  function render() {
+    setTabs();
+    if (!DATA) return;
+    statusLine();
+    const p = DATA.price, f = DATA.forecast, h = f.horizons[H];
+    $('price').textContent = usd(p.last);
+    $('chg').className = 'chg ' + cls(p.change);
+    $('chg').textContent = p.change == null ? '' : `${p.change > 0 ? '+' : p.change < 0 ? '−' : ''}${Math.abs(p.change).toFixed(3)} (${sp(p.changePct)})`;
+    $('asof').textContent = `Last trade ${new Date(p.asOf).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })} · vs previous settlement ${usd(p.prevClose)} · ${p.source || ''}`;
+
+    $('fc-title').textContent = `${H}-day forecast · settlement ${dayName(h.targetDate)}`;
+    const bc = f.score > 0.15 ? 'up' : f.score < -0.15 ? 'down' : 'flat';
+    $('bias').textContent = f.bias; $('bias').className = 'bias ' + bc;
+    $('fc-center').textContent = usd(h.center, 2);
+    $('fc-pct').textContent = sp(h.changePct) + ' expected';
+    $('fc-pct').className = 'fc-pct ' + cls(h.changePct);
+    $('pb-down').style.width = (100 * (1 - h.pUp)).toFixed(1) + '%';
+    $('pb-up').style.width = (100 * h.pUp).toFixed(1) + '%';
+    $('p-down').textContent = `${Math.round(100 * (1 - h.pUp))}% chance lower`;
+    $('p-up').textContent = `${Math.round(100 * h.pUp)}% chance higher`;
+    $('r68').textContent = `${usd(h.lo68, 2)} – ${usd(h.hi68, 2)}`;
+    $('r90').textContent = `${usd(h.lo90, 2)} – ${usd(h.hi90, 2)}`;
+
+    drawChart(); drawIntraday(); drawSignals(); drawLevels(); drawNews(); drawSources();
+    $('method').textContent = DATA.method;
+  }
+
+  // ---------- main chart ----------
+  function drawChart() {
+    const box = $('chart'); box.replaceChildren();
+    const p = DATA.price, f = DATA.forecast;
+    const W = Math.max(300, box.clientWidth), Ht = W < 520 ? 260 : 320;
+    const hist = p.daily.slice(W < 520 ? -40 : -60).map((d) => ({ date: d.date, c: d.c }));
+    const todayISO = DATA.generatedAt.slice(0, 10);
+    if (hist.length && hist.at(-1).date !== todayISO && DATA.market !== 'closed') hist.push({ date: 'Live', c: p.last });
+    else if (hist.length) hist[hist.length - 1] = { ...hist.at(-1), c: p.last };
+    const n = hist.length, last = p.last;
+    const mu = f.score * 0.25 * f.sigmaDaily, s = f.sigmaDaily;
+    const cone = [{ k: 0, c: last, lo68: last, hi68: last, lo90: last, hi90: last }];
+    for (let k = 1; k <= H; k++) {
+      const sd = s * Math.sqrt(k);
+      cone.push({ k, c: last * Math.exp(mu * k), lo68: last * Math.exp(mu * k - sd), hi68: last * Math.exp(mu * k + sd), lo90: last * Math.exp(mu * k - 1.645 * sd), hi90: last * Math.exp(mu * k + 1.645 * sd) });
+    }
+    const vals = [...hist.map((d) => d.c), ...cone.map((c) => c.lo90), ...cone.map((c) => c.hi90)];
+    let lo = Math.min(...vals), hi = Math.max(...vals); const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
+    const svg = el('svg:svg', { viewBox: `0 0 ${W} ${Ht}`, width: '100%' });
+    box.append(svg);
+    // y ticks
+    const step = niceStep((hi - lo) / 5);
+    const ticks = []; for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) ticks.push(+v.toFixed(4));
+    const probe = el('svg:text', { class: 'tick' }, '$' + hi.toFixed(2)); svg.append(probe);
+    const mL = probe.getComputedTextLength() + 10; probe.remove();
+    const mR = 8, mT = 10, mB = 24;
+    const plotW = W - mL - mR, fW = plotW * (W < 520 ? 0.3 : 0.24), hW = plotW - fW;
+    // history and forecast get fixed shares of the width so the cone stays readable at every horizon
+    const x = (i) => (i <= n - 1 ? mL + (i / Math.max(1, n - 1)) * hW : mL + hW + ((i - (n - 1)) / H) * fW);
+    const y = (v) => mT + (1 - (v - lo) / (hi - lo)) * (Ht - mT - mB);
+    for (const t of ticks) {
+      svg.append(el('svg:line', { x1: mL, x2: W - mR, y1: y(t), y2: y(t), class: 'grid' }));
+      svg.append(el('svg:text', { x: mL - 8, y: y(t), dy: '0.32em', 'text-anchor': 'end', class: 'tick' }, '$' + t.toFixed(2)));
+    }
+    // cone
+    const x0 = n - 1;
+    const poly = (a, b) => cone.map((c) => `${x(x0 + c.k)},${y(c[a])}`).concat([...cone].reverse().map((c) => `${x(x0 + c.k)},${y(c[b])}`)).join(' ');
+    const ccol = f.score > 0.15 ? 'var(--up)' : f.score < -0.15 ? 'var(--down)' : 'var(--accent)';
+    svg.append(el('svg:rect', { x: x(x0), y: mT, width: fW, height: Ht - mT - mB, fill: '#ffffff', 'fill-opacity': '0.03' }));
+    svg.append(el('svg:polygon', { points: poly('hi90', 'lo90'), fill: ccol, 'fill-opacity': '0.12' }));
+    svg.append(el('svg:polygon', { points: poly('hi68', 'lo68'), fill: ccol, 'fill-opacity': '0.22' }));
+    svg.append(el('svg:path', { d: 'M' + cone.map((c) => `${x(x0 + c.k)},${y(c.c)}`).join('L'), fill: 'none', stroke: ccol, 'stroke-width': 2, 'stroke-dasharray': '5 4' }));
+    // history line + area
+    const defs = el('svg:defs'); const g = el('svg:linearGradient', { id: 'ar', x1: 0, y1: 0, x2: 0, y2: 1 });
+    [[0, .28], [.5, .08], [1, 0]].forEach(([o, op]) => g.append(el('svg:stop', { offset: o, 'stop-color': '#7aa2ff', 'stop-opacity': op })));
+    defs.append(g); svg.append(defs);
+    const path = hist.map((d, i) => `${x(i)},${y(d.c)}`).join('L');
+    svg.append(el('svg:path', { d: `M${x(0)},${y(lo)}L${path}L${x(n - 1)},${y(lo)}Z`, fill: 'url(#ar)' }));
+    svg.append(el('svg:path', { d: 'M' + path, fill: 'none', stroke: '#7aa2ff', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    svg.append(el('svg:circle', { cx: x(n - 1), cy: y(last), r: 4, fill: 'var(--fg)' }));
+    // end labels
+    const hz = DATA.forecast.horizons[H];
+    const endX = x(x0 + H);
+    // x labels
+    const xl = [[0, hist[0].date], [Math.floor((n - 1) / 2), hist[Math.floor((n - 1) / 2)].date], [n - 1, 'Now'], [x0 + H, hz.targetDate]];
+    let prevR = -Infinity;
+    const placed = [];
+    xl.forEach(([i, lab], j) => {
+      const txt = lab.length === 10 ? new Date(lab + 'T12:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }) : lab;
+      const anchor = j === xl.length - 1 ? 'end' : j === 0 ? 'start' : 'middle';
+      const t = el('svg:text', { x: j === xl.length - 1 ? endX : x(i), y: Ht - 6, 'text-anchor': anchor, class: 'tick', fill: j === xl.length - 1 ? 'var(--fg)' : null }, txt);
+      svg.append(t);
+      const bb = t.getBBox();
+      if (j === xl.length - 1) { while (placed.length && placed.at(-1).r + 6 > bb.x) placed.pop().t.remove(); }
+      else if (bb.x < prevR + 6) { t.remove(); return; }
+      prevR = bb.x + bb.width; placed.push({ t, r: prevR });
+    });
+    // hover
+    const tip = el('div', { class: 'tip' }); tip.hidden = true; box.append(tip);
+    const vline = el('svg:line', { y1: mT, y2: Ht - mB, stroke: '#ffffff40' }); vline.style.display = 'none'; svg.append(vline);
+    svg.addEventListener('pointermove', (ev) => {
+      const r = svg.getBoundingClientRect(); const px = (ev.clientX - r.left) * (W / r.width);
+      const i = px <= mL + hW ? Math.round(((px - mL) / hW) * (n - 1)) : (n - 1) + Math.round(((px - mL - hW) / fW) * H);
+      let lines;
+      if (i >= 0 && i < n) { const d = hist[i]; lines = [d.date === 'Live' ? 'Live' : dayName(d.date), usd(d.c)]; vline.setAttribute('x1', x(i)); }
+      else if (i >= n && i <= x0 + H) { const c = cone[i - x0]; lines = [`+${c.k} day${c.k > 1 ? 's' : ''} (forecast)`, `Centre ${usd(c.c, 2)}`, `68%: ${usd(c.lo68, 2)} – ${usd(c.hi68, 2)}`, `90%: ${usd(c.lo90, 2)} – ${usd(c.hi90, 2)}`]; vline.setAttribute('x1', x(i)); }
+      else { tip.hidden = true; vline.style.display = 'none'; return; }
+      vline.setAttribute('x2', vline.getAttribute('x1')); vline.style.display = '';
+      showTip(box, tip, ev, lines);
+    });
+    svg.addEventListener('pointerleave', () => { tip.hidden = true; vline.style.display = 'none'; });
+  }
+  function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const m = raw / p; return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p; }
+  function showTip(box, tip, ev, lines) {
+    tip.replaceChildren(...lines.map((l, i) => el('div', i === 0 ? { class: 'h' } : {}, l)));
+    tip.hidden = false;
+    const r = box.getBoundingClientRect();
+    let lx = ev.clientX - r.left + 12, ly = ev.clientY - r.top - 10;
+    if (lx + tip.offsetWidth > box.clientWidth) lx = ev.clientX - r.left - tip.offsetWidth - 12;
+    tip.style.left = Math.max(0, lx) + 'px'; tip.style.top = Math.max(0, Math.min(ly, box.clientHeight - tip.offsetHeight)) + 'px';
+  }
+
+  // ---------- intraday ----------
+  function drawIntraday() {
+    const box = $('intra'); box.replaceChildren();
+    const pts = DATA.price.intraday || [];
+    if (pts.length < 2) { box.append(el('p', { class: 'note' }, 'No intraday prices on the last refresh.')); return; }
+    const W = Math.max(280, box.clientWidth), Ht = 150, m = 6;
+    const ys = pts.map((p) => p[1]).concat(DATA.price.prevClose ? [DATA.price.prevClose] : []);
+    let lo = Math.min(...ys), hi = Math.max(...ys); const pad = (hi - lo) * 0.1 || 0.01; lo -= pad; hi += pad;
+    const t0 = pts[0][0], t1 = pts.at(-1)[0];
+    const x = (t) => m + ((t - t0) / Math.max(1, t1 - t0)) * (W - 2 * m - 48);
+    const y = (v) => m + (1 - (v - lo) / (hi - lo)) * (Ht - 2 * m - 14);
+    const svg = el('svg:svg', { viewBox: `0 0 ${W} ${Ht}`, width: '100%' }); box.append(svg);
+    const up = pts.at(-1)[1] >= (DATA.price.prevClose ?? pts[0][1]);
+    const col = up ? 'var(--up)' : 'var(--down)';
+    if (DATA.price.prevClose) {
+      svg.append(el('svg:line', { x1: m, x2: W - 48, y1: y(DATA.price.prevClose), y2: y(DATA.price.prevClose), stroke: '#ffffff55', 'stroke-dasharray': '3 3' }));
+      svg.append(el('svg:text', { x: W - 44, y: y(DATA.price.prevClose), dy: '0.32em', class: 'tick' }, usd(DATA.price.prevClose, 2)));
+    }
+    svg.append(el('svg:path', { d: 'M' + pts.map((p) => `${x(p[0])},${y(p[1])}`).join('L'), fill: 'none', stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    const lp = pts.at(-1);
+    svg.append(el('svg:circle', { cx: x(lp[0]), cy: y(lp[1]), r: 3.5, fill: col }));
+    const fmtT = (t) => new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    svg.append(el('svg:text', { x: m, y: Ht - 2, class: 'tick' }, fmtT(t0)));
+    svg.append(el('svg:text', { x: W - 48, y: Ht - 2, 'text-anchor': 'end', class: 'tick' }, fmtT(t1)));
+    const hiP = pts.reduce((a, b) => (b[1] > a[1] ? b : a)), loP = pts.reduce((a, b) => (b[1] < a[1] ? b : a));
+    const pcY = DATA.price.prevClose ? y(DATA.price.prevClose) : -99;
+    if (Math.abs(y(hiP[1]) - pcY) > 13) svg.append(el('svg:text', { x: W - 44, y: y(hiP[1]), dy: '0.32em', class: 'tick' }, 'H ' + hiP[1].toFixed(3)));
+    if (Math.abs(y(loP[1]) - pcY) > 13) svg.append(el('svg:text', { x: W - 44, y: y(loP[1]), dy: '0.32em', class: 'tick' }, 'L ' + loP[1].toFixed(3)));
+    const tip = el('div', { class: 'tip' }); tip.hidden = true; box.append(tip);
+    svg.addEventListener('pointermove', (ev) => {
+      const r = svg.getBoundingClientRect(); const px = (ev.clientX - r.left) * (W / r.width);
+      const t = t0 + ((px - m) / (W - 2 * m - 48)) * (t1 - t0);
+      const pt = pts.reduce((a, b) => (Math.abs(b[0] - t) < Math.abs(a[0] - t) ? b : a));
+      showTip(box, tip, ev, [new Date(pt[0]).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }), usd(pt[1])]);
+    });
+    svg.addEventListener('pointerleave', () => { tip.hidden = true; });
+  }
+
+  // ---------- signals ----------
+  function drawSignals() {
+    const f = DATA.forecast;
+    $('score-note').textContent = `Combined score ${f.score > 0 ? '+' : ''}${f.score.toFixed(2)} on a −1 (bearish) to +1 (bullish) scale. Daily volatility ${(f.sigmaDaily * 100).toFixed(1)}%.`;
+    const box = $('signals'); box.replaceChildren();
+    for (const s of f.signals) {
+      const row = el('div', { class: 'sig' });
+      const top = el('div', { class: 'sig-top' });
+      top.append(el('span', {}, `${s.name} · ${Math.round(s.weight * 100)}%`), el('span', { class: cls(s.value) }, (s.value > 0 ? '+' : '') + s.value.toFixed(2)));
+      const bar = el('div', { class: 'dbar' });
+      const w = Math.abs(s.value) * 50;
+      const i = el('i'); i.style.width = w + '%'; i.style.left = s.value >= 0 ? '50%' : (50 - w) + '%'; i.style.background = s.value >= 0 ? 'var(--up)' : 'var(--down)';
+      bar.append(i);
+      row.append(top, bar, el('div', { class: 'sig-detail' }, s.detail));
+      box.append(row);
+    }
+  }
+
+  // ---------- levels ----------
+  function drawLevels() {
+    const t = $('levels'); t.replaceChildren();
+    const last = DATA.price.last;
+    const rows = [...DATA.forecast.levels, { label: 'Live price', price: last, kind: 'now' }].sort((a, b) => b.price - a.price);
+    for (const l of rows) {
+      const tr = el('tr', l.kind === 'now' ? { class: 'now' } : {});
+      const k = el('td');
+      if (l.kind !== 'now') { const sp1 = el('span', { class: 'k ' + (l.kind === 'support' ? 'up' : 'down') }, l.kind); k.append(sp1); }
+      tr.append(el('td', {}, l.label), el('td', { class: 'r' }, usd(l.price)), el('td', { class: 'r flat' }, l.kind === 'now' ? '' : sp(100 * (l.price / last - 1), 1)), k);
+      t.append(tr);
+    }
+  }
+
+  // ---------- news ----------
+  function drawNews() {
+    const items = DATA.news.items || [];
+    $('news-note').textContent = items.length
+      ? `${items.length} headlines from trusted outlets, fetched ${ago(DATA.news.fetchedAt)}. Tags show how the model scored each headline for price direction.`
+      : 'No trusted headlines on the last refresh.';
+    const ul = $('news'); ul.replaceChildren();
+    for (const n of items.slice(0, 25)) {
+      const li = el('li');
+      const a = el('a', { href: n.link, target: '_blank', rel: 'noopener noreferrer' }, n.title);
+      const meta = el('div', { class: 'meta' });
+      const tag = n.score > 0.3 ? ['Bullish', 'up'] : n.score < -0.3 ? ['Bearish', 'down'] : ['Neutral', 'flat'];
+      meta.append(el('span', { class: 'chip ' + tag[1] }, tag[0]), el('span', {}, n.source), el('span', {}, ago(n.publishedAt)));
+      li.append(a, meta); ul.append(li);
+    }
+  }
+
+  function drawSources() {
+    const ul = $('sources'); ul.replaceChildren();
+    const ok = DATA.sources.filter((s) => s.ok).length;
+    $('src-note').textContent = `${ok} of ${DATA.sources.length} sources answered on the last server refresh (${ago(DATA.generatedAt)}).`;
+    for (const s of DATA.sources) ul.append(el('li', s.ok ? {} : { class: 'bad', title: s.error || '' }, s.name + (s.ok ? '' : ' — no answer')));
+  }
+
+  setTabs();
+  load();
+  setInterval(load, 60 * 1000);
+  setInterval(statusLine, 15 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastFetch > 30000) load(); });
+})();
+</script>
+</body>
+</html>
