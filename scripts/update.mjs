@@ -671,7 +671,7 @@ async function td(path, params) {
   if (j?.status === 'error' || (j?.code && j?.message)) throw new Error(`Twelve Data ${j.code || ''}: ${j.message}`);
   return j;
 }
-const tdArgs = (m) => ({ symbol: m.symbol, exchange: ['equity', 'etf', 'index'].includes(m.category) ? m.exchange : '' });
+const tdArgs = (m) => ({ symbol: m.symbol, exchange: ['equity', 'etf'].includes(m.category) ? m.exchange : '' });
 const weekendClosed = (now) => { const d = new Date(now), w = d.getUTCDay(), h = d.getUTCHours(); return w === 6 || (w === 0 && h < 21) || (w === 5 && h >= 21); };
 const num = (v) => { const x = parseFloat(v); return isFinite(x) ? x : null; };
 
