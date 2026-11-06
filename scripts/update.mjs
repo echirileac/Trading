@@ -243,6 +243,11 @@ const LEX = [
   [/\b((smaller|lighter)[- ]than[- ]expected|below[- ]average( storage)? (build|injection)|(bigger|larger)[- ]than[- ]expected( storage)? (draw|withdrawal)|storage deficit)\b/i, +1.2],
   [/\b((larger|bigger|heavier)[- ]than[- ]expected( storage)? (build|injection|rise)|above[- ](average|normal)( storage)? (build|injection)|storage surplus|surplus widens|bearish storage)\b/i, -1.2],
   [/\b(withdrawal|draws? from storage)\b/i, +0.4],
+  [/\b(stout|hefty|sizable|sizeable|large|big|heavy|bloated) (storage )?(build|injection)s?\b/i, -0.9],
+  [/\b(above[- ](average|normal)|ample|bloated) (inventor\w*|stocks|storage)\b/i, -1.0],
+  [/\b(storage|inventor\w*|stocks) (levels? )?(decline|declines|fall|falls|drop|drops|shrink\w*)\b/i, +1.2],
+  [/\b(high note|finish(es|ed)? (higher|up)|weekly gain|best week)\b/i, +0.6],
+  [/\b(low note|finish(es|ed)? (lower|down)|weekly loss|worst week)\b/i, -0.6],
   // supply
   [/\b(output (drops?|dips?|falls?|declines?|slips?)|production (drops?|dips?|falls?|declines?|slips?)|lower output|lower production|curtail\w*|freeze[- ]offs?|9-month low in output|shut[- ]?ins?)\b/i, +1.0],
   [/\b(record (output|production)|output (rises?|climbs?|jumps?|hits record)|production (rises?|climbs?|jumps?|hits record)|oversuppl\w*|glut|ample suppl\w*|supply cushion)\b/i, -1.0],
