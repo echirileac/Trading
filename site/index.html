@@ -321,6 +321,7 @@
     [/^(platinum|xpt)/i, { symbol: 'XPT/USD', instrument_name: 'Platinum Spot (US dollar)', instrument_type: 'Precious Metal', _commodity: true }],
     [/^(palladium|xpd)/i, { symbol: 'XPD/USD', instrument_name: 'Palladium Spot (US dollar)', instrument_type: 'Precious Metal', _commodity: true }],
     [/^(copper)/i, { symbol: 'HG1', instrument_name: 'Copper Spot', instrument_type: 'Industrial Metal', _commodity: true }],
+    [/^(brent|uk ?oil|ukoil)/i, { symbol: 'Brent front month', instrument_name: 'Brent crude oil (front-month futures)', instrument_type: 'Energy Resource', exchange: 'ICE', _commodity: true, _builtin: true }],
     [/^(oil|crude|wti|us ?oil|usoil)/i, { symbol: 'WTI/USD', instrument_name: 'Crude Oil WTI Spot', instrument_type: 'Energy Resource', _commodity: true }],
     [/^(bitcoin|btc)/i, { symbol: 'BTC/USD', instrument_name: 'Bitcoin / US Dollar', instrument_type: 'Digital Currency', exchange: '' }],
     [/^(ethereum|eth)/i, { symbol: 'ETH/USD', instrument_name: 'Ethereum / US Dollar', instrument_type: 'Digital Currency', exchange: '' }],
@@ -378,6 +379,7 @@
       const already = have.has(r.symbol + '|' + exch) || have.has(r.symbol + '|');
       const full = INDEX.markets.filter((m) => m.id !== 'NATGAS').length >= (INDEX.maxMarkets || 8);
       const btn = already ? el('span', { class: 'rm' }, 'On your list')
+        : r._builtin ? el('span', { class: 'rm', title: 'Uses a separate free data source; ask Claude to add it back' }, 'Ask Claude to add')
         : el('a', { class: 'btn', target: '_blank', rel: 'noopener', href: issueUrl(`watchlist: add ${r.symbol}`, { action: 'add', symbol: r.symbol, name: r.instrument_name, exchange: exch, type: r.instrument_type || '', category: cat }), title: full ? 'Watchlist is full (8 markets): remove one first' : 'Opens a pre-filled request on GitHub' }, full ? 'List full' : 'Add');
       li.append(left, btn); return li;
     }));
@@ -417,11 +419,11 @@
     const meta = DATA.meta || { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy' };
     const isNG = meta.id === 'NATGAS';
     DEC = meta.decimals && !isNG ? meta.decimals : 3;
-    CUR = isNG || (meta.category !== 'fx' && /\/USD$/.test(meta.symbol || '')) || /^(NASDAQ|NYSE|NYSE ARCA|CBOE|AMEX|BATS)$/i.test(meta.exchange || '') ? '$' : '';
+    CUR = isNG || meta.provider === 'cnbc' || (meta.category !== 'fx' && /\/USD$/.test(meta.symbol || '')) || /^(NASDAQ|NYSE|NYSE ARCA|CBOE|AMEX|BATS)$/i.test(meta.exchange || '') ? '$' : '';
     setHeader(meta);
     statusLine();
     const p = DATA.price, f = DATA.forecast, h = f.horizons[H];
-    const closeWord = isNG ? 'settlement' : 'close';
+    const closeWord = isNG || meta.provider === 'cnbc' ? 'settlement' : 'close';
     $('price').textContent = usd(p.last);
     $('chg').className = 'chg ' + cls(p.change);
     $('chg').textContent = p.change == null ? '' : `${p.change > 0 ? '+' : p.change < 0 ? '−' : ''}${Math.abs(p.change).toFixed(DEC)} (${sp(p.changePct)})`;

@@ -111,15 +111,15 @@ async function yahooSession() {
   YSESSION = { cookies, crumb };
   return YSESSION;
 }
-async function yahoo(range, interval) {
-  if (OFFLINE) return parseYahoo(await get(`https://query2.finance.yahoo.com/v8/finance/chart/NG=F?range=${range}&interval=${interval}`, { type: 'json' }));
+async function yahoo(range, interval, sym = 'NG=F') {
+  if (OFFLINE) return parseYahoo(await get(`https://query2.finance.yahoo.com/v8/finance/chart/${sym}?range=${range}&interval=${interval}`, { type: 'json' }));
   const hosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'];
   let err;
   for (let attempt = 0; attempt < 2; attempt++) {
     const ses = attempt === 0 ? { cookies: '', crumb: '' } : await yahooSession();
     for (const h of hosts) {
       try {
-        const url = `https://${h}/v8/finance/chart/NG=F?range=${range}&interval=${interval}&includePrePost=false${ses.crumb ? '&crumb=' + encodeURIComponent(ses.crumb) : ''}`;
+        const url = `https://${h}/v8/finance/chart/${encodeURIComponent(sym)}?range=${range}&interval=${interval}&includePrePost=false${ses.crumb ? '&crumb=' + encodeURIComponent(ses.crumb) : ''}`;
         const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json', ...(ses.cookies ? { Cookie: ses.cookies } : {}) }, signal: AbortSignal.timeout(15000) });
         if (!res.ok) throw new Error(`HTTP ${res.status}${attempt ? ' (with cookie)' : ''}`);
         return parseYahoo(await res.json());
@@ -128,8 +128,8 @@ async function yahoo(range, interval) {
   }
   throw err;
 }
-async function cnbcLast() {
-  const j = await get('https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=%40NG.1&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json', { type: 'json' });
+async function cnbcLast(sym = '@NG.1') {
+  const j = await get(`https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${encodeURIComponent(sym)}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json`, { type: 'json' });
   const q = j?.FormattedQuoteResult?.FormattedQuote?.[0];
   const num = (v) => { const x = parseFloat(String(v ?? '').replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : null; };
   const last = num(q?.last);
@@ -144,28 +144,28 @@ function sessionDate(now) {
   if (p.h >= 17 || wk(d)) { do { d = new Date(d.getTime() + 864e5); } while (wk(d)); }
   return d.toISOString().slice(0, 10);
 }
-async function seedDaily() {
-  const j = JSON.parse(await readFile(join(ROOT, 'data', 'seed-daily.json'), 'utf8'));
+async function seedDaily(file = 'seed-daily.json') {
+  const j = JSON.parse(await readFile(join(ROOT, 'data', file), 'utf8'));
   return j.rows.map(([D, o, h, l, c]) => ({ t: Date.parse(D + 'T22:00:00Z'), o, h, l, c }));
 }
 
-async function loadPrices(prev, now) {
+async function loadPrices(prev, now, cfg = { yahoo: 'NG=F', cnbc: '@NG.1', seed: 'seed-daily.json' }) {
   const status = [];
   let daily = null, intraday = null, meta = {}, last = null, prevClose = null, source = null, q = null;
   try {
-    const d = await yahoo('1y', '1d');
-    daily = d.rows; meta = d.meta; source = 'Yahoo Finance (NG=F)';
+    const d = await yahoo('1y', '1d', cfg.yahoo);
+    daily = d.rows; meta = d.meta; source = `Yahoo Finance (${cfg.yahoo})`;
     status.push({ name: 'Yahoo Finance daily', ok: true });
   } catch (e) { status.push({ name: 'Yahoo Finance daily', ok: false, error: e.message }); }
   if (daily) {
-    try { const i = await yahoo('5d', '5m'); intraday = i.rows; meta = { ...meta, ...i.meta }; status.push({ name: 'Yahoo Finance intraday', ok: true }); }
+    try { const i = await yahoo('5d', '5m', cfg.yahoo); intraday = i.rows; meta = { ...meta, ...i.meta }; status.push({ name: 'Yahoo Finance intraday', ok: true }); }
     catch (e) { status.push({ name: 'Yahoo Finance intraday', ok: false, error: e.message }); }
   }
   if (meta.regularMarketPrice) { last = meta.regularMarketPrice; prevClose = meta.chartPreviousClose ?? meta.previousClose ?? null; }
   if (intraday?.length) last = intraday.at(-1).c;
   if (last == null) {
-    try { q = await cnbcLast(); last = q.last; prevClose = q.prev; status.push({ name: 'CNBC live quote (@NG.1)', ok: true }); }
-    catch (e) { status.push({ name: 'CNBC live quote (@NG.1)', ok: false, error: e.message }); }
+    try { q = await cnbcLast(cfg.cnbc); last = q.last; prevClose = q.prev; status.push({ name: `CNBC live quote (${cfg.cnbc})`, ok: true }); }
+    catch (e) { status.push({ name: `CNBC live quote (${cfg.cnbc})`, ok: false, error: e.message }); }
   }
   let stale = false;
   if (last == null && prev?.price?.last != null) { last = prev.price.last; prevClose = prev.price.prevClose; stale = true; }
@@ -173,7 +173,7 @@ async function loadPrices(prev, now) {
   if (!daily) {
     // Self-maintained history: bootstrap file + bars kept from earlier runs, with today's bar updated from the live quote.
     const byDate = new Map();
-    try { for (const r of await seedDaily()) byDate.set(new Date(r.t).toISOString().slice(0, 10), r); } catch { /* no seed */ }
+    try { for (const r of await seedDaily(cfg.seed)) byDate.set(new Date(r.t).toISOString().slice(0, 10), r); } catch { /* no seed */ }
     for (const r of prev?.price?.daily || []) byDate.set(r.date, { t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c });
     if (last != null && !stale) {
       const sd = sessionDate(new Date(now));
@@ -624,7 +624,7 @@ async function save(rel, obj) { const f = join(DATA_DIR, rel); await mkdir(dirna
 function packOutput(m, px, news, fc, now, market, extra = {}) {
   const daily = px.daily.slice(-260).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), o: round(r.o), h: round(r.h), l: round(r.l), c: round(r.c) }));
   const lastSession = px.intraday.length ? (() => { const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < 24 * 36e5).map((x) => [x.t, round(x.c, 5)]); })() : [];
-  const dec = m.category === 'fx' ? (px.last >= 20 ? 3 : 5) : px.last >= 100 ? 2 : px.last >= 1 ? 3 : 5;
+  const dec = m.category === 'fx' ? (px.last >= 20 ? 3 : 5) : px.last >= 10 ? 2 : px.last >= 1 ? 3 : 5;
   return {
     generatedAt: new Date(now).toISOString(),
     meta: { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', provider: m.provider, decimals: dec, ...extra.meta },
@@ -654,6 +654,19 @@ async function buildNatgas(base, now) {
   const out = packOutput(NATGAS, px, news, fc, now, marketStatus(new Date(now)));
   await save('m/NATGAS.json', out);
   await save('latest.json', out); // kept for older links
+  return out;
+}
+// Other futures on the same free route: CNBC live quote + bootstrapped daily history (data/<seed>)
+async function buildCnbcFutures(m, base, now, plan) {
+  const prev = await loadPrev(base, `m/${m.id}.json`, now);
+  const px = await loadPrices(prev, now, { yahoo: m.yahoo, cnbc: m.cnbc, seed: m.seed });
+  const prof = profileFor(m);
+  prof.maxReads = Math.min(prof.maxReads, plan.readsLeft);
+  const news = await loadNews(prev, now, prof);
+  plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
+  const fc = buildForecast(px, news, now, { calendar: 'ng' });
+  const out = packOutput(m, px, news, fc, now, marketStatus(new Date(now)));
+  await save(`m/${m.id}.json`, out);
   return out;
 }
 
@@ -732,7 +745,8 @@ async function main() {
   const base = siteUrl();
   let watch = { markets: [] };
   try { watch = JSON.parse(await readFile(join(ROOT, 'watchlist.json'), 'utf8')); } catch { /* default */ }
-  const markets = (watch.markets || []).filter((m) => m.provider !== 'natgas');
+  const markets = (watch.markets || []).filter((m) => m.provider === 'twelvedata');
+  const futures = (watch.markets || []).filter((m) => m.provider === 'cnbc');
   const index = { generatedAt: new Date(now).toISOString(), keyConfigured: !!TD_KEY, maxMarkets: 8, markets: [] };
 
   try { const out = await buildNatgas(base, now); index.markets.push(summary(out, NATGAS)); console.log(`OK NATGAS last=${out.price.last} bias=${out.forecast.bias}`); for (const s of out.sources) if (!s.ok) console.log(`::warning title=NATGAS ${s.name}::${(s.error || 'no answer').replace(/\n/g, ' ')}`); }
@@ -740,6 +754,10 @@ async function main() {
 
   const n = Math.max(1, markets.length);
   const plan = { intervalMin: Math.max(10, Math.ceil((n * 1440) / (TD_DAILY_BUDGET - n) / 5) * 5), readsLeft: 30 };
+  for (const m of futures) {
+    try { FAILED.length = 0; const out = await buildCnbcFutures(m, base, now, plan); index.markets.push(summary(out, m)); console.log(`OK ${m.id} last=${out.price.last} bias=${out.forecast.bias}`); for (const s of out.sources) if (!s.ok && /CNBC|history/.test(s.name)) console.log(`::warning title=${m.id} ${s.name}::${s.error || ''}`); }
+    catch (e) { index.markets.push(summary(null, m, e.message)); console.log(`::warning title=${m.id} failed::${e.message} ${FAILED.map((x) => x.name + ': ' + x.error).join(' | ')}`); }
+  }
   index.quoteIntervalMin = plan.intervalMin;
   // markets quoted longest ago go first so the per-minute API budget is shared fairly
   const prevs = await Promise.all(markets.map((m) => loadPrev(base, `m/${m.id}.json`, now)));

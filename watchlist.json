@@ -2,17 +2,22 @@
   "note": "Markets shown on the site. NATGAS is built in. Add or remove others from the site's search (it opens a GitHub issue) or by editing this file. Free Twelve Data plan: up to 8 markets.",
   "markets": [
     {
-      "id": "WTI-USD",
-      "symbol": "WTI/USD",
-      "name": "Crude Oil WTI Spot",
+      "id": "BRENT",
+      "symbol": "Brent front month",
+      "name": "Brent crude oil",
       "category": "energy",
-      "exchange": "",
-      "type": "Energy Resource",
-      "provider": "twelvedata",
-      "newsQuery": "oil prices",
+      "exchange": "ICE",
+      "type": "Futures",
+      "provider": "cnbc",
+      "cnbc": "@LCO.1",
+      "yahoo": "BZ=F",
+      "seed": "seed-BRENT.json",
+      "newsQuery": "Brent crude",
       "keywords": [
+        "Brent",
         "crude oil",
-        "WTI"
+        "oil prices",
+        "OPEC"
       ]
     }
   ]
