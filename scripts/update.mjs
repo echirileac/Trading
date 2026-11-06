@@ -280,7 +280,7 @@ const DIRECT_FEEDS = [
   { name: 'OilPrice.com', url: 'https://oilprice.com/rss/main', source: 'OilPrice.com' },
   { name: 'Natural Gas Intelligence', url: 'https://naturalgasintel.com/feed/', source: 'Natural Gas Intelligence' }
 ];
-const READER_VERSION = 2;
+const READER_VERSION = 3;
 const MAX_NEW_ARTICLES = 30;   // per refresh; earlier results are cached by link
 const READ_CONCURRENCY = 5;
 
@@ -377,7 +377,14 @@ async function readArticleInner(item, feedText) {
   const fw = feedText ? feedText.split(/\s+/).length : 0;
   if (fw > Math.max(pageWords, 60)) { text = feedText; via = 'publisher feed'; paywall = false; }
   const words = text ? text.split(/\s+/).length : 0;
-  if (words < 60) return { status: 'headline', url, reason: reason || (paywall ? 'paywall' : 'no article text found'), words };
+  if (words < 60) {
+    // Paywalled publishers (e.g. NGI) only expose a lead summary in their feed: use it rather than nothing.
+    if (fw >= 20) {
+      const body = scoreBody(feedText);
+      return { status: 'summary', via: 'publisher feed summary', url, words: fw, reason: reason || 'paywall', bodyScore: round(body.score, 2), keyPhrases: body.top };
+    }
+    return { status: 'headline', url, reason: reason || (paywall ? 'paywall' : 'no article text found'), words };
+  }
   const body = scoreBody(text);
   return { status: words < 250 || (paywall && via === 'page') ? 'partial' : 'full', via, url, words, bodyScore: round(body.score, 2), sentences: body.sentences, signalSentences: body.hitSentences, keyPhrases: body.top };
 }
@@ -406,7 +413,7 @@ async function loadNews(prev, now) {
   for (const f of DIRECT_FEEDS) {
     try {
       const got = parseRss(await get(f.url, { timeout: 12000, retries: 0 })).map((x) => ({ ...x, source: x.source || f.source, sourceUrl: f.url, direct: true }));
-      for (const x of got) { const txt = decodeEntities(x.content || x.description || ''); if (txt.split(/\s+/).length > 60) FEEDTEXT.set(titleKey(decodeEntities(x.title)), txt); }
+      for (const x of got) { const txt = decodeEntities(x.content || x.description || ''); if (txt.split(/\s+/).length >= 20) FEEDTEXT.set(titleKey(decodeEntities(x.title)), txt); }
       all.push(...got); status.push({ name: `${f.name} feed`, ok: true });
     } catch (e) { status.push({ name: `${f.name} feed`, ok: false, error: e.message }); }
   }
@@ -445,10 +452,11 @@ async function loadNews(prev, now) {
     if (!it.read) it.read = { status: 'headline', reason: 'not read yet (queued for next refresh)' };
     const body = it.read.status !== 'headline' && it.read.bodyScore != null;
     // headline sets the angle; the article body carries most of the weight once read
-    it.score = round(body ? clamp(0.3 * it.headlineScore + 0.7 * it.read.bodyScore, -2.5, 2.5) : it.headlineScore, 2);
+    const wBody = it.read.status === 'summary' ? 0.5 : 0.7;
+    it.score = round(body ? clamp((1 - wBody) * it.headlineScore + wBody * it.read.bodyScore, -2.5, 2.5) : it.headlineScore, 2);
   }
-  const full = top.filter((x) => x.read.status === 'full').length, part = top.filter((x) => x.read.status === 'partial').length;
-  status.push({ name: `Article reader: ${full} full + ${part} partial of ${top.length} articles`, ok: full + part > 0 || !top.length, error: full + part ? '' : 'no article bodies could be read' });
+  const full = top.filter((x) => x.read.status === 'full').length, part = top.filter((x) => x.read.status === 'partial').length, summ = top.filter((x) => x.read.status === 'summary').length;
+  status.push({ name: `Article reader: ${full} full, ${part} partial, ${summ} paywalled (summary only) of ${top.length} stories`, ok: full + part > 0 || !top.length, error: full + part ? '' : 'no article bodies could be read' });
   const failReasons = {};
   for (const x of top) if (x.read.status === 'headline' && x.read.reason) failReasons[x.read.reason.slice(0, 60)] = (failReasons[x.read.reason.slice(0, 60)] || 0) + 1;
   if (Object.keys(failReasons).length) console.log(`::notice title=Articles not read::${Object.entries(failReasons).map(([k, v]) => `${v}x ${k}`).join(' | ')}`);
@@ -494,7 +502,7 @@ function buildForecast(px, news, now) {
   const momSig = Math.tanh(ret5 / (sigma * Math.sqrt(5)));
   const rsiSig = r == null ? 0 : r < 30 ? clamp((30 - r) / 15, 0, 1) : r > 70 ? -clamp((r - 70) / 15, 0, 1) : 0;
   const signals = [
-    { id: 'news', name: 'News sentiment', weight: 0.45, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && n.read.status !== 'headline').length} read in full or in part), recency-weighted score ${newsRaw.toFixed(2)}` },
+    { id: 'news', name: 'News sentiment', weight: 0.45, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && ['full', 'partial'].includes(n.read.status)).length} read in full or in part, ${recent.filter((n) => n.read && n.read.status === 'summary').length} paywalled summaries), recency-weighted score ${newsRaw.toFixed(2)}` },
     { id: 'trend', name: 'Trend vs 20-day average', weight: 0.2, value: trendSig, detail: s20 ? `Price ${(100 * (last / s20 - 1)).toFixed(1)}% vs 20-day average $${s20.toFixed(3)}` : 'Not enough history' },
     { id: 'momentum', name: '5-day momentum', weight: 0.15, value: momSig, detail: `${(100 * (Math.exp(ret5) - 1)).toFixed(1)}% over 5 sessions` },
     { id: 'rsi', name: 'Overbought / oversold (RSI 14)', weight: 0.2, value: rsiSig, detail: r == null ? 'Not enough history' : `RSI ${r.toFixed(0)} (below 30 oversold, above 70 overbought)` }

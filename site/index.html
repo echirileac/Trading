@@ -475,8 +475,9 @@
     const items = DATA.news.items || [];
     const nFull = items.filter((n) => n.read && n.read.status === 'full').length;
     const nPart = items.filter((n) => n.read && n.read.status === 'partial').length;
+    const nSum = items.filter((n) => n.read && n.read.status === 'summary').length;
     $('news-note').textContent = items.length
-      ? `${items.length} stories from trusted outlets, fetched ${ago(DATA.news.fetchedAt)}. ${nFull} read in full, ${nPart} partly (paywall or short), the rest scored on the headline only. Tags show how the model scored each story for price direction.`
+      ? `${items.length} stories from trusted outlets, fetched ${ago(DATA.news.fetchedAt)}. ${nFull} read in full, ${nPart} partly, ${nSum} paywalled (publisher summary read), the rest blocked to automated readers and scored on the headline only. Tags show how the model scored each story for price direction.`
       : 'No trusted headlines on the last refresh.';
     const ul = $('news'); ul.replaceChildren();
     for (const n of items.slice(0, 30)) {
@@ -486,7 +487,7 @@
       const meta = el('div', { class: 'meta' });
       const tag = n.score > 0.3 ? ['Bullish', 'up'] : n.score < -0.3 ? ['Bearish', 'down'] : ['Neutral', 'flat'];
       const r = n.read || { status: 'headline' };
-      const readTxt = r.status === 'full' ? `Full article · ${r.words} words` : r.status === 'partial' ? `Partly read · ${r.words} words` : 'Headline only';
+      const readTxt = r.status === 'full' ? `Full article · ${r.words} words` : r.status === 'partial' ? `Partly read · ${r.words} words` : r.status === 'summary' ? 'Paywalled · summary read' : 'Headline only';
       meta.append(el('span', { class: 'chip ' + tag[1] }, tag[0]), el('span', { class: 'rd rd-' + r.status, title: r.reason || '' }, readTxt), el('span', {}, n.source), el('span', {}, ago(n.publishedAt)));
       li.append(a, meta);
       if (r.keyPhrases && r.keyPhrases.length) li.append(el('div', { class: 'kp' }, 'Signals in the text: ' + r.keyPhrases.join(', ')));
