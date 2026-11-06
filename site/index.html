@@ -343,7 +343,11 @@
       rows = [...com, ...api];
     } catch (e) { ul.replaceChildren(el('li', {}, 'Search is unavailable right now (' + e.message + ').')); return; }
     const want = (r) => { const c = catOf(r); return !FILTER || (FILTER === 'commodity' ? ['metal', 'energy'].includes(c) : FILTER === 'equity' ? ['equity', 'etf'].includes(c) : c === FILTER); };
-    const prefer = (r) => (r._commodity ? 0 : /physical currency|digital currency|index/i.test(r.instrument_type) ? 1 : /^(NASDAQ|NYSE|XETR|LSE|Euronext|BVB)$/i.test(r.exchange) ? 2 : 3);
+    const Q = q.toUpperCase();
+    const prefer = (r) => (r.symbol.toUpperCase() === Q || r.symbol.toUpperCase().replace('/', '') === Q.replace('/', '') ? -3
+      : r._commodity && /\/USD$/.test(r.symbol) && !/gram/i.test(r.instrument_name) ? -2
+      : /\/USD$/.test(r.symbol) && /physical currency|digital currency/i.test(r.instrument_type) ? -1
+      : r._commodity ? 0 : /physical currency|digital currency|index/i.test(r.instrument_type) ? 1 : /^(NASDAQ|NYSE|XETR|LSE|Euronext|BVB)$/i.test(r.exchange) ? 2 : 3);
     rows = rows.filter(want).filter((r) => !/warrant|certificate|structured|bond/i.test(r.instrument_type || '')).sort((a, b) => prefer(a) - prefer(b)).slice(0, 25);
     const have = new Set(INDEX.markets.map((m) => m.symbol + '|' + (m.exchange || '')));
     ul.replaceChildren(...rows.map((r) => {
