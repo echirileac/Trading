@@ -89,11 +89,36 @@ function parseYahoo(j) {
     .filter((x) => x.c != null && isFinite(x.c));
   return { meta: r.meta || {}, rows };
 }
+// Yahoo rate-limits cookie-less requests from cloud IPs (HTTP 429). Get a session cookie + crumb first, like a browser.
+let YSESSION = null;
+async function yahooSession() {
+  if (YSESSION) return YSESSION;
+  const r1 = await fetch('https://fc.yahoo.com/', { headers: { 'User-Agent': UA }, redirect: 'manual' }).catch(() => null);
+  const cookies = (r1?.headers?.getSetCookie?.() || []).map((c) => c.split(';')[0]).join('; ');
+  let crumb = '';
+  for (const h of ['query2', 'query1']) {
+    try {
+      const r2 = await fetch(`https://${h}.finance.yahoo.com/v1/test/getcrumb`, { headers: { 'User-Agent': UA, Cookie: cookies } });
+      if (r2.ok) { crumb = (await r2.text()).trim(); if (crumb && !crumb.includes('<')) break; }
+    } catch { /* try next */ }
+  }
+  YSESSION = { cookies, crumb };
+  return YSESSION;
+}
 async function yahoo(range, interval) {
+  if (OFFLINE) return parseYahoo(await get(`https://query2.finance.yahoo.com/v8/finance/chart/NG=F?range=${range}&interval=${interval}`, { type: 'json' }));
   const hosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'];
   let err;
-  for (const h of hosts) {
-    try { return parseYahoo(await get(`https://${h}/v8/finance/chart/NG=F?range=${range}&interval=${interval}&includePrePost=false`, { type: 'json' })); } catch (e) { err = e; }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const ses = attempt === 0 ? { cookies: '', crumb: '' } : await yahooSession();
+    for (const h of hosts) {
+      try {
+        const url = `https://${h}/v8/finance/chart/NG=F?range=${range}&interval=${interval}&includePrePost=false${ses.crumb ? '&crumb=' + encodeURIComponent(ses.crumb) : ''}`;
+        const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json', ...(ses.cookies ? { Cookie: ses.cookies } : {}) }, signal: AbortSignal.timeout(15000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}${attempt ? ' (with cookie)' : ''}`);
+        return parseYahoo(await res.json());
+      } catch (e) { err = new Error(`${h}: ${e.message}`); }
+    }
   }
   throw err;
 }
@@ -107,7 +132,7 @@ async function stooqDaily() {
 }
 async function fredDaily() {
   // Henry Hub SPOT price, daily (EIA via FRED). Lags 1-3 days; used only if futures sources fail.
-  const csv = await get('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DHHNGSP');
+  const csv = await get('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DHHNGSP&cosd=' + new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10), { timeout: 45000 });
   const rows = csv.trim().split(/\r?\n/).slice(1).map((l) => { const [D, v] = l.split(','); return { t: Date.parse(D + 'T22:00:00Z'), c: parseFloat(v) }; })
     .filter((x) => isFinite(x.c) && isFinite(x.t));
   if (rows.length < 30) throw new Error('fred: too few rows');
@@ -151,7 +176,17 @@ async function loadPrices(prev) {
   }
   if (last == null && daily?.length && /FRED/.test(source || '')) { last = daily.at(-1).c; prevClose = daily.at(-2)?.c ?? null; }
   let stale = false;
-  if (!daily && prev?.price?.daily) { daily = prev.price.daily.map((r) => ({ t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c })); stale = true; }
+  if (!daily && prev?.price?.daily) {
+    // keep a self-built history going from the last published data, updating today's bar with the live price
+    daily = prev.price.daily.map((r) => ({ t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c }));
+    if (last != null) {
+      const today = new Date(Date.now()).toISOString().slice(0, 10);
+      const lastBar = daily.at(-1);
+      if (new Date(lastBar.t).toISOString().slice(0, 10) === today) { lastBar.c = last; lastBar.h = Math.max(lastBar.h ?? last, last); lastBar.l = Math.min(lastBar.l ?? last, last); }
+      else if (![0, 6].includes(new Date().getUTCDay())) daily.push({ t: Date.parse(today + 'T22:00:00Z'), o: last, h: last, l: last, c: last });
+      source = (prev.price.source || '') + ' + live quote';
+    } else stale = true;
+  }
   if (last == null && prev?.price?.last != null) { last = prev.price.last; prevClose = prev.price.prevClose; stale = true; }
   if (!daily || last == null) { FAILED.push(...status.filter((x) => !x.ok)); throw new Error('No price data from any source'); }
   // previous close: last completed daily bar before today
