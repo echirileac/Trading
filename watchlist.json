@@ -19,6 +19,20 @@
         "oil prices",
         "OPEC"
       ]
+    },
+    {
+      "id": "MRNA-NASDAQ",
+      "symbol": "MRNA",
+      "name": "Moderna Inc.",
+      "category": "equity",
+      "exchange": "NASDAQ",
+      "type": "Common Stock",
+      "provider": "twelvedata",
+      "newsQuery": "Moderna stock",
+      "keywords": [
+        "Moderna",
+        "MRNA"
+      ]
     }
   ]
 }
