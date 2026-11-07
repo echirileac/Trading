@@ -20,6 +20,7 @@
     --grid: #ffffff12; --track: #ffffff14; --track-strong: #ffffff30; --ref: #ffffffaa; --ref-soft: #ffffff55;
     --tick-open: #ffffff80; --cursor: #ffffff40; --shade: #ffffff08; --tip-bg: #0d0d10ee; --halo: rgba(255,255,255,.05);
     --banner-bg: #3a2a10; --banner-line: #6b4e1c; --banner-fg: #f3d28b; --area-top: .28;
+    --c-ma20: #e3b341; --c-ma50: #7aa2ff; --c-ma200: #c297ff; --c-bb: #39c5cf; --c-signal: #f0883e;
     color-scheme: dark;
     --r: 14px; --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
   }
@@ -29,6 +30,7 @@
     --grid: #0000000f; --track: #00000012; --track-strong: #00000026; --ref: #00000099; --ref-soft: #00000055;
     --tick-open: #00000070; --cursor: #00000040; --shade: #00000006; --tip-bg: #fffffff5; --halo: rgba(0,0,0,.06);
     --banner-bg: #fff4d6; --banner-line: #e8c46b; --banner-fg: #6b4a00; --area-top: .18;
+    --c-ma20: #b7791f; --c-ma50: #2f62d8; --c-ma200: #8250df; --c-bb: #0e8a96; --c-signal: #d4590b;
     color-scheme: light;
   }
   @media (prefers-color-scheme: light) {
@@ -38,6 +40,7 @@
       --grid: #0000000f; --track: #00000012; --track-strong: #00000026; --ref: #00000099; --ref-soft: #00000055;
       --tick-open: #00000070; --cursor: #00000040; --shade: #00000006; --tip-bg: #fffffff5; --halo: rgba(0,0,0,.06);
       --banner-bg: #fff4d6; --banner-line: #e8c46b; --banner-fg: #6b4a00; --area-top: .18;
+      --c-ma20: #b7791f; --c-ma50: #2f62d8; --c-ma200: #8250df; --c-bb: #0e8a96; --c-signal: #d4590b;
       color-scheme: light;
     }
   }
@@ -140,6 +143,33 @@
   .btn.ghost { background: transparent; color: var(--muted); }
   .hint { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
   .top-actions { display: flex; gap: 8px; align-items: center; }
+  .ai h3 { font-size: 18px; line-height: 1.35; margin: 10px 0 6px; }
+  .ai p { font-size: 14px; line-height: 1.6; margin: 0 0 10px; }
+  .ai .ai-outlook { background: var(--panel2); border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
+  .ai .ai-outlook b { color: var(--fg); }
+  .ai .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px; }
+  .ai h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 4px 0 6px; }
+  .ai ul { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.55; }
+  .ai li { margin-bottom: 4px; }
+  .ai .lv { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ai .lv span { font-size: 12px; font-variant-numeric: tabular-nums; border: 1px solid currentColor; border-radius: 999px; padding: 2px 8px; }
+  .ai .foot { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
+  .ai .empty { font-size: 14px; color: var(--muted); line-height: 1.6; margin: 8px 0 0; }
+  .pc-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .pc-head h2 { margin: 0; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chips button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 4px 10px; font: 600 12px var(--font); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chips button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); background: var(--panel2); }
+  .chips i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+  .pc-wrap { position: relative; }
+  .pc-legend { position: absolute; z-index: 2; top: 6px; left: 8px; right: 70px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); pointer-events: none; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .pc-legend b { color: var(--fg); font-weight: 600; }
+  .pc-main { height: 380px; }
+  .pc-sub { height: 120px; border-top: 1px solid var(--line); position: relative; }
+  .pc-sub[hidden] { display: none; }
+  .pc-sub .pc-tag { position: absolute; z-index: 2; top: 4px; left: 8px; font-size: 11px; color: var(--muted); pointer-events: none; font-variant-numeric: tabular-nums; }
+  .pc-credit { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
+  @media (max-width: 520px) { .pc-main { height: 300px; } .pc-sub { height: 100px; } }
   .theme-btn { display: inline-flex; align-items: center; gap: 6px; }
   .theme-btn svg { width: 16px; height: 16px; }
   @media (max-width: 520px) { .price { font-size: 40px; } .fc-center { font-size: 30px; } }
@@ -193,10 +223,35 @@
     </div>
   </section>
 
+  <section class="card ai" id="ai-card" aria-live="polite">
+    <div class="fc-head"><span>AI analyst</span><span class="bias" id="ai-stance" hidden></span></div>
+    <div id="ai-body"></div>
+  </section>
+
   <section class="card">
-    <h2>Price and forecast cone</h2>
-    <p class="note">Recent daily closes, the live price, and the selected horizon's 68% (darker) and 90% (lighter) ranges.</p>
-    <div class="chart" id="chart"></div>
+    <div class="pc-head">
+      <h2>Chart</h2>
+      <div class="chips" id="pc-tf" role="group" aria-label="Timeframe">
+        <button type="button" data-tf="1M">1M</button><button type="button" data-tf="3M">3M</button><button type="button" data-tf="6M">6M</button><button type="button" data-tf="1Y">1Y</button>
+      </div>
+    </div>
+    <div class="chips" id="pc-tools" role="group" aria-label="Indicators" style="margin-bottom:10px">
+      <button type="button" data-k="ma20"><i style="background:var(--c-ma20)"></i>MA 20</button>
+      <button type="button" data-k="ma50"><i style="background:var(--c-ma50)"></i>MA 50</button>
+      <button type="button" data-k="ma200"><i style="background:var(--c-ma200)"></i>MA 200</button>
+      <button type="button" data-k="bb"><i style="background:var(--c-bb)"></i>Bollinger</button>
+      <button type="button" data-k="fc"><i style="background:var(--fg)"></i>Forecast</button>
+      <button type="button" data-k="rsi">RSI</button>
+      <button type="button" data-k="macd">MACD</button>
+    </div>
+    <div class="pc-wrap">
+      <div class="pc-legend" id="pc-legend"></div>
+      <div class="pc-main" id="pc-main"></div>
+      <div class="pc-sub" id="pc-rsi-box"><span class="pc-tag" id="pc-rsi-tag">RSI 14</span><div id="pc-rsi" style="height:100%"></div></div>
+      <div class="pc-sub" id="pc-macd-box"><span class="pc-tag" id="pc-macd-tag">MACD 12, 26, 9</span><div id="pc-macd" style="height:100%"></div></div>
+    </div>
+    <p class="note" style="margin:8px 0 0">Daily candles. Drag to pan, scroll or pinch to zoom. Dashed lines: the model's centre forecast and 68% range for the selected horizon.</p>
+    <p class="pc-credit">Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>.</p>
   </section>
 
   <div class="grid2">
@@ -244,6 +299,7 @@
   <p class="disc">Not financial advice. CFDs are leveraged and can move fast against you. A broker's CFD quote can differ slightly from the market prices shown here, and futures-based CFDs roll to the next contract a few days before expiry.</p>
 </div>
 
+<script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -473,93 +529,11 @@
     $('r68').textContent = `${usd(h.lo68, 2)} – ${usd(h.hi68, 2)}`;
     $('r90').textContent = `${usd(h.lo90, 2)} – ${usd(h.hi90, 2)}`;
 
-    drawChart(); drawIntraday(); drawSignals(); drawLevels(); drawNews(); drawSources();
+    drawAI(); pcUpdate(); drawIntraday(); drawSignals(); drawLevels(); drawNews(); drawSources();
     $('method').textContent = DATA.method;
   }
 
   // ---------- main chart ----------
-  function drawChart() {
-    const box = $('chart'); box.replaceChildren();
-    const p = DATA.price, f = DATA.forecast;
-    const W = Math.max(300, box.clientWidth), Ht = W < 520 ? 260 : 320;
-    const hist = p.daily.slice(W < 520 ? -40 : -60).map((d) => ({ date: d.date, c: d.c }));
-    const todayISO = DATA.generatedAt.slice(0, 10);
-    if (hist.length && hist.at(-1).date !== todayISO && DATA.market !== 'closed') hist.push({ date: 'Live', c: p.last });
-    else if (hist.length) hist[hist.length - 1] = { ...hist.at(-1), c: p.last };
-    const n = hist.length, last = p.last;
-    const mu = f.score * 0.25 * f.sigmaDaily, s = f.sigmaDaily;
-    const cone = [{ k: 0, c: last, lo68: last, hi68: last, lo90: last, hi90: last }];
-    for (let k = 1; k <= H; k++) {
-      const sd = s * Math.sqrt(k);
-      cone.push({ k, c: last * Math.exp(mu * k), lo68: last * Math.exp(mu * k - sd), hi68: last * Math.exp(mu * k + sd), lo90: last * Math.exp(mu * k - 1.645 * sd), hi90: last * Math.exp(mu * k + 1.645 * sd) });
-    }
-    const vals = [...hist.map((d) => d.c), ...cone.map((c) => c.lo90), ...cone.map((c) => c.hi90)];
-    let lo = Math.min(...vals), hi = Math.max(...vals); const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
-    const svg = el('svg:svg', { viewBox: `0 0 ${W} ${Ht}`, width: '100%' });
-    box.append(svg);
-    // y ticks
-    const step = niceStep((hi - lo) / 5);
-    const ticks = []; for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) ticks.push(+v.toFixed(8));
-    const probe = el('svg:text', { class: 'tick' }, usd(hi, 2)); svg.append(probe);
-    const mL = probe.getComputedTextLength() + 14; probe.remove();
-    const mR = 8, mT = 10, mB = 24;
-    const plotW = W - mL - mR, fW = plotW * (W < 520 ? 0.3 : 0.24), hW = plotW - fW;
-    // history and forecast get fixed shares of the width so the cone stays readable at every horizon
-    const x = (i) => (i <= n - 1 ? mL + (i / Math.max(1, n - 1)) * hW : mL + hW + ((i - (n - 1)) / H) * fW);
-    const y = (v) => mT + (1 - (v - lo) / (hi - lo)) * (Ht - mT - mB);
-    for (const t of ticks) {
-      svg.append(el('svg:line', { x1: mL, x2: W - mR, y1: y(t), y2: y(t), class: 'grid' }));
-      svg.append(el('svg:text', { x: mL - 8, y: y(t), dy: '0.32em', 'text-anchor': 'end', class: 'tick' }, usd(t, 2)));
-    }
-    // cone
-    const x0 = n - 1;
-    const poly = (a, b) => cone.map((c) => `${x(x0 + c.k)},${y(c[a])}`).concat([...cone].reverse().map((c) => `${x(x0 + c.k)},${y(c[b])}`)).join(' ');
-    const ccol = f.score > 0.15 ? 'var(--up)' : f.score < -0.15 ? 'var(--down)' : 'var(--accent)';
-    svg.append(el('svg:rect', { x: x(x0), y: mT, width: fW, height: Ht - mT - mB, fill: 'var(--shade)' }));
-    svg.append(el('svg:polygon', { points: poly('hi90', 'lo90'), fill: ccol, 'fill-opacity': '0.12' }));
-    svg.append(el('svg:polygon', { points: poly('hi68', 'lo68'), fill: ccol, 'fill-opacity': '0.22' }));
-    svg.append(el('svg:path', { d: 'M' + cone.map((c) => `${x(x0 + c.k)},${y(c.c)}`).join('L'), fill: 'none', stroke: ccol, 'stroke-width': 2, 'stroke-dasharray': '5 4' }));
-    // history line + area
-    const defs = el('svg:defs'); const g = el('svg:linearGradient', { id: 'ar', x1: 0, y1: 0, x2: 0, y2: 1 });
-    const at = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--area-top')) || 0.28;
-    [[0, at], [.5, at * 0.3], [1, 0]].forEach(([o, op]) => g.append(el('svg:stop', { offset: o, style: `stop-color: var(--accent); stop-opacity: ${op}` })));
-    defs.append(g); svg.append(defs);
-    const path = hist.map((d, i) => `${x(i)},${y(d.c)}`).join('L');
-    svg.append(el('svg:path', { d: `M${x(0)},${y(lo)}L${path}L${x(n - 1)},${y(lo)}Z`, fill: 'url(#ar)' }));
-    svg.append(el('svg:path', { d: 'M' + path, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
-    svg.append(el('svg:circle', { cx: x(n - 1), cy: y(last), r: 4, fill: 'var(--fg)' }));
-    // end labels
-    const hz = DATA.forecast.horizons[H];
-    const endX = x(x0 + H);
-    // x labels
-    const xl = [[0, hist[0].date], [Math.floor((n - 1) / 2), hist[Math.floor((n - 1) / 2)].date], [n - 1, 'Now'], [x0 + H, hz.targetDate]];
-    let prevR = -Infinity;
-    const placed = [];
-    xl.forEach(([i, lab], j) => {
-      const txt = lab.length === 10 ? new Date(lab + 'T12:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }) : lab;
-      const anchor = j === xl.length - 1 ? 'end' : j === 0 ? 'start' : 'middle';
-      const t = el('svg:text', { x: j === xl.length - 1 ? endX : x(i), y: Ht - 6, 'text-anchor': anchor, class: 'tick', fill: j === xl.length - 1 ? 'var(--fg)' : null }, txt);
-      svg.append(t);
-      const bb = t.getBBox();
-      if (j === xl.length - 1) { while (placed.length && placed.at(-1).r + 6 > bb.x) placed.pop().t.remove(); }
-      else if (bb.x < prevR + 6) { t.remove(); return; }
-      prevR = bb.x + bb.width; placed.push({ t, r: prevR });
-    });
-    // hover
-    const tip = el('div', { class: 'tip' }); tip.hidden = true; box.append(tip);
-    const vline = el('svg:line', { y1: mT, y2: Ht - mB, stroke: 'var(--cursor)' }); vline.style.display = 'none'; svg.append(vline);
-    svg.addEventListener('pointermove', (ev) => {
-      const r = svg.getBoundingClientRect(); const px = (ev.clientX - r.left) * (W / r.width);
-      const i = px <= mL + hW ? Math.round(((px - mL) / hW) * (n - 1)) : (n - 1) + Math.round(((px - mL - hW) / fW) * H);
-      let lines;
-      if (i >= 0 && i < n) { const d = hist[i]; lines = [d.date === 'Live' ? 'Live' : dayName(d.date), usd(d.c)]; vline.setAttribute('x1', x(i)); }
-      else if (i >= n && i <= x0 + H) { const c = cone[i - x0]; lines = [`+${c.k} day${c.k > 1 ? 's' : ''} (forecast)`, `Centre ${usd(c.c, 2)}`, `68%: ${usd(c.lo68, 2)} – ${usd(c.hi68, 2)}`, `90%: ${usd(c.lo90, 2)} – ${usd(c.hi90, 2)}`]; vline.setAttribute('x1', x(i)); }
-      else { tip.hidden = true; vline.style.display = 'none'; return; }
-      vline.setAttribute('x2', vline.getAttribute('x1')); vline.style.display = '';
-      showTip(box, tip, ev, lines);
-    });
-    svg.addEventListener('pointerleave', () => { tip.hidden = true; vline.style.display = 'none'; });
-  }
   function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const m = raw / p; return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p; }
   function showTip(box, tip, ev, lines) {
     tip.replaceChildren(...lines.map((l, i) => el('div', i === 0 ? { class: 'h' } : {}, l)));
@@ -569,6 +543,208 @@
     if (lx + tip.offsetWidth > box.clientWidth) lx = ev.clientX - r.left - tip.offsetWidth - 12;
     tip.style.left = Math.max(0, lx) + 'px'; tip.style.top = Math.max(0, Math.min(ly, box.clientHeight - tip.offsetHeight)) + 'px';
   }
+
+  // ---------- AI analyst card ----------
+  function drawAI() {
+    const box = $('ai-body'); box.replaceChildren();
+    const a = DATA.ai, pill = $('ai-stance');
+    pill.hidden = true;
+    if (!a || a.status === 'off') { box.append(el('p', { class: 'empty' }, 'AI analyst notes are switched off. Add an ANTHROPIC_API_KEY secret to the GitHub repository to turn them on (see README).')); return; }
+    if (a.status === 'pending') { box.append(el('p', { class: 'empty' }, 'The first analyst note for this market is being written. It appears within about 10 minutes.')); return; }
+    if (a.status === 'error') { box.append(el('p', { class: 'empty' }, `The analyst note could not be written: ${a.error || 'unknown error'}. It retries on the next refresh.`)); return; }
+    pill.hidden = false;
+    pill.textContent = `${a.stance[0].toUpperCase() + a.stance.slice(1)} · ${a.confidence} confidence`;
+    pill.className = 'bias ' + (a.stance === 'bullish' ? 'up' : a.stance === 'bearish' ? 'down' : 'flat');
+    box.append(el('h3', {}, a.headline), el('p', {}, a.summary));
+    const ol = a.outlook?.[`${H}d`];
+    if (ol) { const d = el('div', { class: 'ai-outlook' }); d.append(el('b', {}, `Next ${H} day${H > 1 ? 's' : ''}: `), document.createTextNode(ol)); box.append(d); }
+    const cols = el('div', { class: 'cols' });
+    const section = (title, items) => { if (!items?.length) return null; const d = el('div'); d.append(el('h4', {}, title)); const ul = el('ul'); items.forEach((t) => ul.append(el('li', {}, t))); d.append(ul); return d; };
+    [section('Chart', a.chart), section('News flow', a.news)].forEach((d) => d && cols.append(d));
+    const lv = el('div');
+    if (a.levels?.support?.length || a.levels?.resistance?.length) {
+      lv.append(el('h4', {}, 'Levels to watch'));
+      const row = el('div', { class: 'lv' });
+      (a.levels.resistance || []).forEach((v) => row.append(el('span', { class: 'down' }, `R ${fmtNum(v, DEC)}`)));
+      (a.levels.support || []).forEach((v) => row.append(el('span', { class: 'up' }, `S ${fmtNum(v, DEC)}`)));
+      lv.append(row); cols.append(lv);
+    }
+    [section('What would change the view', a.flip), section('Risks to watch', a.risks)].forEach((d) => d && cols.append(d));
+    box.append(cols);
+    const model = String(a.model || '').replace(/^claude-/, 'Claude ').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-/g, ' ').replace(/\b(opus|sonnet|haiku|fable)\b/i, (w) => w[0].toUpperCase() + w.slice(1));
+    box.append(el('div', { class: 'foot' }, `Written ${ago(a.at)} by ${model} when price was ${usd(a.price)}. It weighs the chart and news above; refreshed about every 2 hours, sooner after big moves.${a.lastError ? ' Last refresh attempt failed, showing the previous note.' : ''} Market commentary, not financial advice.`));
+  }
+
+  // ---------- pro chart (TradingView Lightweight Charts) ----------
+  const LWC = window.LightweightCharts;
+  const PC = { main: null, rsi: null, macd: null, s: {}, key: null, themeKey: null, syncing: false, legendMap: null, n: 0, future: 0 };
+  const store = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+  const keep = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ } };
+  let PC_TF = store('pc-tf', '6M');
+  const PC_SHOW = Object.assign({ ma20: true, ma50: true, ma200: false, bb: false, fc: true, rsi: true, macd: false }, store('pc-show', {}));
+  const TF_BARS = { '1M': 22, '3M': 66, '6M': 130, '1Y': 260 };
+
+  const cssVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const probeEl = document.createElement('span');
+  function rgba(v) { // resolve a theme colour (incl. #rrggbbaa) to rgb()/rgba() for the chart canvas
+    if (!probeEl.isConnected) { probeEl.style.display = 'none'; document.body.append(probeEl); }
+    probeEl.style.color = '';
+    probeEl.style.color = v.startsWith('--') ? `var(${v})` : v;
+    return getComputedStyle(probeEl).color;
+  }
+  function sd(a) { const m = a.reduce((x, y) => x + y, 0) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length); }
+  const IND = {
+    sma(c, n) { const o = new Array(c.length).fill(null); let t = 0; for (let i = 0; i < c.length; i++) { t += c[i]; if (i >= n) t -= c[i - n]; if (i >= n - 1) o[i] = t / n; } return o; },
+    ema(c, n) { const o = new Array(c.length).fill(null); const k = 2 / (n + 1); let e = null; for (let i = 0; i < c.length; i++) { if (i === n - 1) e = c.slice(0, n).reduce((a, b) => a + b, 0) / n; else if (i >= n) e = c[i] * k + e * (1 - k); if (i >= n - 1) o[i] = e; } return o; },
+    rsi(c, n = 14) {
+      const o = new Array(c.length).fill(null); let g = 0, l = 0;
+      for (let i = 1; i < c.length; i++) {
+        const d = c[i] - c[i - 1], up = Math.max(d, 0), dn = Math.max(-d, 0);
+        if (i <= n) { g += up; l += dn; if (i === n) { g /= n; l /= n; o[i] = l === 0 ? 100 : 100 - 100 / (1 + g / l); } }
+        else { g = (g * (n - 1) + up) / n; l = (l * (n - 1) + dn) / n; o[i] = l === 0 ? 100 : 100 - 100 / (1 + g / l); }
+      }
+      return o;
+    },
+    bb(c, n = 20, k = 2) {
+      const m = IND.sma(c, n);
+      const dev = m.map((v, i) => (v == null ? null : sd(c.slice(i - n + 1, i + 1))));
+      return { mid: m, up: m.map((v, i) => (v == null ? null : v + k * dev[i])), lo: m.map((v, i) => (v == null ? null : v - k * dev[i])) };
+    },
+    macd(c) {
+      const a = IND.ema(c, 12), b = IND.ema(c, 26);
+      const line = c.map((_, i) => (a[i] == null || b[i] == null ? null : a[i] - b[i]));
+      const start = line.findIndex((v) => v != null);
+      const sig = new Array(c.length).fill(null);
+      if (start >= 0) IND.ema(line.slice(start), 9).forEach((v, j) => { sig[start + j] = v; });
+      return { line, sig, hist: line.map((v, i) => (v == null || sig[i] == null ? null : v - sig[i])) };
+    }
+  };
+
+  function chartOpts() {
+    return {
+      autoSize: true,
+      layout: { background: { type: 'solid', color: rgba('--panel') }, textColor: rgba('--muted'), fontFamily: cssVar('--font') || 'sans-serif', fontSize: 11 },
+      grid: { vertLines: { color: rgba('--grid') }, horzLines: { color: rgba('--grid') } },
+      rightPriceScale: { borderColor: rgba('--line'), minimumWidth: 64 },
+      timeScale: { borderColor: rgba('--line'), rightOffset: 3, minBarSpacing: 2 },
+      crosshair: { mode: LWC.CrosshairMode.Normal, vertLine: { color: rgba('--cursor'), labelBackgroundColor: rgba('--muted') }, horzLine: { color: rgba('--cursor'), labelBackgroundColor: rgba('--muted') } },
+      localization: { priceFormatter: (v) => fmtNum(v, DEC) }
+    };
+  }
+  function pcDestroy() { for (const k of ['main', 'rsi', 'macd']) if (PC[k]) { PC[k].remove(); PC[k] = null; } PC.s = {}; }
+  function pcBuild() {
+    pcDestroy();
+    const o = chartOpts();
+    const sub = { ...o, layout: { ...o.layout, attributionLogo: false }, timeScale: { ...o.timeScale, visible: false }, rightPriceScale: { ...o.rightPriceScale, scaleMargins: { top: 0.15, bottom: 0.08 } } };
+    PC.main = LWC.createChart($('pc-main'), o);
+    PC.rsi = LWC.createChart($('pc-rsi'), sub);
+    PC.macd = LWC.createChart($('pc-macd'), sub);
+    const line = (chart, color, extra = {}) => chart.addLineSeries({ color: rgba(color), lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...extra });
+    PC.s.candles = PC.main.addCandlestickSeries({ upColor: rgba('--up'), downColor: rgba('--down'), wickUpColor: rgba('--up'), wickDownColor: rgba('--down'), borderVisible: false });
+    PC.s.ma20 = line(PC.main, '--c-ma20'); PC.s.ma50 = line(PC.main, '--c-ma50'); PC.s.ma200 = line(PC.main, '--c-ma200');
+    PC.s.bbU = line(PC.main, '--c-bb', { lineWidth: 1 }); PC.s.bbL = line(PC.main, '--c-bb', { lineWidth: 1 });
+    PC.s.bbM = line(PC.main, '--c-bb', { lineWidth: 1, lineStyle: LWC.LineStyle.Dotted });
+    PC.s.fcC = line(PC.main, '--fg', { lineStyle: LWC.LineStyle.Dashed, lineWidth: 2 });
+    PC.s.fcH = line(PC.main, '--muted', { lineStyle: LWC.LineStyle.Dashed, lineWidth: 1 });
+    PC.s.fcL = line(PC.main, '--muted', { lineStyle: LWC.LineStyle.Dashed, lineWidth: 1 });
+    PC.s.rsi = line(PC.rsi, '--accent', { lastValueVisible: true });
+    PC.s.rsi.createPriceLine({ price: 70, color: rgba('--down'), lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
+    PC.s.rsi.createPriceLine({ price: 30, color: rgba('--up'), lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
+    PC.s.hist = PC.macd.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+    PC.s.macd = line(PC.macd, '--accent'); PC.s.sig = line(PC.macd, '--c-signal');
+    // keep the three panes panned and zoomed together
+    const charts = [PC.main, PC.rsi, PC.macd];
+    charts.forEach((c) => c.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+      if (PC.syncing || !r) return;
+      PC.syncing = true; charts.forEach((d) => { if (d !== c) d.timeScale().setVisibleLogicalRange(r); }); PC.syncing = false;
+    }));
+    PC.main.subscribeCrosshairMove((p) => pcLegend(p && p.time));
+    PC.themeKey = cssVar('--bg');
+  }
+  function timeKey(t) { return typeof t === 'string' ? t : t && t.year ? `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}` : null; }
+  function pcLegend(time) {
+    const L = PC.legendMap; if (!L) return;
+    const t = (time && L.get(timeKey(time))) || L.get('__last');
+    const box = $('pc-legend'); box.replaceChildren();
+    if (!t) return;
+    const add = (label, val, color) => { const s1 = el('span'); if (color) s1.style.color = rgba(color); if (label) s1.append(document.createTextNode(label + ' ')); s1.append(el('b', {}, val)); box.append(s1); };
+    box.append(el('span', {}, t.label));
+    if (t.o != null) { add('O', fmtNum(t.o, DEC)); add('H', fmtNum(t.h, DEC)); add('L', fmtNum(t.l, DEC)); add('C', fmtNum(t.c, DEC)); if (t.chg != null) add('', sp(t.chg)); }
+    if (PC_SHOW.ma20 && t.ma20 != null) add('MA20', fmtNum(t.ma20, DEC), '--c-ma20');
+    if (PC_SHOW.ma50 && t.ma50 != null) add('MA50', fmtNum(t.ma50, DEC), '--c-ma50');
+    if (PC_SHOW.ma200 && t.ma200 != null) add('MA200', fmtNum(t.ma200, DEC), '--c-ma200');
+    if (PC_SHOW.bb && t.bbU != null) add('BB', `${fmtNum(t.bbL, DEC)}–${fmtNum(t.bbU, DEC)}`, '--c-bb');
+    if (t.fc) add('Forecast', `${fmtNum(t.fc[1], DEC)} (${fmtNum(t.fc[0], DEC)}–${fmtNum(t.fc[2], DEC)})`);
+    const md = DEC > 3 ? DEC : 3;
+    $('pc-rsi-tag').textContent = t.rsi != null ? `RSI 14 · ${t.rsi.toFixed(1)}` : 'RSI 14';
+    $('pc-macd-tag').textContent = t.macd != null ? `MACD 12, 26, 9 · ${t.macd.toFixed(md)} · signal ${t.sig != null ? t.sig.toFixed(md) : '—'}` : 'MACD 12, 26, 9';
+  }
+  function futureDates(lastISO, n, everyDay) {
+    const out = []; let d = new Date(lastISO + 'T00:00:00Z');
+    while (out.length < n) { d = new Date(d.getTime() + 864e5); if (everyDay || d.getUTCDay() % 6 !== 0) out.push(d.toISOString().slice(0, 10)); }
+    return out;
+  }
+  function pcSetVisibility() {
+    const v = (k, on) => { if (PC.s[k]) PC.s[k].applyOptions({ visible: !!on }); };
+    v('ma20', PC_SHOW.ma20); v('ma50', PC_SHOW.ma50); v('ma200', PC_SHOW.ma200);
+    ['bbU', 'bbL', 'bbM'].forEach((k) => v(k, PC_SHOW.bb));
+    ['fcC', 'fcH', 'fcL'].forEach((k) => v(k, PC_SHOW.fc));
+    $('pc-rsi-box').hidden = !PC_SHOW.rsi; $('pc-macd-box').hidden = !PC_SHOW.macd;
+    document.querySelectorAll('#pc-tools button').forEach((b) => b.setAttribute('aria-pressed', String(!!PC_SHOW[b.dataset.k])));
+    document.querySelectorAll('#pc-tf button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tf === PC_TF)));
+  }
+  function pcRange() {
+    if (!PC.main || !PC.n) return;
+    const to = PC.n - 1 + PC.future + 2;
+    const from = Math.max(-1, PC.n - (TF_BARS[PC_TF] || 130));
+    PC.main.timeScale().setVisibleLogicalRange({ from, to });
+  }
+  function pcUpdate() {
+    if (!LWC) { $('pc-main').textContent = 'The chart library did not load. Reload the page to try again.'; return; }
+    const p = DATA.price, f = DATA.forecast, id = DATA.meta?.id || 'NATGAS';
+    const bars = (p.daily || []).filter((b) => b.c != null);
+    if (!bars.length) return;
+    const rebuild = !PC.main || PC.themeKey !== cssVar('--bg');
+    const keepRange = !rebuild && PC.key === id && PC.h === H ? PC.main.timeScale().getVisibleLogicalRange() : null;
+    if (rebuild) pcBuild();
+    // candles; the last one carries the live price
+    const rows = bars.map((b) => ({ time: b.date, open: b.o ?? b.c, high: b.h ?? b.c, low: b.l ?? b.c, close: b.c }));
+    const lastRow = rows[rows.length - 1];
+    if (p.last != null) { lastRow.close = p.last; lastRow.high = Math.max(lastRow.high, p.last); lastRow.low = Math.min(lastRow.low, p.last); }
+    const closes = rows.map((r) => r.close), times = rows.map((r) => r.time);
+    const fut = futureDates(times[times.length - 1], H, DATA.meta?.category === 'crypto');
+    const ws = fut.map((t) => ({ time: t }));
+    const asLine = (arr) => arr.map((v, i) => (v == null ? { time: times[i] } : { time: times[i], value: v })).concat(ws);
+    PC.s.candles.applyOptions({ priceFormat: { type: 'price', precision: DEC, minMove: 1 / 10 ** DEC } });
+    PC.s.candles.setData(rows.concat(ws));
+    const ma20 = IND.sma(closes, 20), ma50 = IND.sma(closes, 50), ma200 = IND.sma(closes, 200), bb = IND.bb(closes), rsi = IND.rsi(closes), mac = IND.macd(closes);
+    PC.s.ma20.setData(asLine(ma20)); PC.s.ma50.setData(asLine(ma50)); PC.s.ma200.setData(asLine(ma200));
+    PC.s.bbU.setData(asLine(bb.up)); PC.s.bbL.setData(asLine(bb.lo)); PC.s.bbM.setData(asLine(bb.mid));
+    PC.s.rsi.setData(asLine(rsi));
+    PC.s.macd.setData(asLine(mac.line)); PC.s.sig.setData(asLine(mac.sig));
+    const upC = rgba('--up'), dnC = rgba('--down');
+    PC.s.hist.setData(mac.hist.map((v, i) => (v == null ? { time: times[i] } : { time: times[i], value: v, color: v >= 0 ? upC : dnC })).concat(ws));
+    // forecast: centre and 68% band, same maths as the forecast card
+    const mu = f.score * 0.25 * f.sigmaDaily, sg = f.sigmaDaily, L0 = p.last ?? closes[closes.length - 1];
+    const fcPts = [{ time: times[times.length - 1], c: L0, h: L0, l: L0 }].concat(fut.map((t, k) => ({
+      time: t, c: L0 * Math.exp(mu * (k + 1)), h: L0 * Math.exp(mu * (k + 1) + sg * Math.sqrt(k + 1)), l: L0 * Math.exp(mu * (k + 1) - sg * Math.sqrt(k + 1))
+    })));
+    PC.s.fcC.setData(fcPts.map((x) => ({ time: x.time, value: x.c })));
+    PC.s.fcH.setData(fcPts.map((x) => ({ time: x.time, value: x.h })));
+    PC.s.fcL.setData(fcPts.map((x) => ({ time: x.time, value: x.l })));
+    // legend lookup by date
+    const map = new Map();
+    rows.forEach((r, i) => map.set(r.time, { label: dayName(r.time), o: r.open, h: r.high, l: r.low, c: r.close, chg: i ? 100 * (r.close / rows[i - 1].close - 1) : null, ma20: ma20[i], ma50: ma50[i], ma200: ma200[i], bbU: bb.up[i], bbL: bb.lo[i], rsi: rsi[i], macd: mac.line[i], sig: mac.sig[i] }));
+    fcPts.slice(1).forEach((x) => map.set(x.time, { label: dayName(x.time) + ' (forecast)', fc: [x.l, x.c, x.h] }));
+    map.set('__last', map.get(times[times.length - 1]));
+    PC.legendMap = map;
+    PC.n = rows.length; PC.future = fut.length; PC.key = id; PC.h = H;
+    pcSetVisibility();
+    if (keepRange) PC.main.timeScale().setVisibleLogicalRange(keepRange); else pcRange();
+    pcLegend(null);
+  }
+  document.querySelectorAll('#pc-tf button').forEach((b) => b.addEventListener('click', () => { PC_TF = b.dataset.tf; keep('pc-tf', PC_TF); pcSetVisibility(); pcRange(); }));
+  document.querySelectorAll('#pc-tools button').forEach((b) => b.addEventListener('click', () => { PC_SHOW[b.dataset.k] = !PC_SHOW[b.dataset.k]; keep('pc-show', PC_SHOW); pcSetVisibility(); pcLegend(null); }));
 
   // ---------- intraday ----------
   function drawIntraday() {

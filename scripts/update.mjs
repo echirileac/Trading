@@ -644,6 +644,103 @@ function packOutput(m, px, news, fc, now, market, extra = {}) {
   };
 }
 
+// ---------- AI analyst (Claude API) ----------
+const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
+const AI_MODEL = process.env.AI_MODEL || 'claude-sonnet-5-5';
+const AI_EVERY_MIN = Number(process.env.AI_EVERY_MIN) || 120;   // regular cadence while the market is open
+const AI_MOVE_PCT = Number(process.env.AI_MOVE_PCT) || 1.5;     // earlier refresh after a move this big
+let aiCallsLeft = Number(process.env.AI_MAX_PER_RUN) || 2;      // spreads notes across runs and markets
+
+function techIndicators(daily, last) {
+  const c = daily.map((r) => r.c); if (last != null) c[c.length - 1] = last;
+  const smaA = (n) => (c.length >= n ? c.slice(-n).reduce((a, b) => a + b, 0) / n : null);
+  const emaS = (arr, n) => { const k = 2 / (n + 1); const o = []; let e = null; arr.forEach((v, i) => { if (i === n - 1) e = arr.slice(0, n).reduce((a, b) => a + b, 0) / n; else if (i >= n) e = v * k + e * (1 - k); o.push(i >= n - 1 ? e : null); }); return o; };
+  let g = 0, l = 0, rsiV = null;
+  for (let i = 1; i < c.length; i++) { const d = c[i] - c[i - 1], up = Math.max(d, 0), dn = Math.max(-d, 0); if (i <= 14) { g += up; l += dn; if (i === 14) { g /= 14; l /= 14; } } else { g = (g * 13 + up) / 14; l = (l * 13 + dn) / 14; } if (i >= 14) rsiV = l === 0 ? 100 : 100 - 100 / (1 + g / l); }
+  const e12 = emaS(c, 12), e26 = emaS(c, 26); const line = c.map((_, i) => (e12[i] == null || e26[i] == null ? null : e12[i] - e26[i]));
+  const st = line.findIndex((v) => v != null); const sig = new Array(c.length).fill(null); if (st >= 0) emaS(line.slice(st), 9).forEach((v, j) => { sig[st + j] = v; });
+  const hist = line.map((v, i) => (v == null || sig[i] == null ? null : v - sig[i]));
+  let crossAgo = null; for (let i = hist.length - 1; i > 0; i--) { if (hist[i] != null && hist[i - 1] != null && Math.sign(hist[i]) !== Math.sign(hist[i - 1])) { crossAgo = hist.length - 1 - i; break; } }
+  const w = c.slice(-20); const m20 = smaA(20); const sdv = m20 ? Math.sqrt(w.reduce((a, b) => a + (b - m20) ** 2, 0) / w.length) : null;
+  const trs = daily.slice(-15).map((r, i, a) => (i ? Math.max(r.h - r.l, Math.abs(r.h - a[i - 1].c), Math.abs(r.l - a[i - 1].c)) : null)).filter((x) => x != null && isFinite(x));
+  const ret = (n) => (c.length > n ? round(100 * (c[c.length - 1] / c[c.length - 1 - n] - 1), 2) : null);
+  const hiLo = (n) => { const a = daily.slice(-n); return { high: round(Math.max(...a.map((r) => r.h ?? r.c))), low: round(Math.min(...a.map((r) => r.l ?? r.c))) }; };
+  return {
+    sma20: round(m20), sma50: round(smaA(50)), sma200: round(smaA(200)), rsi14: round(rsiV, 1),
+    macd: { line: round(line.at(-1), 4), signal: round(sig.at(-1), 4), histogram: round(hist.at(-1), 4), lastCrossSessionsAgo: crossAgo, histogramTrend: hist.at(-1) != null && hist.at(-2) != null ? (hist.at(-1) > hist.at(-2) ? 'rising' : 'falling') : null },
+    bollinger20: m20 ? { upper: round(m20 + 2 * sdv), lower: round(m20 - 2 * sdv), percentB: round((c.at(-1) - (m20 - 2 * sdv)) / (4 * sdv), 2) } : null,
+    atr14: trs.length ? round(trs.reduce((a, b) => a + b, 0) / trs.length) : null,
+    returnsPct: { d1: ret(1), d5: ret(5), d20: ret(20), d60: ret(60) },
+    range20: hiLo(20), range52w: hiLo(252)
+  };
+}
+
+const AI_SYSTEM = `You are a senior cross-asset market analyst writing a short, live note for a CFD trader's dashboard.
+Weigh the chart (trend, momentum, levels) and the news flow together, and say where they agree or conflict.
+Rules:
+- Use only the data provided. Do not invent prices, events, quotes or sources. If information is thin, say so.
+- News items may be headline-only (not fully read) - treat those as weaker evidence.
+- The quant model forecast is one input, not the truth; you may disagree with it and explain why.
+- Be concrete: cite levels and numbers from the data. Plain English, no hype.
+- This is market commentary, not personal advice: no position sizing, no "you should buy/sell".
+Respond with ONLY a JSON object, no markdown, matching:
+{"stance":"bullish|bearish|neutral","confidence":"low|medium|high","headline":"<=90 chars","summary":"2-3 sentences",
+ "chart":["3-5 short bullets on trend, momentum, volatility, levels"],"news":["2-4 short bullets on what the news flow implies"],
+ "levels":{"support":[numbers],"resistance":[numbers]},
+ "outlook":{"1d":"one sentence","3d":"one sentence","5d":"one sentence"},
+ "flip":["1-2 things that would change this view"],"risks":["1-2 key risks or events to watch"]}`;
+
+async function aiFor(m, out, prevAi, now) {
+  if (!AI_KEY) return { status: 'off' };
+  const prevOk = prevAi && prevAi.status === 'ok' && prevAi.at;
+  const ageMin = prevOk ? (now - Date.parse(prevAi.at)) / 60e3 : Infinity;
+  const moved = prevOk && prevAi.price ? Math.abs(out.price.last / prevAi.price - 1) * 100 : 0;
+  const every = out.market === 'open' ? AI_EVERY_MIN : Math.max(AI_EVERY_MIN, 360);
+  const due = !prevOk || ageMin >= every || (moved >= AI_MOVE_PCT && ageMin >= 20);
+  if (!due) return prevAi;
+  if (aiCallsLeft <= 0 || OFFLINE) return prevAi || { status: 'pending' };
+  aiCallsLeft--;
+  const f = out.forecast;
+  const payload = {
+    market: { name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', instrument: out.instrument },
+    asOf: out.price.asOf, marketStatus: out.market,
+    price: { last: out.price.last, previousClose: out.price.prevClose, changePct: out.price.changePct },
+    indicators: techIndicators(out.price.daily.map((r) => ({ h: r.h, l: r.l, c: r.c })), out.price.last),
+    last30Closes: out.price.daily.slice(-30).map((r) => [r.date, r.c]),
+    keyLevels: f.levels,
+    quantModel: { bias: f.bias, score: f.score, dailyVolatilityPct: round(f.sigmaDaily * 100, 2), signals: f.signals.map((x) => ({ name: x.name, value: x.value, detail: x.detail })), horizons: f.horizons },
+    news: (out.news.items || []).slice(0, 15).map((n) => ({ title: n.title, source: n.source, hoursAgo: round((now - Date.parse(n.publishedAt)) / 36e5, 1), read: n.read?.status || 'headline', modelScore: n.score, keyPhrases: n.read?.keyPhrases || [] }))
+  };
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', signal: AbortSignal.timeout(60000),
+      headers: { 'x-api-key': AI_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: AI_MODEL, max_tokens: 1500, system: AI_SYSTEM, messages: [{ role: 'user', content: `Write the analyst note for this market data:\n${JSON.stringify(payload)}` }] })
+    });
+    const j = await res.json();
+    if (!res.ok) throw new Error(`Claude API ${res.status}: ${j?.error?.message || 'error'}`);
+    const text = (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    const note = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+    const clip = (x, n) => String(x ?? '').slice(0, n);
+    const list = (a, k, n) => (Array.isArray(a) ? a.slice(0, k).map((x) => clip(x, n)) : []);
+    const nums = (a) => (Array.isArray(a) ? a.map(Number).filter(isFinite).slice(0, 4) : []);
+    return {
+      status: 'ok', at: new Date(now).toISOString(), model: AI_MODEL, price: out.price.last,
+      stance: ['bullish', 'bearish', 'neutral'].includes(note.stance) ? note.stance : 'neutral',
+      confidence: ['low', 'medium', 'high'].includes(note.confidence) ? note.confidence : 'low',
+      headline: clip(note.headline, 140), summary: clip(note.summary, 700),
+      chart: list(note.chart, 5, 240), news: list(note.news, 4, 240),
+      levels: { support: nums(note.levels?.support), resistance: nums(note.levels?.resistance) },
+      outlook: { '1d': clip(note.outlook?.['1d'], 240), '3d': clip(note.outlook?.['3d'], 240), '5d': clip(note.outlook?.['5d'], 240) },
+      flip: list(note.flip, 2, 240), risks: list(note.risks, 2, 240),
+      usage: j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : undefined
+    };
+  } catch (e) {
+    console.log(`::warning title=AI analyst ${m.id}::${String(e.message).slice(0, 300)}`);
+    return prevOk ? { ...prevAi, lastError: String(e.message).slice(0, 200), lastErrorAt: new Date(now).toISOString() } : { status: 'error', error: String(e.message).slice(0, 200), at: new Date(now).toISOString() };
+  }
+}
+
 // ---------- NATGAS (CNBC quote + self-maintained history) ----------
 const NATGAS = { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy', provider: 'cnbc', instrument: 'Henry Hub natural gas, NYMEX front-month futures (NG=F)' };
 async function buildNatgas(base, now) {
@@ -652,6 +749,7 @@ async function buildNatgas(base, now) {
   const news = await loadNews(prev, now, GAS_PROFILE);
   const fc = buildForecast(px, news, now, { calendar: 'ng' });
   const out = packOutput(NATGAS, px, news, fc, now, marketStatus(new Date(now)));
+  out.ai = await aiFor(NATGAS, out, prev?.ai, now);
   await save('m/NATGAS.json', out);
   await save('latest.json', out); // kept for older links
   return out;
@@ -666,6 +764,7 @@ async function buildCnbcFutures(m, base, now, plan) {
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
   const fc = buildForecast(px, news, now, { calendar: 'ng' });
   const out = packOutput(m, px, news, fc, now, marketStatus(new Date(now)));
+  out.ai = await aiFor(m, out, prev?.ai, now);
   await save(`m/${m.id}.json`, out);
   return out;
 }
@@ -737,7 +836,7 @@ function summary(out, m, error) {
   if (!out) return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', error };
   const h = out.forecast.horizons;
   return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', last: out.price.last, changePct: out.price.changePct, decimals: out.meta.decimals,
-    market: out.market, bias: out.forecast.bias, score: out.forecast.score, h: Object.fromEntries(Object.entries(h).map(([k, v]) => [k, { center: v.center, changePct: v.changePct, pUp: v.pUp }])), asOf: out.price.asOf, error };
+    market: out.market, ai: out.ai?.status === 'ok' ? { stance: out.ai.stance, headline: out.ai.headline } : null, bias: out.forecast.bias, score: out.forecast.score, h: Object.fromEntries(Object.entries(h).map(([k, v]) => [k, { center: v.center, changePct: v.changePct, pUp: v.pUp }])), asOf: out.price.asOf, error };
 }
 
 async function main() {
@@ -767,7 +866,7 @@ async function main() {
     const m = markets[i];
     try {
       const r = await buildTwelveData(m, prevs[i], now, plan);
-      if (r.out) { await save(`m/${m.id}.json`, r.out); results[i] = summary(r.out, m, r.out.sources.find((x) => !x.ok && /Twelve Data/.test(x.name))?.error); console.log(`OK ${m.id} last=${r.out.price.last} bias=${r.out.forecast.bias}`); }
+      if (r.out) { r.out.ai = await aiFor(m, r.out, prevs[i]?.ai, now); await save(`m/${m.id}.json`, r.out); results[i] = summary(r.out, m, r.out.sources.find((x) => !x.ok && /Twelve Data/.test(x.name))?.error); console.log(`OK ${m.id} last=${r.out.price.last} bias=${r.out.forecast.bias}`); }
       else { results[i] = summary(null, m, r.error); console.log(`::warning title=${m.id}::${r.error}`); }
     } catch (e) { results[i] = summary(null, m, e.message); console.log(`::warning title=${m.id} failed::${e.message}`); }
   }

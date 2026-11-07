@@ -34,6 +34,9 @@ jobs:
         env:
           NEWS_EVERY_MIN: "15"
           TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AI_MODEL: ${{ vars.AI_MODEL }}          # optional repo variable, default claude-sonnet-5-5
+          AI_EVERY_MIN: ${{ vars.AI_EVERY_MIN }}  # optional, default 120
           # SITE_URL: "https://your-custom-domain.example/"   # only if you use a custom domain
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

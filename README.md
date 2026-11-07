@@ -25,6 +25,14 @@ From then on it refreshes itself every ~5 minutes.
 - Prices for these markets come from **Twelve Data**. Add your free API key once: GitHub repo → Settings → Secrets and variables → Actions → **New repository secret**, name `TWELVE_DATA_KEY`.
 - Free plan limits (800 requests/day, 8/minute) mean live quotes refresh every 10–15 minutes depending on how many markets you watch; daily history is fetched once a day. Some indices need a paid Twelve Data plan.
 
+## Pro chart and AI analyst (added November 2026)
+
+- **Chart:** daily candlesticks (TradingView Lightweight Charts, bundled in `site/vendor`), 1M/3M/6M/1Y, zoom and pan, toggles for 20/50/200-day averages, Bollinger bands, the model's forecast lines, and RSI / MACD panels. Your choices are remembered per browser.
+- **AI analyst:** each refresh, the server sends a market's indicators, key levels, quant forecast and the latest trusted news (with what was read in full) to Claude, which writes a short note: stance, summary, chart and news bullets, levels to watch, 1/3/5-day outlook, what would change the view, risks.
+  - Turn it on: create an API key at https://platform.claude.com (Settings → API keys), then GitHub repo → Settings → Secrets and variables → Actions → New repository secret, name `ANTHROPIC_API_KEY`.
+  - Defaults: model `claude-sonnet-5-5`, a new note about every 2 hours per market while it trades (6 hours when closed), sooner after a 1.5% move, at most 2 notes per refresh. Change with repository *variables* `AI_MODEL` (e.g. `claude-opus-5-5` or `claude-haiku-5-5`) and `AI_EVERY_MIN`.
+  - Cost: roughly 1 cent per note on Sonnet 5.5 (about 3k tokens in, 500 out), so around $10-15 a month for four markets on the defaults.
+
 ## Good to know
 
 - Refresh timing: GitHub's own 5-minute schedule is unreliable, so the `Refresh ticker` workflow starts an update every 5 minutes. It runs ~5.5 hours, then starts a fresh copy of itself; every update also restarts it if it ever stops. To pause the site's updates, disable both `Refresh ticker` and `Update NATGAS forecast` on the Actions tab.
