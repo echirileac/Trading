@@ -673,7 +673,8 @@ async function openAIChat(url, key, model, system, user, extraHeaders = {}) {
   if (!res.ok) { const e = new Error(`HTTP ${res.status} ${(j?.error?.message || j?.message || raw).toString().slice(0, 160)}`); e.status = res.status; throw e; }
   const msg = j?.choices?.[0]?.message || {};
   const text = typeof msg.content === 'string' ? msg.content : Array.isArray(msg.content) ? msg.content.map((c) => c.text || '').join('') : '';
-  return { text, raw: text ? '' : raw.slice(0, 300), usage: j?.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : undefined };
+  const info = `[${res.status} ${res.headers.get('content-type') || '?'} ${res.url}]`;
+  return { text, raw: text ? '' : `${info} ${raw.slice(0, 200)}`, usage: j?.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : undefined };
 }
 let ghCatalog;
 async function githubModels() {
@@ -706,7 +707,9 @@ async function callLLM(system, user) {
           if (!res.ok) { const e = new Error(`HTTP ${res.status} ${j?.error?.message || ''}`); e.status = res.status; throw e; }
           r = { text: (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''), usage: j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : undefined };
         } else if (p === 'github') {
-          r = await openAIChat('https://models.github.ai/inference/chat/completions', GH_TOKEN, model, system, user, { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' });
+          // Plain OpenAI-style call first (as in GitHub's Actions example); fall back to the REST-style headers.
+          const variants = [{ Accept: 'application/json' }, { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2026-03-10' }];
+          for (const h of variants) { r = await openAIChat('https://models.github.ai/inference/chat/completions', GH_TOKEN, model, system, user, h); if (r.text) break; }
         } else {
           r = await openAIChat('https://api.groq.com/openai/v1/chat/completions', GROQ_KEY, model, system, user);
         }
