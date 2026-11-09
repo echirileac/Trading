@@ -28,10 +28,12 @@ From then on it refreshes itself every ~5 minutes.
 ## Pro chart and AI analyst (added November 2026)
 
 - **Chart:** daily candlesticks (TradingView Lightweight Charts, bundled in `site/vendor`), 1M/3M/6M/1Y, zoom and pan, toggles for 20/50/200-day averages, Bollinger bands, the model's forecast lines, and RSI / MACD panels. Your choices are remembered per browser.
-- **AI analyst:** each refresh, the server sends a market's indicators, key levels, quant forecast and the latest trusted news (with what was read in full) to Claude, which writes a short note: stance, summary, chart and news bullets, levels to watch, 1/3/5-day outlook, what would change the view, risks.
-  - Turn it on: create an API key at https://platform.claude.com (Settings → API keys), then GitHub repo → Settings → Secrets and variables → Actions → New repository secret, name `ANTHROPIC_API_KEY`.
-  - Defaults: model `claude-sonnet-5-5`, a new note about every 2 hours per market while it trades (6 hours when closed), sooner after a 1.5% move, at most 2 notes per refresh. Change with repository *variables* `AI_MODEL` (e.g. `claude-opus-5-5` or `claude-haiku-5-5`) and `AI_EVERY_MIN`.
-  - Cost: roughly 1 cent per note on Sonnet 5.5 (about 3k tokens in, 500 out), so around $10-15 a month for four markets on the defaults.
+- **AI analyst:** each market's indicators, key levels, quant forecast and latest trusted news (with what was read in full) go to an AI model, which writes a short note: stance, summary, chart and news bullets, levels to watch, 1/3/5-day outlook, what would change the view, risks. The note says which model wrote it.
+  - **Free by default:** GitHub Models through the workflow's own token (`models: read` permission), no key needed. Tries `openai/gpt-4.1` (50 requests/day on the free plan), then `openai/gpt-4.1-mini` / `openai/gpt-4o-mini` (150/day each).
+  - **Free backup (optional):** add a free Groq key (console.groq.com → API keys) as repository secret `GROQ_API_KEY`. Used when GitHub's daily limit runs out: `openai/gpt-oss-120b`, then `llama-3.3-70b-versatile`.
+  - **Paid upgrade (optional):** repository secret `ANTHROPIC_API_KEY` puts Claude (`AI_MODEL`, default `claude-sonnet-5-5`) first in line; about 1 cent per note.
+  - Cadence: about every 2 hours per market while it trades (6 hours when closed), sooner after a 1.5% move, at most 2 notes per refresh. Change with repository variables `AI_EVERY_MIN`, `AI_PROVIDERS` (order, e.g. `github,groq`), `GH_MODELS`, `GROQ_MODELS`.
+  - A model that hits its limit is skipped until the next refresh; if every option is exhausted the page keeps showing the previous note.
 
 ## Good to know
 

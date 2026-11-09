@@ -550,7 +550,7 @@
     const box = $('ai-body'); box.replaceChildren();
     const a = DATA.ai, pill = $('ai-stance');
     pill.hidden = true;
-    if (!a || a.status === 'off') { box.append(el('p', { class: 'empty' }, 'AI analyst notes are switched off. Add an ANTHROPIC_API_KEY secret to the GitHub repository to turn them on (see README).')); return; }
+    if (!a || a.status === 'off') { box.append(el('p', { class: 'empty' }, 'AI analyst notes are switched off: no AI provider is configured for this site (see README).')); return; }
     if (a.status === 'pending') { box.append(el('p', { class: 'empty' }, 'The first analyst note for this market is being written. It appears within about 10 minutes.')); return; }
     if (a.status === 'error') { box.append(el('p', { class: 'empty' }, `The analyst note could not be written: ${a.error || 'unknown error'}. It retries on the next refresh.`)); return; }
     pill.hidden = false;
@@ -572,7 +572,11 @@
     }
     [section('What would change the view', a.flip), section('Risks to watch', a.risks)].forEach((d) => d && cols.append(d));
     box.append(cols);
-    const model = String(a.model || '').replace(/^claude-/, 'Claude ').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-/g, ' ').replace(/\b(opus|sonnet|haiku|fable)\b/i, (w) => w[0].toUpperCase() + w.slice(1));
+    const id = String(a.model || '');
+    const pretty = (x) => x.replace(/^.*\//, '').replace(/^gpt-/i, 'GPT-').replace(/-mini$/i, ' mini').replace(/^llama-/i, 'Llama ').replace(/-versatile$/i, '').replace(/-/g, ' ');
+    const model = a.provider === 'github' ? `${pretty(id)} via GitHub Models`
+      : a.provider === 'groq' ? `${pretty(id)} via Groq`
+      : id.replace(/^claude-/, 'Claude ').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-/g, ' ').replace(/\b(opus|sonnet|haiku|fable)\b/i, (w) => w[0].toUpperCase() + w.slice(1));
     box.append(el('div', { class: 'foot' }, `Written ${ago(a.at)} by ${model} when price was ${usd(a.price)}. It weighs the chart and news above; refreshed about every 2 hours, sooner after big moves.${a.lastError ? ' Last refresh attempt failed, showing the previous note.' : ''} Market commentary, not financial advice.`));
   }
 

@@ -653,8 +653,71 @@ function packOutput(m, px, news, fc, now, market, extra = {}) {
 }
 
 // ---------- AI analyst (Claude API) ----------
-const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
+const AI_KEY = process.env.ANTHROPIC_API_KEY || '';           // optional upgrade (paid)
 const AI_MODEL = process.env.AI_MODEL || 'claude-sonnet-5-5';
+const GH_TOKEN = process.env.GITHUB_TOKEN || '';               // GitHub Models: free, uses the workflow's own token
+const GH_MODELS = (process.env.GH_MODELS || 'openai/gpt-4.1,openai/gpt-4.1-mini,openai/gpt-4o-mini').split(',').map((x) => x.trim()).filter(Boolean);
+const GROQ_KEY = process.env.GROQ_API_KEY || '';               // Groq: free key, backup
+const GROQ_MODELS = (process.env.GROQ_MODELS || 'openai/gpt-oss-120b,llama-3.3-70b-versatile').split(',').map((x) => x.trim()).filter(Boolean);
+const AI_PROVIDERS = (process.env.AI_PROVIDERS || 'anthropic,github,groq').split(',').map((x) => x.trim().toLowerCase());
+const aiConfigured = () => AI_PROVIDERS.some((p) => (p === 'anthropic' && AI_KEY) || (p === 'github' && GH_TOKEN) || (p === 'groq' && GROQ_KEY));
+const exhausted = new Set(); // models that hit a daily/minute limit during this run
+
+async function openAIChat(url, key, model, system, user, extraHeaders = {}) {
+  const reasoning = /gpt-5|\/o\d|gpt-oss/i.test(model);
+  const body = { model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
+  if (/gpt-5|\/o\d/i.test(model)) body.max_completion_tokens = 4000; else { body.max_tokens = reasoning ? 4000 : 1800; body.temperature = 0.3; }
+  if (/gpt-oss/i.test(model)) body.reasoning_effort = 'low';
+  const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(90000), headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json', ...extraHeaders }, body: JSON.stringify(body) });
+  const raw = await res.text(); let j = null; try { j = JSON.parse(raw); } catch { /* not json */ }
+  if (!res.ok) { const e = new Error(`HTTP ${res.status} ${(j?.error?.message || j?.message || raw).toString().slice(0, 160)}`); e.status = res.status; throw e; }
+  return { text: j?.choices?.[0]?.message?.content || '', usage: j?.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : undefined };
+}
+let ghCatalog;
+async function githubModels() {
+  if (ghCatalog === undefined) {
+    try {
+      const r = await fetch('https://models.github.ai/catalog/models', { headers: { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000) });
+      const list = r.ok ? await r.json() : null;
+      ghCatalog = Array.isArray(list) ? new Set(list.map((x) => x.id)) : null;
+    } catch { ghCatalog = null; }
+  }
+  return ghCatalog ? GH_MODELS.filter((m) => ghCatalog.has(m)) : GH_MODELS;
+}
+// Tries the configured providers in order; a model that is rate-limited is skipped for the rest of the run.
+async function callLLM(system, user) {
+  const errors = [];
+  for (const p of AI_PROVIDERS) {
+    const attempts = p === 'anthropic' && AI_KEY ? [AI_MODEL] : p === 'github' && GH_TOKEN ? await githubModels() : p === 'groq' && GROQ_KEY ? GROQ_MODELS : [];
+    for (const model of attempts) {
+      const key = `${p}/${model}`;
+      if (exhausted.has(key)) continue;
+      try {
+        let r;
+        if (p === 'anthropic') {
+          const res = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST', signal: AbortSignal.timeout(60000),
+            headers: { 'x-api-key': AI_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+            body: JSON.stringify({ model, max_tokens: 1500, system, messages: [{ role: 'user', content: user }] })
+          });
+          const j = await res.json();
+          if (!res.ok) { const e = new Error(`HTTP ${res.status} ${j?.error?.message || ''}`); e.status = res.status; throw e; }
+          r = { text: (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''), usage: j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : undefined };
+        } else if (p === 'github') {
+          r = await openAIChat('https://models.github.ai/inference/chat/completions', GH_TOKEN, model, system, user, { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' });
+        } else {
+          r = await openAIChat('https://api.groq.com/openai/v1/chat/completions', GROQ_KEY, model, system, user);
+        }
+        if (!r.text.includes('{')) throw new Error('reply had no JSON');
+        return { ...r, provider: p, model };
+      } catch (e) {
+        if ([429, 403, 413].includes(e.status)) exhausted.add(key); // daily/minute limit or request too large: skip for this run
+        errors.push(`${key}: ${e.message}`);
+      }
+    }
+  }
+  throw new Error(errors.length ? errors.join(' | ') : 'no AI provider configured');
+}
 const AI_EVERY_MIN = Number(process.env.AI_EVERY_MIN) || 120;   // regular cadence while the market is open
 const AI_MOVE_PCT = Number(process.env.AI_MOVE_PCT) || 1.5;     // earlier refresh after a move this big
 let aiCallsLeft = Number(process.env.AI_MAX_PER_RUN) || 2;      // spreads notes across runs and markets
@@ -699,7 +762,7 @@ Respond with ONLY a JSON object, no markdown, matching:
  "flip":["1-2 things that would change this view"],"risks":["1-2 key risks or events to watch"]}`;
 
 async function aiFor(m, out, prevAi, now) {
-  if (!AI_KEY) return { status: 'off' };
+  if (!aiConfigured()) return { status: 'off' };
   const prevOk = prevAi && prevAi.status === 'ok' && prevAi.at;
   const ageMin = prevOk ? (now - Date.parse(prevAi.at)) / 60e3 : Infinity;
   const moved = prevOk && prevAi.price ? Math.abs(out.price.last / prevAi.price - 1) * 100 : 0;
@@ -720,20 +783,17 @@ async function aiFor(m, out, prevAi, now) {
     news: (out.news.items || []).slice(0, 15).map((n) => ({ title: n.title, source: n.source, hoursAgo: round((now - Date.parse(n.publishedAt)) / 36e5, 1), read: n.read?.status || 'headline', modelScore: n.score, keyPhrases: n.read?.keyPhrases || [] }))
   };
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST', signal: AbortSignal.timeout(60000),
-      headers: { 'x-api-key': AI_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: AI_MODEL, max_tokens: 1500, system: AI_SYSTEM, messages: [{ role: 'user', content: `Write the analyst note for this market data:\n${JSON.stringify(payload)}` }] })
-    });
-    const j = await res.json();
-    if (!res.ok) throw new Error(`Claude API ${res.status}: ${j?.error?.message || 'error'}`);
-    const text = (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    let userMsg = `Write the analyst note for this market data:\n${JSON.stringify(payload)}`;
+    if (userMsg.length > 20000) { payload.news = payload.news.slice(0, 8); payload.last30Closes = payload.last30Closes.slice(-15); userMsg = `Write the analyst note for this market data:\n${JSON.stringify(payload)}`; } // free tiers cap ~8k tokens per request
+    const llm = await callLLM(AI_SYSTEM, userMsg);
+    const text = llm.text;
     const note = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
     const clip = (x, n) => String(x ?? '').slice(0, n);
     const list = (a, k, n) => (Array.isArray(a) ? a.slice(0, k).map((x) => clip(x, n)) : []);
     const nums = (a) => (Array.isArray(a) ? a.map(Number).filter(isFinite).slice(0, 4) : []);
+    console.log(`::notice title=AI analyst ${m.id}::note written by ${llm.provider}/${llm.model} (${llm.usage ? llm.usage.input + ' in / ' + llm.usage.output + ' out tokens' : 'usage n/a'})`);
     return {
-      status: 'ok', at: new Date(now).toISOString(), model: AI_MODEL, price: out.price.last,
+      status: 'ok', at: new Date(now).toISOString(), provider: llm.provider, model: llm.model, price: out.price.last,
       stance: ['bullish', 'bearish', 'neutral'].includes(note.stance) ? note.stance : 'neutral',
       confidence: ['low', 'medium', 'high'].includes(note.confidence) ? note.confidence : 'low',
       headline: clip(note.headline, 140), summary: clip(note.summary, 700),
@@ -741,7 +801,7 @@ async function aiFor(m, out, prevAi, now) {
       levels: { support: nums(note.levels?.support), resistance: nums(note.levels?.resistance) },
       outlook: { '1d': clip(note.outlook?.['1d'], 240), '3d': clip(note.outlook?.['3d'], 240), '5d': clip(note.outlook?.['5d'], 240) },
       flip: list(note.flip, 2, 240), risks: list(note.risks, 2, 240),
-      usage: j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : undefined
+      usage: llm.usage
     };
   } catch (e) {
     console.log(`::warning title=AI analyst ${m.id}::${String(e.message).slice(0, 300)}`);
