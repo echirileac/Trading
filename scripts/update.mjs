@@ -193,7 +193,7 @@ async function loadPrices(prev, now, cfg = { yahoo: 'NG=F', cnbc: '@NG.1', seed:
   }
   if (!intraday?.length) {
     // Build the session chart from our own samples (one per run) when Yahoo intraday isn't available.
-    const pts = (prev?.price?.intraday || []).filter(([t]) => now - t < 24 * 36e5);
+    const pts = (prev?.price?.intraday || []).filter(([t]) => now - t < INTRADAY_KEEP_MS);
     if (last != null && !stale && marketStatus(new Date(now)) === 'open') pts.push([now, last]);
     intraday = pts.map(([t, c]) => ({ t, c }));
   }
@@ -612,6 +612,7 @@ function siteUrl() {
 }
 
 const DATA_DIR = join(ROOT, 'site', 'data');
+const INTRADAY_KEEP_MS = 7 * 864e5; // 5-minute samples kept for the chart's day and week views
 const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.645. Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%).';
 
 async function loadPrev(base, rel, now) {
@@ -630,7 +631,7 @@ function cleanBar(r) {
 function packOutput(m, px, news, fc, now, market, extra = {}) {
   px.daily = px.daily.map(cleanBar);
   const daily = px.daily.slice(-260).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), o: round(r.o), h: round(r.h), l: round(r.l), c: round(r.c) }));
-  const lastSession = px.intraday.length ? (() => { const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < 24 * 36e5).map((x) => [x.t, round(x.c, 5)]); })() : [];
+  const lastSession = px.intraday.length ? (() => { const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < INTRADAY_KEEP_MS && x.c > 0).map((x) => [x.t, round(x.c, 6)]); })() : [];
   const dec = m.category === 'fx' ? (px.last >= 20 ? 3 : 5) : px.last >= 10 ? 2 : px.last >= 1 ? 3 : 5;
   return {
     generatedAt: new Date(now).toISOString(),
@@ -799,7 +800,7 @@ async function buildTwelveData(m, prev, now, plan) {
   const byDate = new Map((prev?.price?.daily || []).map((r) => [r.date, { t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c }]));
   let last = prev?.price?.last ?? null, prevClose = prev?.price?.prevClose ?? null, lastTime = prev?.price?.asOf ? Date.parse(prev.price.asOf) : now;
   let market = prev?.market || 'closed', historyDate = prev?.meta?.historyDate || '', quotedAt = prev?.price?.quotedAt ? Date.parse(prev.price.quotedAt) : 0;
-  let intraday = (prev?.price?.intraday || []).filter(([t]) => now - t < 24 * 36e5).map(([t, c]) => ({ t, c }));
+  let intraday = (prev?.price?.intraday || []).filter(([t]) => now - t < INTRADAY_KEEP_MS).map(([t, c]) => ({ t, c }));
   const todayUTC = new Date(now).toISOString().slice(0, 10);
   if (!TD_KEY) status.push({ name: 'Twelve Data', ok: false, error: 'API key missing: add the TWELVE_DATA_KEY repository secret' });
   else {

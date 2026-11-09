@@ -232,7 +232,7 @@
     <div class="pc-head">
       <h2>Chart</h2>
       <div class="chips" id="pc-tf" role="group" aria-label="Timeframe">
-        <button type="button" data-tf="1M">1M</button><button type="button" data-tf="3M">3M</button><button type="button" data-tf="6M">6M</button><button type="button" data-tf="1Y">1Y</button>
+        <button type="button" data-tf="1D">1D</button><button type="button" data-tf="1W">1W</button><button type="button" data-tf="1M">1M</button><button type="button" data-tf="3M">3M</button><button type="button" data-tf="6M">6M</button><button type="button" data-tf="1Y">1Y</button>
       </div>
     </div>
     <div class="chips" id="pc-tools" role="group" aria-label="Indicators" style="margin-bottom:10px">
@@ -244,13 +244,14 @@
       <button type="button" data-k="rsi">RSI</button>
       <button type="button" data-k="macd">MACD</button>
     </div>
+    <p class="note" id="pc-note" hidden style="margin:-4px 0 8px"></p>
     <div class="pc-wrap">
       <div class="pc-legend" id="pc-legend"></div>
       <div class="pc-main" id="pc-main"></div>
       <div class="pc-sub" id="pc-rsi-box"><span class="pc-tag" id="pc-rsi-tag">RSI 14</span><div id="pc-rsi" style="height:100%"></div></div>
       <div class="pc-sub" id="pc-macd-box"><span class="pc-tag" id="pc-macd-tag">MACD 12, 26, 9</span><div id="pc-macd" style="height:100%"></div></div>
     </div>
-    <p class="note" style="margin:8px 0 0">Daily candles. Drag to pan, scroll or pinch to zoom. Dashed lines: the model's centre forecast and 68% range for the selected horizon.</p>
+    <p class="note" style="margin:8px 0 0">1M–1Y: daily candles. 1D and 1W: 15-minute and 1-hour candles. Drag to pan, scroll or pinch to zoom. Dashed lines (daily views): the model's centre forecast and 68% range for the selected horizon.</p>
     <p class="pc-credit">Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>.</p>
   </section>
 
@@ -583,6 +584,7 @@
   let PC_TF = store('pc-tf', '6M');
   const PC_SHOW = Object.assign({ ma20: true, ma50: true, ma200: false, bb: false, fc: true, rsi: true, macd: false }, store('pc-show', {}));
   const TF_BARS = { '1M': 22, '3M': 66, '6M': 130, '1Y': 260 };
+  if (!['1D', '1W', '1M', '3M', '6M', '1Y'].includes(PC_TF)) PC_TF = '6M';
 
   const cssVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const probeEl = document.createElement('span');
@@ -661,7 +663,7 @@
     PC.main.subscribeCrosshairMove((p) => pcLegend(p && p.time));
     PC.themeKey = cssVar('--bg');
   }
-  function timeKey(t) { return typeof t === 'string' ? t : t && t.year ? `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}` : null; }
+  function timeKey(t) { return typeof t === 'string' ? t : typeof t === 'number' ? String(t) : t && t.year ? `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}` : null; }
   function pcLegend(time) {
     const L = PC.legendMap; if (!L) return;
     const t = (time && L.get(timeKey(time))) || L.get('__last');
@@ -695,29 +697,61 @@
   }
   function pcRange() {
     if (!PC.main || !PC.n) return;
+    if (INTRA[PC_TF]) { PC.main.timeScale().fitContent(); return; }
     const to = PC.n - 1 + PC.future + 2;
     const from = Math.max(-1, PC.n - (TF_BARS[PC_TF] || 130));
     PC.main.timeScale().setVisibleLogicalRange({ from, to });
   }
+  const INTRA = { '1D': { ms: 24 * 36e5, bucket: 15 * 60e3, name: '15-minute' }, '1W': { ms: 7 * 864e5, bucket: 60 * 60e3, name: '1-hour' } };
+  function intradayRows(samples, cfg) {
+    const pts = (samples || []).filter((q) => q && q[1] > 0);
+    if (!pts.length) return [];
+    const lastT = pts[pts.length - 1][0], buckets = new Map();
+    for (const [t, c] of pts) {
+      if (lastT - t > cfg.ms) continue;
+      const k = Math.floor(t / cfg.bucket) * cfg.bucket;
+      const b = buckets.get(k);
+      if (!b) buckets.set(k, { k, open: c, high: c, low: c, close: c });
+      else { b.high = Math.max(b.high, c); b.low = Math.min(b.low, c); b.close = c; }
+    }
+    // the chart library draws in UTC; shift so the axis shows this browser's local time
+    return [...buckets.values()].sort((x, y) => x.k - y.k)
+      .map((r) => ({ time: Math.round(r.k / 1000 - new Date(r.k).getTimezoneOffset() * 60), open: r.open, high: r.high, low: r.low, close: r.close, k: r.k }));
+  }
   function pcUpdate() {
     if (!LWC) { $('pc-main').textContent = 'The chart library did not load. Reload the page to try again.'; return; }
     const p = DATA.price, f = DATA.forecast, id = DATA.meta?.id || 'NATGAS';
+    const intra = INTRA[PC_TF] || null, mode = intra ? PC_TF : 'daily';
     const bars = (p.daily || []).filter((b) => b.c != null);
     if (!bars.length) return;
-    const rebuild = !PC.main || PC.themeKey !== cssVar('--bg');
+    const rebuild = !PC.main || PC.themeKey !== cssVar('--bg') || PC.mode !== mode;
     const keepRange = !rebuild && PC.key === id && PC.h === H ? PC.main.timeScale().getVisibleLogicalRange() : null;
-    if (rebuild) pcBuild();
-    // candles; the last one carries the live price
-    const okv = (v, c) => (v != null && v > c * 0.5 && v < c * 2 ? v : null); // ignore zero / broken ticks
-    const rows = bars.map((b) => { const o = okv(b.o, b.c) ?? b.c; return { time: b.date, open: o, high: Math.max(okv(b.h, b.c) ?? b.c, o, b.c), low: Math.min(okv(b.l, b.c) ?? b.c, o, b.c), close: b.c }; });
-    const lastRow = rows[rows.length - 1];
-    if (p.last != null) { lastRow.close = p.last; lastRow.high = Math.max(lastRow.high, p.last); lastRow.low = Math.min(lastRow.low, p.last); }
+    if (rebuild) { pcBuild(); PC.mode = mode; PC.main.applyOptions({ timeScale: { timeVisible: !!intra, secondsVisible: false } }); }
+    let rows, labelOf;
+    const note = $('pc-note');
+    if (intra) {
+      rows = intradayRows(p.intraday, intra);
+      const fmtT = (ms) => new Date(ms).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+      labelOf = (r) => fmtT(r.k);
+      const span = p.intraday && p.intraday.length ? p.intraday[p.intraday.length - 1][0] - p.intraday[0][0] : 0;
+      note.hidden = false;
+      note.textContent = rows.length < 4
+        ? `${intra.name} candles appear as the server records prices (about every 5 minutes while the market is open). Not enough yet for this view, so check back shortly.`
+        : `${intra.name} candles built from the price recorded about every 5 minutes${rows[0] ? ` since ${fmtT(rows[0].k)}` : ''}; moves between recordings are not captured.${PC_TF === '1W' && span < 6 * 864e5 ? ' The week view fills in over the coming days.' : ''}`;
+    } else {
+      note.hidden = true;
+      const okv = (v, c) => (v != null && v > c * 0.5 && v < c * 2 ? v : null); // ignore zero / broken ticks
+      rows = bars.map((b) => { const o = okv(b.o, b.c) ?? b.c; return { time: b.date, open: o, high: Math.max(okv(b.h, b.c) ?? b.c, o, b.c), low: Math.min(okv(b.l, b.c) ?? b.c, o, b.c), close: b.c }; });
+      const lastRow = rows[rows.length - 1];
+      if (p.last != null) { lastRow.close = p.last; lastRow.high = Math.max(lastRow.high, p.last); lastRow.low = Math.min(lastRow.low, p.last); }
+      labelOf = (r) => dayName(r.time);
+    }
     const closes = rows.map((r) => r.close), times = rows.map((r) => r.time);
-    const fut = futureDates(times[times.length - 1], H, DATA.meta?.category === 'crypto');
+    const fut = intra || !rows.length ? [] : futureDates(times[times.length - 1], H, DATA.meta?.category === 'crypto');
     const ws = fut.map((t) => ({ time: t }));
     const asLine = (arr) => arr.map((v, i) => (v == null ? { time: times[i] } : { time: times[i], value: v })).concat(ws);
     PC.s.candles.applyOptions({ priceFormat: { type: 'price', precision: DEC, minMove: 1 / 10 ** DEC } });
-    PC.s.candles.setData(rows.concat(ws));
+    PC.s.candles.setData(rows.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })).concat(ws));
     const ma20 = IND.sma(closes, 20), ma50 = IND.sma(closes, 50), ma200 = IND.sma(closes, 200), bb = IND.bb(closes), rsi = IND.rsi(closes), mac = IND.macd(closes);
     PC.s.ma20.setData(asLine(ma20)); PC.s.ma50.setData(asLine(ma50)); PC.s.ma200.setData(asLine(ma200));
     PC.s.bbU.setData(asLine(bb.up)); PC.s.bbL.setData(asLine(bb.lo)); PC.s.bbM.setData(asLine(bb.mid));
@@ -725,26 +759,29 @@
     PC.s.macd.setData(asLine(mac.line)); PC.s.sig.setData(asLine(mac.sig));
     const upC = rgba('--up'), dnC = rgba('--down');
     PC.s.hist.setData(mac.hist.map((v, i) => (v == null ? { time: times[i] } : { time: times[i], value: v, color: v >= 0 ? upC : dnC })).concat(ws));
-    // forecast: centre and 68% band, same maths as the forecast card
-    const mu = f.score * 0.25 * f.sigmaDaily, sg = f.sigmaDaily, L0 = p.last ?? closes[closes.length - 1];
-    const fcPts = [{ time: times[times.length - 1], c: L0, h: L0, l: L0 }].concat(fut.map((t, k) => ({
-      time: t, c: L0 * Math.exp(mu * (k + 1)), h: L0 * Math.exp(mu * (k + 1) + sg * Math.sqrt(k + 1)), l: L0 * Math.exp(mu * (k + 1) - sg * Math.sqrt(k + 1))
-    })));
+    // forecast lines (daily views only): centre and 68% band, same maths as the forecast card
+    let fcPts = [];
+    if (!intra && rows.length) {
+      const mu = f.score * 0.25 * f.sigmaDaily, sg = f.sigmaDaily, L0 = p.last ?? closes[closes.length - 1];
+      fcPts = [{ time: times[times.length - 1], c: L0, h: L0, l: L0 }].concat(fut.map((t, k) => ({
+        time: t, c: L0 * Math.exp(mu * (k + 1)), h: L0 * Math.exp(mu * (k + 1) + sg * Math.sqrt(k + 1)), l: L0 * Math.exp(mu * (k + 1) - sg * Math.sqrt(k + 1))
+      })));
+    }
     PC.s.fcC.setData(fcPts.map((x) => ({ time: x.time, value: x.c })));
     PC.s.fcH.setData(fcPts.map((x) => ({ time: x.time, value: x.h })));
     PC.s.fcL.setData(fcPts.map((x) => ({ time: x.time, value: x.l })));
-    // legend lookup by date
+    // legend lookup
     const map = new Map();
-    rows.forEach((r, i) => map.set(r.time, { label: dayName(r.time), o: r.open, h: r.high, l: r.low, c: r.close, chg: i ? 100 * (r.close / rows[i - 1].close - 1) : null, ma20: ma20[i], ma50: ma50[i], ma200: ma200[i], bbU: bb.up[i], bbL: bb.lo[i], rsi: rsi[i], macd: mac.line[i], sig: mac.sig[i] }));
-    fcPts.slice(1).forEach((x) => map.set(x.time, { label: dayName(x.time) + ' (forecast)', fc: [x.l, x.c, x.h] }));
-    map.set('__last', map.get(times[times.length - 1]));
+    rows.forEach((r, i) => map.set(String(r.time), { label: labelOf(r), o: r.open, h: r.high, l: r.low, c: r.close, chg: i ? 100 * (r.close / rows[i - 1].close - 1) : null, ma20: ma20[i], ma50: ma50[i], ma200: ma200[i], bbU: bb.up[i], bbL: bb.lo[i], rsi: rsi[i], macd: mac.line[i], sig: mac.sig[i] }));
+    fcPts.slice(1).forEach((x) => map.set(String(x.time), { label: dayName(x.time) + ' (forecast)', fc: [x.l, x.c, x.h] }));
+    if (times.length) map.set('__last', map.get(String(times[times.length - 1])));
     PC.legendMap = map;
     PC.n = rows.length; PC.future = fut.length; PC.key = id; PC.h = H;
     pcSetVisibility();
     if (keepRange) PC.main.timeScale().setVisibleLogicalRange(keepRange); else pcRange();
     pcLegend(null);
   }
-  document.querySelectorAll('#pc-tf button').forEach((b) => b.addEventListener('click', () => { PC_TF = b.dataset.tf; keep('pc-tf', PC_TF); pcSetVisibility(); pcRange(); }));
+  document.querySelectorAll('#pc-tf button').forEach((b) => b.addEventListener('click', () => { const was = INTRA[PC_TF] ? PC_TF : 'daily'; PC_TF = b.dataset.tf; keep('pc-tf', PC_TF); const now = INTRA[PC_TF] ? PC_TF : 'daily'; if (was !== now && DATA) pcUpdate(); else { pcSetVisibility(); pcRange(); } }));
   document.querySelectorAll('#pc-tools button').forEach((b) => b.addEventListener('click', () => { PC_SHOW[b.dataset.k] = !PC_SHOW[b.dataset.k]; keep('pc-show', PC_SHOW); pcSetVisibility(); pcLegend(null); }));
 
   // ---------- intraday ----------
@@ -797,7 +834,8 @@
     ], y0 + 30);
 
     // 2) Intraday line, only once enough samples exist
-    const pts = (p.intraday || []).filter((q) => q && isFinite(q[1]));
+    const lastS = (p.intraday || []).at(-1)?.[0] || 0;
+    const pts = (p.intraday || []).filter((q) => q && isFinite(q[1]) && lastS - q[0] < 24 * 36e5);
     const span = pts.length > 1 ? pts.at(-1)[0] - pts[0][0] : 0;
     if (pts.length < 6 || span < 30 * 60e3) {
       box.append(el('p', { class: 'note', style: 'margin:8px 0 0' }, 'The intraday line appears once the server has collected about 30 minutes of prices (one point every ~5 minutes while the market is open).'));
