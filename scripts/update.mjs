@@ -131,7 +131,7 @@ async function yahoo(range, interval, sym = 'NG=F') {
 async function cnbcLast(sym = '@NG.1') {
   const j = await get(`https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${encodeURIComponent(sym)}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json`, { type: 'json' });
   const q = j?.FormattedQuoteResult?.FormattedQuote?.[0];
-  const num = (v) => { const x = parseFloat(String(v ?? '').replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : null; };
+  const num = (v) => { const x = parseFloat(String(v ?? '').replace(/[^0-9.\-]/g, '')); return isFinite(x) && x > 0 ? x : null; };
   const last = num(q?.last);
   if (last == null) throw new Error('cnbc: no price');
   return { last, prev: num(q?.previous_day_closing), open: num(q?.open), high: num(q?.high), low: num(q?.low) };
@@ -621,7 +621,14 @@ async function loadPrev(base, rel, now) {
 }
 async function save(rel, obj) { const f = join(DATA_DIR, rel); await mkdir(dirname(f), { recursive: true }); await writeFile(f, JSON.stringify(obj)); }
 
+function cleanBar(r) {
+  const c = r.c; if (!(c > 0)) return r;
+  const ok = (v) => v != null && isFinite(v) && v > c * 0.5 && v < c * 2 ? v : null; // drop zeros and wild ticks
+  const o = ok(r.o) ?? c;
+  return { ...r, o, h: Math.max(ok(r.h) ?? c, o, c), l: Math.min(ok(r.l) ?? c, o, c) };
+}
 function packOutput(m, px, news, fc, now, market, extra = {}) {
+  px.daily = px.daily.map(cleanBar);
   const daily = px.daily.slice(-260).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), o: round(r.o), h: round(r.h), l: round(r.l), c: round(r.c) }));
   const lastSession = px.intraday.length ? (() => { const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < 24 * 36e5).map((x) => [x.t, round(x.c, 5)]); })() : [];
   const dec = m.category === 'fx' ? (px.last >= 20 ? 3 : 5) : px.last >= 10 ? 2 : px.last >= 1 ? 3 : 5;
@@ -785,7 +792,7 @@ async function td(path, params) {
 }
 const tdArgs = (m) => ({ symbol: m.symbol, exchange: ['equity', 'etf'].includes(m.category) ? m.exchange : '' });
 const weekendClosed = (now) => { const d = new Date(now), w = d.getUTCDay(), h = d.getUTCHours(); return w === 6 || (w === 0 && h < 21) || (w === 5 && h >= 21); };
-const num = (v) => { const x = parseFloat(v); return isFinite(x) ? x : null; };
+const num = (v) => { const x = parseFloat(v); return isFinite(x) && x > 0 ? x : null; };
 
 async function buildTwelveData(m, prev, now, plan) {
   const status = [];

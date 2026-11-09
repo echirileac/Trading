@@ -708,7 +708,8 @@
     const keepRange = !rebuild && PC.key === id && PC.h === H ? PC.main.timeScale().getVisibleLogicalRange() : null;
     if (rebuild) pcBuild();
     // candles; the last one carries the live price
-    const rows = bars.map((b) => ({ time: b.date, open: b.o ?? b.c, high: b.h ?? b.c, low: b.l ?? b.c, close: b.c }));
+    const okv = (v, c) => (v != null && v > c * 0.5 && v < c * 2 ? v : null); // ignore zero / broken ticks
+    const rows = bars.map((b) => { const o = okv(b.o, b.c) ?? b.c; return { time: b.date, open: o, high: Math.max(okv(b.h, b.c) ?? b.c, o, b.c), low: Math.min(okv(b.l, b.c) ?? b.c, o, b.c), close: b.c }; });
     const lastRow = rows[rows.length - 1];
     if (p.last != null) { lastRow.close = p.last; lastRow.high = Math.max(lastRow.high, p.last); lastRow.low = Math.min(lastRow.low, p.last); }
     const closes = rows.map((r) => r.close), times = rows.map((r) => r.time);
@@ -750,7 +751,9 @@
   function drawIntraday() {
     const box = $('intra'); box.replaceChildren();
     const p = DATA.price;
-    const bar = (p.daily || []).at(-1) || {};
+    const raw = (p.daily || []).at(-1) || {};
+    const okb = (v) => (v != null && raw.c && v > raw.c * 0.5 && v < raw.c * 2 ? v : null);
+    const bar = raw.c ? { ...raw, o: okb(raw.o), h: okb(raw.h), l: okb(raw.l) } : {};
     const last = p.last, prev = p.prevClose;
     const lo = Math.min(...[bar.l, last, prev].filter((v) => v != null && isFinite(v)));
     const hi = Math.max(...[bar.h, last, prev].filter((v) => v != null && isFinite(v)));
