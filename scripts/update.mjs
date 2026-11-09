@@ -671,7 +671,9 @@ async function openAIChat(url, key, model, system, user, extraHeaders = {}) {
   const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(90000), headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json', ...extraHeaders }, body: JSON.stringify(body) });
   const raw = await res.text(); let j = null; try { j = JSON.parse(raw); } catch { /* not json */ }
   if (!res.ok) { const e = new Error(`HTTP ${res.status} ${(j?.error?.message || j?.message || raw).toString().slice(0, 160)}`); e.status = res.status; throw e; }
-  return { text: j?.choices?.[0]?.message?.content || '', usage: j?.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : undefined };
+  const msg = j?.choices?.[0]?.message || {};
+  const text = typeof msg.content === 'string' ? msg.content : Array.isArray(msg.content) ? msg.content.map((c) => c.text || '').join('') : '';
+  return { text, raw: text ? '' : raw.slice(0, 300), usage: j?.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : undefined };
 }
 let ghCatalog;
 async function githubModels() {
@@ -708,7 +710,7 @@ async function callLLM(system, user) {
         } else {
           r = await openAIChat('https://api.groq.com/openai/v1/chat/completions', GROQ_KEY, model, system, user);
         }
-        if (!r.text.includes('{')) throw new Error('reply had no JSON');
+        if (!r.text.includes('{')) throw new Error(`reply had no JSON: ${(r.text || r.raw || '').replace(/\s+/g, ' ').slice(0, 220)}`);
         return { ...r, provider: p, model };
       } catch (e) {
         if ([429, 403, 413].includes(e.status)) exhausted.add(key); // daily/minute limit or request too large: skip for this run
