@@ -33,6 +33,20 @@
         "Moderna",
         "MRNA"
       ]
+    },
+    {
+      "id": "INTC-NASDAQ",
+      "symbol": "INTC",
+      "name": "Intel Corporation",
+      "category": "equity",
+      "exchange": "NASDAQ",
+      "type": "Common Stock",
+      "provider": "twelvedata",
+      "newsQuery": "Intel stock",
+      "keywords": [
+        "Intel",
+        "INTC"
+      ]
     }
   ]
 }
