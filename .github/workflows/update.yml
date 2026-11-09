@@ -30,6 +30,15 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - name: Probe GitHub Models (temporary)
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          for body in '{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Say hi"}]}' '{"model":"openai/gpt-4.1-mini","messages":[{"role":"system","content":"Reply in JSON"},{"role":"user","content":"Say hi"}],"max_tokens":1800,"temperature":0.3}'; do
+            out=$(curl -sS -D - "https://models.github.ai/inference/chat/completions" -H "Content-Type: application/json" -H "Authorization: Bearer $GITHUB_TOKEN" -d "$body" | tr '\r\n' '  ' | cut -c1-600)
+            echo "::warning title=GH Models probe::$out"
+          done
       - name: Fetch prices + news, build forecast
         run: node scripts/update.mjs
         env:
