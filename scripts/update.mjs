@@ -657,7 +657,7 @@ const AI_KEY = process.env.ANTHROPIC_API_KEY || '';           // optional upgrad
 const AI_MODEL = process.env.AI_MODEL || 'claude-sonnet-5-5';
 const GROQ_KEY = process.env.GROQ_API_KEY || '';               // Groq: free key, backup
 const GROQ_MODELS = (process.env.GROQ_MODELS || 'openai/gpt-oss-120b,openai/gpt-oss-20b').split(',').map((x) => x.trim()).filter(Boolean);
-const AI_PROVIDERS = (process.env.AI_PROVIDERS || 'groq,anthropic').split(',').map((x) => x.trim().toLowerCase());
+const AI_PROVIDERS = (process.env.AI_PROVIDERS || 'anthropic,groq').split(',').map((x) => x.trim().toLowerCase());
 const aiConfigured = () => AI_PROVIDERS.some((p) => (p === 'anthropic' && AI_KEY) || (p === 'groq' && GROQ_KEY));
 const exhausted = new Set(); // models that hit a daily/minute limit during this run
 

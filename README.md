@@ -31,7 +31,7 @@ From then on it refreshes itself every ~5 minutes.
 - **AI analyst:** each market's indicators, key levels, quant forecast and latest trusted news (with what was read in full) go to an AI model, which writes a short note: stance, summary, chart and news bullets, levels to watch, 1/3/5-day outlook, what would change the view, risks. The note says which model wrote it.
   - **Free:** a Groq key (console.groq.com → API keys, no card needed) saved as repository secret `GROQ_API_KEY`. Uses `openai/gpt-oss-120b`, then `openai/gpt-oss-20b` (free plan: about 1,000 requests and 200K tokens a day per model, 8K tokens a minute). GitHub Models is not used: GitHub retired it on 2026-07-30.
   - **Paid upgrade (optional):** repository secret `ANTHROPIC_API_KEY` puts Claude (`AI_MODEL`, default `claude-sonnet-5-5`) first in line; about 1 cent per note.
-  - Cadence: about every 2 hours per market while it trades (6 hours when closed), sooner after a 1.5% move, at most 1 note per refresh. Change with repository variables `AI_EVERY_MIN`, `AI_PROVIDERS` (order, default `groq,anthropic`), `GROQ_MODELS`.
+  - Cadence: about every 2 hours per market while it trades (6 hours when closed), sooner after a 1.5% move, at most 1 note per refresh. Change with repository variables `AI_EVERY_MIN`, `AI_PROVIDERS` (order, default `anthropic,groq`; a provider without a key is skipped), `GROQ_MODELS`.
   - A model that hits its limit is skipped until the next refresh; if every option is exhausted the page keeps showing the previous note.
 
 ## Good to know

@@ -36,7 +36,7 @@ jobs:
           TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}   # free AI analyst key (console.groq.com)
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}  # optional paid upgrade
-          AI_PROVIDERS: ${{ vars.AI_PROVIDERS }}      # optional order, default groq,anthropic
+          AI_PROVIDERS: ${{ vars.AI_PROVIDERS }}      # optional order, default anthropic,groq (a provider without a key is skipped)
           GROQ_MODELS: ${{ vars.GROQ_MODELS }}        # optional, default openai/gpt-oss-120b,openai/gpt-oss-20b
           AI_MODEL: ${{ vars.AI_MODEL }}          # optional repo variable, default claude-sonnet-5-5
           AI_EVERY_MIN: ${{ vars.AI_EVERY_MIN }}  # optional, default 120
