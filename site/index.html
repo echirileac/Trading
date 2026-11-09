@@ -550,7 +550,7 @@
     const box = $('ai-body'); box.replaceChildren();
     const a = DATA.ai, pill = $('ai-stance');
     pill.hidden = true;
-    if (!a || a.status === 'off') { box.append(el('p', { class: 'empty' }, 'AI analyst notes are switched off: no AI provider is configured for this site (see README).')); return; }
+    if (!a || a.status === 'off') { box.append(el('p', { class: 'empty' }, 'AI analyst is waiting for its free Groq key: add a GROQ_API_KEY repository secret (see README).')); return; }
     if (a.status === 'pending') { box.append(el('p', { class: 'empty' }, 'The first analyst note for this market is being written. It appears within about 10 minutes.')); return; }
     if (a.status === 'error') { box.append(el('p', { class: 'empty' }, `The analyst note could not be written: ${a.error || 'unknown error'}. It retries on the next refresh.`)); return; }
     pill.hidden = false;

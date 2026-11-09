@@ -12,7 +12,6 @@ permissions:
   pages: write
   id-token: write
   actions: write
-  models: read
 
 concurrency:
   group: pages
@@ -30,26 +29,15 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Probe GitHub Models (temporary)
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          for body in '{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Say hi"}]}' '{"model":"openai/gpt-4.1-mini","messages":[{"role":"system","content":"Reply in JSON"},{"role":"user","content":"Say hi"}],"max_tokens":1800,"temperature":0.3}'; do
-            out=$(curl -sS -D - "https://models.github.ai/inference/chat/completions" -H "Content-Type: application/json" -H "Authorization: Bearer $GITHUB_TOKEN" -d "$body" | tr '\r\n' '  ' | cut -c1-600)
-            echo "::warning title=GH Models probe::$out"
-          done
       - name: Fetch prices + news, build forecast
         run: node scripts/update.mjs
         env:
           NEWS_EVERY_MIN: "15"
           TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}
-          GITHUB_TOKEN: ${{ github.token }}          # GitHub Models (free) via the workflow token
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}   # optional free backup
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}   # free AI analyst key (console.groq.com)
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}  # optional paid upgrade
-          AI_PROVIDERS: ${{ vars.AI_PROVIDERS }}      # optional order, default anthropic,github,groq
-          GH_MODELS: ${{ vars.GH_MODELS }}            # optional, default openai/gpt-4.1,openai/gpt-4.1-mini,openai/gpt-4o-mini
-          GROQ_MODELS: ${{ vars.GROQ_MODELS }}        # optional, default openai/gpt-oss-120b,llama-3.3-70b-versatile
+          AI_PROVIDERS: ${{ vars.AI_PROVIDERS }}      # optional order, default groq,anthropic
+          GROQ_MODELS: ${{ vars.GROQ_MODELS }}        # optional, default openai/gpt-oss-120b,openai/gpt-oss-20b
           AI_MODEL: ${{ vars.AI_MODEL }}          # optional repo variable, default claude-sonnet-5-5
           AI_EVERY_MIN: ${{ vars.AI_EVERY_MIN }}  # optional, default 120
           # SITE_URL: "https://your-custom-domain.example/"   # only if you use a custom domain

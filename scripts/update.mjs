@@ -655,12 +655,10 @@ function packOutput(m, px, news, fc, now, market, extra = {}) {
 // ---------- AI analyst (Claude API) ----------
 const AI_KEY = process.env.ANTHROPIC_API_KEY || '';           // optional upgrade (paid)
 const AI_MODEL = process.env.AI_MODEL || 'claude-sonnet-5-5';
-const GH_TOKEN = process.env.GITHUB_TOKEN || '';               // GitHub Models: free, uses the workflow's own token
-const GH_MODELS = (process.env.GH_MODELS || 'openai/gpt-4.1,openai/gpt-4.1-mini,openai/gpt-4o-mini').split(',').map((x) => x.trim()).filter(Boolean);
 const GROQ_KEY = process.env.GROQ_API_KEY || '';               // Groq: free key, backup
-const GROQ_MODELS = (process.env.GROQ_MODELS || 'openai/gpt-oss-120b,llama-3.3-70b-versatile').split(',').map((x) => x.trim()).filter(Boolean);
-const AI_PROVIDERS = (process.env.AI_PROVIDERS || 'anthropic,github,groq').split(',').map((x) => x.trim().toLowerCase());
-const aiConfigured = () => AI_PROVIDERS.some((p) => (p === 'anthropic' && AI_KEY) || (p === 'github' && GH_TOKEN) || (p === 'groq' && GROQ_KEY));
+const GROQ_MODELS = (process.env.GROQ_MODELS || 'openai/gpt-oss-120b,openai/gpt-oss-20b').split(',').map((x) => x.trim()).filter(Boolean);
+const AI_PROVIDERS = (process.env.AI_PROVIDERS || 'groq,anthropic').split(',').map((x) => x.trim().toLowerCase());
+const aiConfigured = () => AI_PROVIDERS.some((p) => (p === 'anthropic' && AI_KEY) || (p === 'groq' && GROQ_KEY));
 const exhausted = new Set(); // models that hit a daily/minute limit during this run
 
 async function openAIChat(url, key, model, system, user, extraHeaders = {}) {
@@ -676,22 +674,11 @@ async function openAIChat(url, key, model, system, user, extraHeaders = {}) {
   const info = `[${res.status} ${res.headers.get('content-type') || '?'} ${res.url}]`;
   return { text, raw: text ? '' : `${info} ${raw.slice(0, 200)}`, usage: j?.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : undefined };
 }
-let ghCatalog;
-async function githubModels() {
-  if (ghCatalog === undefined) {
-    try {
-      const r = await fetch('https://models.github.ai/catalog/models', { headers: { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000) });
-      const list = r.ok ? await r.json() : null;
-      ghCatalog = Array.isArray(list) ? new Set(list.map((x) => x.id)) : null;
-    } catch { ghCatalog = null; }
-  }
-  return ghCatalog ? GH_MODELS.filter((m) => ghCatalog.has(m)) : GH_MODELS;
-}
 // Tries the configured providers in order; a model that is rate-limited is skipped for the rest of the run.
 async function callLLM(system, user) {
   const errors = [];
   for (const p of AI_PROVIDERS) {
-    const attempts = p === 'anthropic' && AI_KEY ? [AI_MODEL] : p === 'github' && GH_TOKEN ? await githubModels() : p === 'groq' && GROQ_KEY ? GROQ_MODELS : [];
+    const attempts = p === 'anthropic' && AI_KEY ? [AI_MODEL] : p === 'groq' && GROQ_KEY ? GROQ_MODELS : [];
     for (const model of attempts) {
       const key = `${p}/${model}`;
       if (exhausted.has(key)) continue;
@@ -706,10 +693,6 @@ async function callLLM(system, user) {
           const j = await res.json();
           if (!res.ok) { const e = new Error(`HTTP ${res.status} ${j?.error?.message || ''}`); e.status = res.status; throw e; }
           r = { text: (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''), usage: j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : undefined };
-        } else if (p === 'github') {
-          // Plain OpenAI-style call first (as in GitHub's Actions example); fall back to the REST-style headers.
-          const variants = [{ Accept: 'application/json' }, { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2026-03-10' }];
-          for (const h of variants) { r = await openAIChat('https://models.github.ai/inference/chat/completions', GH_TOKEN, model, system, user, h); if (r.text) break; }
         } else {
           r = await openAIChat('https://api.groq.com/openai/v1/chat/completions', GROQ_KEY, model, system, user);
         }
@@ -725,7 +708,7 @@ async function callLLM(system, user) {
 }
 const AI_EVERY_MIN = Number(process.env.AI_EVERY_MIN) || 120;   // regular cadence while the market is open
 const AI_MOVE_PCT = Number(process.env.AI_MOVE_PCT) || 1.5;     // earlier refresh after a move this big
-let aiCallsLeft = Number(process.env.AI_MAX_PER_RUN) || 2;      // spreads notes across runs and markets
+let aiCallsLeft = Number(process.env.AI_MAX_PER_RUN) || 1;      // spreads notes across runs and markets
 
 function techIndicators(daily, last) {
   const c = daily.map((r) => r.c); if (last != null) c[c.length - 1] = last;
@@ -789,7 +772,7 @@ async function aiFor(m, out, prevAi, now) {
   };
   try {
     let userMsg = `Write the analyst note for this market data:\n${JSON.stringify(payload)}`;
-    if (userMsg.length > 20000) { payload.news = payload.news.slice(0, 8); payload.last30Closes = payload.last30Closes.slice(-15); userMsg = `Write the analyst note for this market data:\n${JSON.stringify(payload)}`; } // free tiers cap ~8k tokens per request
+    if (userMsg.length > 14000) { payload.news = payload.news.slice(0, 8); payload.last30Closes = payload.last30Closes.slice(-15); userMsg = `Write the analyst note for this market data:\n${JSON.stringify(payload)}`; } // free tiers cap ~8k tokens per request
     const llm = await callLLM(AI_SYSTEM, userMsg);
     const text = llm.text;
     const note = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
