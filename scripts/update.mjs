@@ -706,7 +706,7 @@ async function callLLM(system, user) {
   }
   throw new Error(errors.length ? errors.join(' | ') : 'no AI provider configured');
 }
-const AI_EVERY_MIN = Number(process.env.AI_EVERY_MIN) || 120;   // regular cadence while the market is open
+const AI_EVERY_MIN = Number(process.env.AI_EVERY_MIN) || 60;    // regular cadence while the market is open
 const AI_MOVE_PCT = Number(process.env.AI_MOVE_PCT) || 1.5;     // earlier refresh after a move this big
 let aiCallsLeft = Number(process.env.AI_MAX_PER_RUN) || 1;      // spreads notes across runs and markets
 
@@ -755,7 +755,7 @@ async function aiFor(m, out, prevAi, now) {
   const ageMin = prevOk ? (now - Date.parse(prevAi.at)) / 60e3 : Infinity;
   const moved = prevOk && prevAi.price ? Math.abs(out.price.last / prevAi.price - 1) * 100 : 0;
   const every = out.market === 'open' ? AI_EVERY_MIN : Math.max(AI_EVERY_MIN, 360);
-  const due = !prevOk || ageMin >= every || (moved >= AI_MOVE_PCT && ageMin >= 20);
+  const due = !prevOk || ageMin >= every - 4 || (moved >= AI_MOVE_PCT && ageMin >= 20);
   if (!due) return prevAi;
   if (aiCallsLeft <= 0 || OFFLINE) return prevAi || { status: 'pending' };
   aiCallsLeft--;
