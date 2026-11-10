@@ -750,7 +750,7 @@ Respond with ONLY a JSON object, no markdown, matching:
  "flip":["1-2 things that would change this view"],"risks":["1-2 key risks or events to watch"]}`;
 
 async function aiFor(m, out, prevAi, now) {
-  if (!aiConfigured()) return { status: 'off' };
+  if (!aiConfigured()) { if (!aiFor.warned) { aiFor.warned = true; console.log(`::warning title=AI analyst::off - no key reached the script (GROQ_API_KEY ${GROQ_KEY ? 'set' : 'empty'}, ANTHROPIC_API_KEY ${AI_KEY ? 'set' : 'empty'}, providers ${AI_PROVIDERS.join(',')})`); } return { status: 'off' }; }
   const prevOk = prevAi && prevAi.status === 'ok' && prevAi.at;
   const ageMin = prevOk ? (now - Date.parse(prevAi.at)) / 60e3 : Infinity;
   const moved = prevOk && prevAi.price ? Math.abs(out.price.last / prevAi.price - 1) * 100 : 0;
