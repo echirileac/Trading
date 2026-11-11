@@ -44,6 +44,10 @@ From then on it refreshes itself every ~5 minutes.
 - A market that fails to build on a run now keeps its previous page data and log instead of dropping them.
 - Removing a market from the watchlist ends its log.
 
+## Overview table (added November 2026)
+
+"All markets at a glance" under the watchlist: price, today's change, the model's lean and likely range for the selected horizon, the AI analyst's stance, RSI and the next scheduled event, one row per market. Click a row to open the market, click a column name to sort. A market is marked "Disagrees with model" when the analyst and the quant model point in opposite directions; the same warning appears on that market's analyst card.
+
 ## Events (added November 2026)
 
 - Each market lists the scheduled releases of the next 9 days: the EIA natural gas storage report (Thursday 10:30 New York) for NATGAS, EIA oil inventories (Wednesday 10:30) for oil, Fed decision days (list `FOMC_DAYS` in `scripts/update.mjs`, update it once a year from federalreserve.gov), and the next earnings date for US stocks (Nasdaq public data, once a day, best effort: it shows under Data sources whether the lookup worked).
