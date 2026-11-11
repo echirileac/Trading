@@ -852,12 +852,20 @@
     const pts = (samples || []).filter((q) => q && q[1] > 0);
     if (!pts.length) return [];
     const lastT = pts[pts.length - 1][0], buckets = new Map();
-    for (const [t, c] of pts) {
+    let prev = null;
+    for (const s of pts) {
+      const [t, c, sh, sl] = s, was = prev; prev = s;
       if (lastT - t > cfg.ms) continue;
       const k = Math.floor(t / cfg.bucket) * cfg.bucket;
-      const b = buckets.get(k);
-      if (!b) buckets.set(k, { k, open: c, high: c, low: c, close: c });
+      let b = buckets.get(k);
+      if (!b) buckets.set(k, b = { k, open: c, high: c, low: c, close: c });
       else { b.high = Math.max(b.high, c); b.low = Math.min(b.low, c); b.close = c; }
+      // A sample also carries the session's high and low so far. If one of them moved since the previous sample
+      // (same session, at most ~15 minutes earlier), that extreme was traded in between: draw it as this candle's wick.
+      if (sh > 0 && sl > 0 && was && was[2] > 0 && was[3] > 0 && t - was[0] <= 16 * 60e3 && sh >= was[2] && sl <= was[3]) {
+        if (sh > was[2] && sh < c * 1.25) b.high = Math.max(b.high, sh);
+        if (sl < was[3] && sl > c * 0.8) b.low = Math.min(b.low, sl);
+      }
     }
     // the chart library draws in UTC; shift so the axis shows this browser's local time
     return [...buckets.values()].sort((x, y) => x.k - y.k)
@@ -883,7 +891,7 @@
       note.hidden = false;
       note.textContent = rows.length < 4
         ? `${intra.name} candles appear as the server records prices (about every 5 minutes while the market is open). Not enough yet for this view, so check back shortly.`
-        : `${intra.name} candles built from the price recorded about every 5 minutes${rows[0] ? ` since ${fmtT(rows[0].k)}` : ''}; moves between recordings are not captured.${PC_TF === '1W' && span < 6 * 864e5 ? ' The week view fills in over the coming days.' : ''}`;
+        : `${intra.name} candles built from the price recorded about every 5 minutes${rows[0] ? ` since ${fmtT(rows[0].k)}` : ''}. New session highs and lows are drawn as wicks; other moves between recordings are not captured.${PC_TF === '1W' && span < 6 * 864e5 ? ' The week view fills in over the coming days.' : ''}`;
     } else {
       note.hidden = true;
       const okv = (v, c) => (v != null && v > c * 0.5 && v < c * 2 ? v : null); // ignore zero / broken ticks
