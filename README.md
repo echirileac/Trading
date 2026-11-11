@@ -44,6 +44,17 @@ From then on it refreshes itself every ~5 minutes.
 - A market that fails to build on a run now keeps its previous page data and log instead of dropping them.
 - Removing a market from the watchlist ends its log.
 
+## Calibration (November 2026)
+
+Checked against the backtest on the five markets then on the watchlist (about 980 forecasts per horizon):
+- **Likely range (68%)** held 69-70% of closes: left as is.
+- **Wide range (90%)** held only 87-89%: widened from 1.645 to 1.75 volatility units (`Z90` in `scripts/update.mjs`), which gives 90.5% / 90.1% / 89.5% at 1 / 3 / 5 days.
+- **Volatility estimate:** five alternatives (20-day, 60-day, two EWMA speeds, a mix) were compared; none was clearly better, so it is unchanged.
+- **Drift factor (`DRIFT_K`):** the data fits 0.20 +/- 0.17, so 0.25 is unchanged.
+- **Price signals** (trend, momentum, RSI) pointed the right way about 50-51% of the time: no measurable edge on this sample. Weights are unchanged for now. Each signal's right-direction rate is shown under it on the page, and every logged forecast now stores its signal values so the news signal can be judged once enough days are logged.
+
+Re-run this check when the watchlist changes or after a few months of new data.
+
 ## Good to know
 
 - Refresh timing: GitHub's own 5-minute schedule is unreliable, so the `Refresh ticker` workflow starts an update every 5 minutes. It runs ~5.5 hours, then starts a fresh copy of itself; every update also restarts it if it ever stops. To pause the site's updates, disable both `Refresh ticker` and `Update NATGAS forecast` on the Actions tab.
