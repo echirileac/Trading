@@ -1117,7 +1117,8 @@ function summary(out, m, error) {
   if (!out) return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', tv: m.tv || undefined, error };
   const h = out.forecast.horizons;
   return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', tv: m.tv || undefined, last: out.price.last, changePct: out.price.changePct, decimals: out.meta.decimals,
-    market: out.market, ai: out.ai?.status === 'ok' ? { stance: out.ai.stance, headline: out.ai.headline } : null, bias: out.forecast.bias, score: out.forecast.score, h: Object.fromEntries(Object.entries(h).map(([k, v]) => [k, { center: v.center, changePct: v.changePct, pUp: v.pUp }])), asOf: out.price.asOf, error };
+    market: out.market, ai: out.ai?.status === 'ok' ? { stance: out.ai.stance, headline: out.ai.headline } : null, bias: out.forecast.bias, score: out.forecast.score, h: Object.fromEntries(Object.entries(h).map(([k, v]) => [k, { center: v.center, changePct: v.changePct, pUp: v.pUp, lo68: v.lo68, hi68: v.hi68, events: v.events && v.events.length ? v.events : undefined }])),
+    rsi: out.forecast.rsi, next: out.events && out.events[0] ? { id: out.events[0].id, name: out.events[0].name, date: out.events[0].date, at: out.events[0].at, allDay: out.events[0].allDay || undefined } : null, asOf: out.price.asOf, error };
 }
 
 async function main() {

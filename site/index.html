@@ -195,6 +195,20 @@
   details.cal summary { cursor: pointer; font-weight: 600; font-size: 15px; }
   .cal-box { height: 480px; margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   .cal-box .tradingview-widget-container, .cal-box .tradingview-widget-container__widget { width: 100%; height: 100%; }
+  details.ov summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+  .ov-table { margin-top: 10px; }
+  .ov-table th { text-align: left; font-size: 11px; font-weight: 600; color: var(--muted); padding: 4px 6px 8px; white-space: nowrap; }
+  .ov-table th button { appearance: none; background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; }
+  .ov-table th button:hover, .ov-table th button[aria-pressed="true"] { color: var(--fg); }
+  .ov-table td { padding: 8px 6px; font-size: 13px; white-space: nowrap; vertical-align: top; }
+  .ov-table tr.row { cursor: pointer; }
+  .ov-table tr.row:hover td { background: var(--shade); }
+  .ov-table tr.row[aria-current="true"] td { background: var(--panel2); }
+  .ov-table .sub { display: block; font-size: 11px; color: var(--muted); }
+  .ov-table .nm { appearance: none; background: none; border: 0; padding: 0; font: 600 13px var(--font); color: var(--fg); cursor: pointer; text-align: left; }
+  .ov-table .warn { color: var(--neutral); }
+  .ov-table td:last-child { white-space: normal; min-width: 150px; }
+  @media (max-width: 640px) { .hide-sm { display: none; } }
   .theme-btn { display: inline-flex; align-items: center; gap: 6px; }
   .theme-btn svg { width: 16px; height: 16px; }
   @media (max-width: 520px) { .price { font-size: 40px; } .fc-center { font-size: 30px; } }
@@ -203,6 +217,12 @@
 <body>
 <div class="wrap">
   <nav class="wl" id="wl" aria-label="Watchlist"></nav>
+
+  <details class="card ov" id="ov">
+    <summary>All markets at a glance</summary>
+    <div class="tbl-wrap"><table class="ov-table" id="ov-table"></table></div>
+    <p class="note" style="margin:8px 0 0">Click a market to open it; click a column name to sort. The lean and range follow the horizon tab (1, 3 or 5 days). "Disagrees with model" marks markets where the AI analyst and the quant model point in opposite directions.</p>
+  </details>
 
   <section class="card search" id="search" aria-label="Search markets">
     <div class="fc-head"><b style="color:var(--fg);font-size:15px">Add a market</b><button class="btn ghost" id="search-close" type="button">Close</button></div>
@@ -466,7 +486,50 @@
     const add = el('button', { class: 'wl-add', type: 'button' }, '+ Add market');
     add.addEventListener('click', openSearch);
     nav.append(add);
+    drawOverview();
   }
+
+  // ---------- overview table ----------
+  const disagrees = (m) => !!(m.ai && ((m.ai.stance === 'bullish' && m.score < -0.15) || (m.ai.stance === 'bearish' && m.score > 0.15)));
+  let OV_SORT = { k: '', dir: -1 };
+  try { OV_SORT = Object.assign(OV_SORT, JSON.parse(localStorage.getItem('ov-sort')) || {}); } catch { /* default order */ }
+  function drawOverview() {
+    const tb = $('ov-table'); tb.replaceChildren();
+    const key = { name: (m) => (m.id === 'NATGAS' ? 'NATGAS' : m.name || '').toLowerCase(), changePct: (m) => m.changePct, lean: (m) => m.h && m.h[H] && m.h[H].pUp, rsi: (m) => m.rsi };
+    const cols = [['name', 'Market'], [null, 'Price'], ['changePct', 'Today'], ['lean', `${H}-day lean`], [null, `${H}-day likely range`, 'hide-sm'], [null, 'Analyst'], ['rsi', 'RSI 14', 'hide-sm'], [null, 'Next event', 'hide-sm']];
+    const head = el('tr');
+    for (const [k, label, c] of cols) {
+      const th = el('th', c ? { class: c } : {});
+      if (k) { const b = el('button', { type: 'button', 'aria-pressed': String(OV_SORT.k === k), title: 'Sort by ' + label.toLowerCase() }, label + (OV_SORT.k === k ? (OV_SORT.dir < 0 ? ' ↓' : ' ↑') : '')); b.addEventListener('click', () => { OV_SORT = OV_SORT.k === k ? (OV_SORT.dir < 0 ? { k, dir: 1 } : { k: '', dir: -1 }) : { k, dir: k === 'name' ? 1 : -1 }; try { localStorage.setItem('ov-sort', JSON.stringify(OV_SORT)); } catch { /* ignore */ } drawOverview(); }); th.append(b); }
+      else th.textContent = label;
+      head.append(th);
+    }
+    tb.append(head);
+    const rows = [...INDEX.markets];
+    if (OV_SORT.k && key[OV_SORT.k]) rows.sort((a, b) => { const x = key[OV_SORT.k](a), y = key[OV_SORT.k](b); if (x == null || y == null) return (x == null) - (y == null); return (x < y ? -1 : x > y ? 1 : 0) * OV_SORT.dir; });
+    for (const m of rows) {
+      const tr = el('tr', { class: 'row', 'aria-current': String(m.id === CUR_ID) });
+      tr.addEventListener('click', () => select(m.id));
+      const dec = m.decimals ?? 3, h = m.h && m.h[H];
+      const td = (cls, ...kids) => { const c = el('td', cls ? { class: cls } : {}); c.append(...kids.filter((x) => x != null)); tr.append(c); return c; };
+      const sub = (t) => el('span', { class: 'sub' }, t);
+      const nm = el('button', { class: 'nm', type: 'button' }, m.id === 'NATGAS' ? 'NATGAS' : m.name);
+      td('', nm, sub(m.id === 'NATGAS' ? 'Henry Hub' : [m.symbol, m.exchange].filter(Boolean).join(' · ')));
+      if (m.last == null) { const c = td('flat', document.createTextNode(m.error ? 'No data' : 'Preparing')); c.setAttribute('colspan', '7'); tb.append(tr); continue; }
+      td('', document.createTextNode(fmtNum(m.last, dec)), sub(m.market === 'open' ? 'open' : m.market === 'break' ? 'daily break' : 'closed'));
+      td(cls(m.changePct), document.createTextNode(m.changePct != null ? sp(m.changePct) : '—'));
+      const leanCls = m.score > 0.15 ? 'up' : m.score < -0.15 ? 'down' : 'flat';
+      td(leanCls, document.createTextNode(h ? `${Math.round(100 * h.pUp)}% higher` : '—'), sub(m.bias || ''));
+      td('hide-sm', document.createTextNode(h && h.lo68 != null ? `${fmtNum(h.lo68, dec)} – ${fmtNum(h.hi68, dec)}` : '—'), h && h.events ? el('span', { class: 'sub warn' }, 'event before target') : null);
+      const st = m.ai && m.ai.stance;
+      td(st === 'bullish' ? 'up' : st === 'bearish' ? 'down' : 'flat', document.createTextNode(st ? st[0].toUpperCase() + st.slice(1) : '—'), disagrees(m) ? el('span', { class: 'sub warn' }, 'Disagrees with model') : null);
+      td('hide-sm' + (m.rsi >= 70 ? ' down' : m.rsi <= 30 ? ' up' : ''), document.createTextNode(m.rsi != null ? Math.round(m.rsi) : '—'), m.rsi >= 70 ? sub('overbought') : m.rsi <= 30 ? sub('oversold') : null);
+      td('hide-sm', document.createTextNode(m.next ? m.next.name.replace(/ \(expected date\)/, '') : '—'), m.next ? sub(m.next.allDay ? dayName(m.next.date) : new Date(m.next.at).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })) : null);
+      tb.append(tr);
+    }
+  }
+  { let open = window.innerWidth >= 900; try { const v = localStorage.getItem('ov-open'); if (v != null) open = v === '1'; } catch { /* default */ } $('ov').open = open; }
+  $('ov').addEventListener('toggle', () => { try { localStorage.setItem('ov-open', $('ov').open ? '1' : '0'); } catch { /* ignore */ } });
 
   // ---------- search ----------
   let COMMODITIES = null, FILTER = '', st;
@@ -632,6 +695,8 @@
     pill.hidden = false;
     pill.textContent = `${a.stance[0].toUpperCase() + a.stance.slice(1)} · ${a.confidence} confidence`;
     pill.className = 'bias ' + (a.stance === 'bullish' ? 'up' : a.stance === 'bearish' ? 'down' : 'flat');
+    const fScore = DATA.forecast.score;
+    if ((a.stance === 'bullish' && fScore < -0.15) || (a.stance === 'bearish' && fScore > 0.15)) box.append(el('p', { class: 'ev-line', style: 'margin:10px 0 0' }, `The analyst (${a.stance}) and the quant model (${DATA.forecast.bias.toLowerCase()}) point in opposite directions here. Treat the direction as unsettled.`));
     box.append(el('h3', {}, a.headline), el('p', {}, a.summary));
     const ol = a.outlook?.[`${H}d`];
     if (ol) { const d = el('div', { class: 'ai-outlook' }); d.append(el('b', {}, `Next ${H} day${H > 1 ? 's' : ''}: `), document.createTextNode(ol)); box.append(d); }
