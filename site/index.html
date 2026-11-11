@@ -1015,8 +1015,8 @@
     const hit = evs.filter((e) => (h.events || []).includes(e.id) && e.date <= h.targetDate);
     line.hidden = !hit.length;
     if (hit.length) line.textContent = `Before this target close: ${hit.map((e) => `${e.name} (${evWhen(e)}${e.note && e.id !== 'earnings' ? ', may move a day: US holiday week' : ''})`).join(' · ')}. ${hit.some((e) => e.id === 'earnings') ? 'The ranges do not include the earnings move, which can be several times a normal day.' : 'Scheduled releases can move the price sharply within minutes.'}`;
-    const earn = DATA.meta && DATA.meta.earnings && DATA.meta.earnings.date;
-    $('ev-note').textContent = (evs.length ? 'Known releases for this market in the next 9 days:' : 'No scheduled release is known for this market in the next 9 days.') + (earn && !evs.some((e) => e.id === 'earnings') ? ` Next earnings report expected ${dayName(earn)}.` : '');
+    const em = DATA.meta && DATA.meta.earnings, earn = em && em.date;
+    $('ev-note').textContent = (evs.length ? 'Known releases for this market in the next 9 days:' : 'No scheduled release is known for this market in the next 9 days.') + (earn && !evs.some((e) => e.id === 'earnings') ? ` Next earnings report expected ${dayName(earn)}.` : em && em.pending && !earn ? ' The next earnings date has not been announced yet.' : '');
     $('ev-list').replaceChildren(...evs.map((e) => { const li = el('li'); li.append(el('span', { class: 'when' }, evWhen(e)), el('span', {}, e.name)); if (e.note) li.append(el('span', { class: 'nt' }, e.note)); return li; }));
     calUpdate();
   }
