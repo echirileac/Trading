@@ -42,6 +42,13 @@ jobs:
           AI_EVERY_MIN: ${{ vars.AI_EVERY_MIN }}  # optional, default 60
           NEWS_AI_MODELS: ${{ vars.NEWS_AI_MODELS }}          # optional, default llama-3.3-70b-versatile,llama-3.1-8b-instant (headline scoring)
           NEWS_AI_CATEGORIES: ${{ vars.NEWS_AI_CATEGORIES }}  # optional, default equity,etf (add energy,metal,index,fx,crypto to extend)
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}  # optional: alerts to Telegram (bot from @BotFather)
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}      # optional: your chat with the bot
+          ALERT_TYPES: ${{ vars.ALERT_TYPES }}                   # optional, default move,level,flip,analyst,event
+          ALERT_MARKETS: ${{ vars.ALERT_MARKETS }}               # optional, e.g. NATGAS,BRENT (default all)
+          ALERT_QUIET_HOURS: ${{ vars.ALERT_QUIET_HOURS }}       # optional, e.g. 23-7: sent without sound (Bucharest time)
+          ALERT_EVENT_LEAD_MIN: ${{ vars.ALERT_EVENT_LEAD_MIN }} # optional, default 60
+          ALERT_TZ: ${{ vars.ALERT_TZ }}                         # optional, default Europe/Bucharest
           # SITE_URL: "https://your-custom-domain.example/"   # only if you use a custom domain
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

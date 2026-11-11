@@ -1099,6 +1099,172 @@ async function aiScoreNews(m, news, prevNews, now) {
     { name: `AI news scoring: ${nAi} of ${items.length} stories scored${off ? `, ${off} not about this market` : ''}${news.scorer.model ? ` (${news.scorer.model} on Groq)` : ''}`, ok: nAi === items.length || !news.scorer.error, error: news.scorer.error || (nAi < items.length ? 'the rest keep keyword scores until the next refresh' : '') }];
 }
 
+// ---------- Alerts (shown on the page; sent to Telegram when a bot is set up) ----------
+// Each build compares the new data with the previous build's and records what changed. A small memory kept in the
+// market's own data file (alerts.state) makes every alert fire once. The first build that has no memory yet only
+// records the current state, so deploying this never sends a burst of old news.
+const ALERTS_VERSION = 1;
+const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TG_CHAT = process.env.TELEGRAM_CHAT_ID || '';
+const TG_API = process.env.TELEGRAM_API || 'https://api.telegram.org'; // overridable for local tests
+const ALERT_TYPES = (process.env.ALERT_TYPES || 'move,level,flip,analyst,event').split(',').map((x) => x.trim()).filter(Boolean);
+const ALERT_MARKETS = (process.env.ALERT_MARKETS || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean); // empty = all
+const ALERT_TZ = process.env.ALERT_TZ || 'Europe/Bucharest';
+const ALERT_QUIET = (process.env.ALERT_QUIET_HOURS || '').match(/^(\d{1,2})-(\d{1,2})$/); // e.g. 23-7: sent silently
+const ALERT_EVENT_LEAD_MIN = Number(process.env.ALERT_EVENT_LEAD_MIN) || 60;
+const ALERT_LEVEL_COOLDOWN_H = 6, ALERT_FLIP_COOLDOWN_H = 2, ALERT_LOG_KEEP = 25;
+const OUTBOX = [];             // alerts found in this build, sent at the end of main()
+const tzTime = (t, opts = {}) => new Intl.DateTimeFormat('en-GB', { timeZone: ALERT_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...opts }).format(new Date(t));
+const dirOf = (bias) => (/^Bullish/.test(bias || '') ? 1 : /^Bearish/.test(bias || '') ? -1 : 0);
+
+function alertsFor(m, out, prev, now) {
+  const dec = out.meta.decimals ?? 2;
+  const f = (x) => Number(x).toFixed(dec);
+  const prevA = prev?.alerts?.v === ALERTS_VERSION ? prev.alerts : null;
+  const seed = !prevA;                              // no memory yet: record only
+  const st = seed ? { side: {}, sent: {} } : structuredClone(prevA.state || { side: {}, sent: {} });
+  st.side ||= {}; st.sent ||= {};
+  const found = [];
+  const fire = (type, key, text, extra = {}) => {
+    if (st.sent[key]) return false;
+    st.sent[key] = new Date(now).toISOString();
+    if (!seed) found.push({ t: new Date(now).toISOString(), type, text, ...extra });
+    return true;
+  };
+  const hoursSince = (key) => (st.sent[key] ? (now - Date.parse(st.sent[key])) / 36e5 : Infinity);
+  const last = out.price.last, prevClose = out.price.prevClose, sigma = out.forecast.sigmaDaily;
+  const daily = out.price.daily || [];
+  const session = daily.at(-1)?.date || ymd(now);
+
+  // 1. Unusual move: today's change beyond the range that holds on about 90% of days, and beyond 3 sigma
+  if (last && prevClose && sigma) {
+    const z = Math.log(last / prevClose) / sigma, pct = 100 * (last / prevClose - 1);
+    const band = 100 * (Math.exp(Z90 * sigma) - 1);
+    // both thresholds crossed at once give one line (the larger); each fires once per session and direction
+    const lvl = Math.abs(z) >= 3 ? 2 : Math.abs(z) >= Z90 ? 1 : 0;
+    if (lvl && !st.sent[`move:${session}:${Math.sign(z)}:${lvl}`]) {
+      for (let k = 1; k < lvl; k++) st.sent[`move:${session}:${Math.sign(z)}:${k}`] ||= new Date(now).toISOString();
+      fire('move', `move:${session}:${Math.sign(z)}:${lvl}`, `${pct > 0 ? 'Up' : 'Down'} ${Math.abs(pct).toFixed(1)}% today: ${lvl === 2 ? 'a very large' : 'an unusual'} move (90% of days stay within ±${band.toFixed(1)}%)`);
+    }
+  }
+
+  // 2. Key level breaks: the 50- and 200-day averages and the high/low of the previous 20 sessions.
+  //    A side only changes once the price is clearly past the level (a quarter of a day's typical move), and a
+  //    break only counts when the price itself moved through it (a level that moved past a still price is ignored).
+  if (last && sigma) {
+    const prior = daily.length > 21 ? daily.slice(-21, -1) : []; // the newest bar is the live session
+    const lv = out.forecast.levels || [];
+    const L = [
+      ['50-day average', lv.find((x) => x.label === '50-day average')?.price],
+      ['200-day average', lv.find((x) => x.label === '200-day average')?.price],
+      ['20-day high', prior.length ? Math.max(...prior.map((x) => x.h ?? x.c)) : null],
+      ['20-day low', prior.length ? Math.min(...prior.map((x) => x.l ?? x.c)) : null]
+    ];
+    const prevLast = prev?.price?.last;
+    for (const [label, p] of L) {
+      if (!(p > 0)) continue;
+      const buf = 0.25 * sigma * p;
+      const side = last > p + buf ? 'above' : last < p - buf ? 'below' : null;
+      if (!side) continue;                          // too close to call: keep the old side
+      const old = st.side[label];
+      st.side[label] = side;
+      if (!old || old === side) continue;
+      const movedThrough = prevLast != null && (side === 'above' ? prevLast <= p + buf : prevLast >= p - buf);
+      if (!movedThrough || hoursSince(`lvl:${label}`) < ALERT_LEVEL_COOLDOWN_H) continue;
+      delete st.sent[`lvl:${label}`];
+      const what = label === '20-day high' ? 'New 20-day high: broke above' : label === '20-day low' ? 'New 20-day low: broke below' : `Crossed ${side}`;
+      fire('level', `lvl:${label}`, `${what} the ${label === '20-day high' || label === '20-day low' ? 'previous ' : ''}${label} at ${f(p)}`);
+    }
+  }
+
+  // 3. Model lean flips between bullish and bearish (passing through Neutral does not count as a flip)
+  const d = dirOf(out.forecast.bias);
+  if (d) {
+    if (!st.dir) st.dir = d;
+    else if (d !== st.dir && hoursSince('flip') >= ALERT_FLIP_COOLDOWN_H) {
+      const h1 = out.forecast.horizons?.[1];
+      delete st.sent.flip;
+      fire('flip', 'flip', `Model lean flipped to ${d > 0 ? 'bullish' : 'bearish'} (was ${st.dir > 0 ? 'bullish' : 'bearish'})${h1 ? `: 1-day centre ${f(h1.center)}, ${Math.round(100 * h1.pUp)}% chance of closing higher` : ''}`);
+      st.dir = d;
+    }
+  }
+
+  // 4. AI analyst changes its stance in a new note
+  const ai = out.ai;
+  if (ai?.status === 'ok' && ai.stance) {
+    if (!st.stance) st.stance = ai.stance;
+    else if (ai.stance !== st.stance && ai.at !== prev?.ai?.at) {
+      fire('analyst', `ai:${ai.at}`, `AI analyst turned ${ai.stance} (was ${st.stance})${ai.headline ? `: ${ai.headline}` : ''}`);
+      st.stance = ai.stance;
+    }
+  }
+
+  // 5. Scheduled events: a reminder shortly before (all-day events such as earnings: from 18:00 UTC the day before)
+  for (const e of out.events || []) {
+    const at = Date.parse(e.at);
+    const due = e.allDay ? now >= Date.parse(e.date + 'T00:00:00Z') - 6 * 36e5 && now < Date.parse(e.date + 'T00:00:00Z') + 864e5
+      : at > now && at - now <= ALERT_EVENT_LEAD_MIN * 60e3;
+    if (!due) continue;
+    const when = e.allDay ? `on ${new Date(e.date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })} (time not announced)` : `at ${tzTime(at)} ${ALERT_TZ.split('/').pop().replace(/_/g, ' ')} time (in ${Math.max(1, Math.round((at - now) / 60e3))} min)`;
+    fire('event', `ev:${e.id}:${e.date}`, `${e.name} ${when}`, { event: `${e.id}:${e.date}`, eventName: e.name, eventWhen: when });
+  }
+
+  // forget sent markers older than 3 days, except the ones that hold state
+  for (const [k, t] of Object.entries(st.sent)) if (now - Date.parse(t) > 3 * 864e5 && !/^(lvl:|flip$)/.test(k)) delete st.sent[k];
+  const log = [...found.slice().reverse(), ...(prevA?.log || [])].filter((x) => now - Date.parse(x.t) < 7 * 864e5).slice(0, ALERT_LOG_KEEP);
+  if (found.length) OUTBOX.push({ id: m.id, name: m.name, last, changePct: out.price.changePct, dec, items: found });
+  return { v: ALERTS_VERSION, state: st, log, telegram: !!(TG_TOKEN && TG_CHAT) };
+}
+
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function alertMessages(base) {
+  const want = (a) => (!ALERT_MARKETS.length || ALERT_MARKETS.includes(a.id.toUpperCase()));
+  const boxes = OUTBOX.filter(want).map((b) => ({ ...b, items: b.items.filter((x) => ALERT_TYPES.includes(x.type)) })).filter((b) => b.items.length);
+  // a release shared by several markets (Fed day) becomes one line
+  const events = new Map();
+  for (const b of boxes) for (const x of b.items.filter((x) => x.type === 'event')) {
+    const e = events.get(x.event) || { name: x.eventName, when: x.eventWhen, ids: [] };
+    e.ids.push(b.id); events.set(x.event, e);
+  }
+  const parts = [];
+  for (const b of boxes) {
+    const items = b.items.filter((x) => x.type !== 'event');
+    if (!items.length) continue;
+    const icon = { move: '📈', level: '🧱', flip: '🔄', analyst: '🧠' };
+    const chg = b.changePct != null ? ` (${b.changePct > 0 ? '+' : ''}${b.changePct.toFixed(2)}%)` : '';
+    parts.push(`<b>${esc(b.name)}</b> ${Number(b.last).toFixed(b.dec)}${chg}\n` + items.map((x) => `${icon[x.type] || '•'} ${esc(x.text)}`).join('\n') + (base ? `\n<a href="${esc(base)}#${encodeURIComponent(b.id)}/1d">Open ${esc(b.id)}</a>` : ''));
+  }
+  for (const e of events.values()) parts.push(`🗓 <b>${esc(e.name)}</b> ${esc(e.when)}\nMarkets: ${esc(e.ids.join(', '))}`);
+  if (!parts.length) return [];
+  const msgs = [];
+  let cur = '';
+  for (const p of parts) { if (cur && (cur + '\n\n' + p).length > 3800) { msgs.push(cur); cur = p; } else cur = cur ? cur + '\n\n' + p : p; }
+  if (cur) msgs.push(cur);
+  return msgs;
+}
+async function sendAlerts(base, now) {
+  const total = OUTBOX.reduce((n, b) => n + b.items.length, 0);
+  if (!total) return;
+  const msgs = alertMessages(base);
+  if (!TG_TOKEN || !TG_CHAT) { console.log(`::notice title=Alerts::${total} new alert(s), shown on the site only (Telegram not set up: add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)`); return; }
+  if (!msgs.length) { console.log(`::notice title=Alerts::${total} new alert(s), none selected for Telegram (ALERT_TYPES / ALERT_MARKETS)`); return; }
+  let quiet = false;
+  if (ALERT_QUIET) {
+    const h = Number(tzTime(now, { minute: undefined })), a = Number(ALERT_QUIET[1]), b = Number(ALERT_QUIET[2]);
+    quiet = a > b ? h >= a || h < b : h >= a && h < b;
+  }
+  let sent = 0;
+  for (const text of msgs) {
+    try {
+      const res = await fetch(`${TG_API}/bot${TG_TOKEN}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: TG_CHAT, text, parse_mode: 'HTML', disable_web_page_preview: true, disable_notification: quiet }), signal: AbortSignal.timeout(15000) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j.ok === false) throw new Error(`HTTP ${res.status} ${j.description || ''}`.trim());
+      sent++;
+    } catch (e) { console.log(`::warning title=Telegram::message not sent - ${String(e.message).replace(TG_TOKEN, '***').slice(0, 200)}`); }
+  }
+  console.log(`::notice title=Alerts::${total} new alert(s); ${sent} of ${msgs.length} Telegram message(s) sent${quiet ? ' silently (quiet hours)' : ''}`);
+}
+
 // ---------- NATGAS (CNBC quote + self-maintained history) ----------
 const NATGAS = { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy', provider: 'cnbc', tv: 'OANDA:NATGASUSD', instrument: 'Henry Hub natural gas, NYMEX front-month futures (NG=F)' };
 async function buildNatgas(base, now) {
@@ -1111,6 +1277,7 @@ async function buildNatgas(base, now) {
   await trackRecord(NATGAS, px, fc, out, prev, log, now, { calendar: 'ng', category: 'energy' });
   await attachEvents(NATGAS, out, prev, now);
   out.ai = await aiFor(NATGAS, out, prev?.ai, now);
+  out.alerts = alertsFor(NATGAS, out, prev, now);
   await save('m/NATGAS.json', out);
   await save('latest.json', out); // kept for older links
   return out;
@@ -1130,6 +1297,7 @@ async function buildCnbcFutures(m, base, now, plan) {
   await trackRecord(m, px, fc, out, prev, log, now, { calendar: 'ng', category: m.category });
   await attachEvents(m, out, prev, now);
   out.ai = await aiFor(m, out, prev?.ai, now);
+  out.alerts = alertsFor(m, out, prev, now);
   await save(`m/${m.id}.json`, out);
   return out;
 }
@@ -1239,12 +1407,14 @@ async function main() {
     const m = markets[i];
     try {
       const r = await buildTwelveData(m, prevs[i], now, plan);
-      if (r.out) { r.out.ai = await aiFor(m, r.out, prevs[i]?.ai, now); await save(`m/${m.id}.json`, r.out); results[i] = summary(r.out, m, r.out.sources.find((x) => !x.ok && /Twelve Data/.test(x.name))?.error); console.log(`OK ${m.id} last=${r.out.price.last} bias=${r.out.forecast.bias}`); }
+      if (r.out) { r.out.ai = await aiFor(m, r.out, prevs[i]?.ai, now); r.out.alerts = alertsFor(m, r.out, prevs[i], now); await save(`m/${m.id}.json`, r.out); results[i] = summary(r.out, m, r.out.sources.find((x) => !x.ok && /Twelve Data/.test(x.name))?.error); console.log(`OK ${m.id} last=${r.out.price.last} bias=${r.out.forecast.bias}`); }
       else { results[i] = summary(null, m, r.error); console.log(`::warning title=${m.id}::${r.error}`); }
     } catch (e) { results[i] = summary(null, m, e.message); console.log(`::warning title=${m.id} failed::${e.message}`); }
   }
   index.markets.push(...results);
   await save('index.json', index);
+  // alerts go out only when this build will be published, so the record of what was sent is kept
+  if (!TRACK_UNSAFE) await sendAlerts(base, now);
   if (TRACK_UNSAFE) { console.log('::error title=Not published::the forecast log could not be read back from the live site, so this refresh is not deployed (the site keeps its previous data; the next refresh retries)'); process.exitCode = 1; }
 }
 

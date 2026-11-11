@@ -359,6 +359,12 @@
     <ul class="news" id="news"></ul>
   </section>
 
+  <section class="card needs-data" id="al-card">
+    <h2>Recent alerts</h2>
+    <p class="note" id="al-note"></p>
+    <ul class="ev-list al-list" id="al-list"></ul>
+  </section>
+
   <details class="card cal" id="cal">
     <summary>Events and economic calendar</summary>
     <p class="note needs-data" id="ev-note" style="margin:10px 0 8px"></p>
@@ -672,7 +678,7 @@
     $('r90').textContent = `${usd(h.lo90, 2)} – ${usd(h.hi90, 2)}`;
     drawEvents(h);
 
-    drawAI(); setView(); tvUpdate(); pcUpdate(); drawTrack(); drawIntraday(); drawSignals(); drawLevels(); drawNews(); drawSources();
+    drawAI(); setView(); tvUpdate(); pcUpdate(); drawTrack(); drawIntraday(); drawSignals(); drawLevels(); drawNews(); drawAlerts(); drawSources();
     $('method').textContent = DATA.method;
   }
 
@@ -1214,6 +1220,22 @@
   }
 
   // ---------- news ----------
+  // ---------- alerts ----------
+  function drawAlerts() {
+    const A = DATA.alerts, list = $('al-list');
+    list.replaceChildren();
+    const icon = { move: '📈', level: '🧱', flip: '🔄', analyst: '🧠', event: '🗓' };
+    const items = (A && A.log) || [];
+    for (const x of items) {
+      const li = el('li');
+      li.append(el('span', { class: 'when' }, new Date(x.t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })), el('span', {}, `${icon[x.type] || '•'} ${x.text}`));
+      list.append(li);
+    }
+    const how = 'Alerts cover unusual daily moves, breaks of the 50- and 200-day averages and the 20-session high or low, the model lean flipping between bullish and bearish, the AI analyst changing its stance, and reminders before scheduled reports. Each fires once.';
+    $('al-note').textContent = !A ? 'Alerts start with the next refresh.'
+      : (items.length ? '' : 'No alerts for this market in the last 7 days. ') + how + (A.telegram ? ' They are also sent to Telegram.' : ' They can also be sent to Telegram: see the README.');
+  }
+
   function drawNews() {
     const items = DATA.news.items || [];
     const nFull = items.filter((n) => n.read && n.read.status === 'full').length;
