@@ -27,8 +27,8 @@ jobs:
         run: |
           gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --comment "Only the repository owner can change this watchlist."
           exit 1
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - id: apply
