@@ -37,6 +37,26 @@ From then on it refreshes itself every ~5 minutes.
   - A model that hits its limit is skipped until the next refresh; if every option is exhausted the page keeps showing the previous note.
 - **AI news scoring for stocks:** the keyword lists are tuned for commodities, so for stocks and ETFs each new headline is read once by a free Groq model (`openai/gpt-oss-20b`, then `openai/gpt-oss-120b`; the analyst note starts on 120b and each model has its own free daily allowance; Groq's Llama models left the free plan on 16 Aug 2026). It marks stories that are not really about the company (left out of the forecast) and rates the rest from -2 to +2 for the next 1-5 sessions, with a short reason shown under each story. That rating is 75% of the story's score, the keyword score of the article text 25%. Scores are cached per headline, so only new headlines are sent, one batch per stock per news refresh (at most 6 requests per build). Uses the same `GROQ_API_KEY`; without it, or if Groq fails, keyword scoring is used and it retries at the next news refresh. Repository variables: `NEWS_AI_MODELS`, `NEWS_AI_CATEGORIES` (default `equity,etf`; add e.g. `energy,metal` to extend it).
 
+## Alerts and Telegram (added November 2026)
+
+Every build compares the new data with the previous build and records alerts in a **Recent alerts** card on each market page (last 7 days). Each alert fires once:
+
+- **Unusual move:** today's change is beyond the range that holds on about 90% of days for that market (and a second, "very large" level at 3 standard deviations). One per day and direction.
+- **Key level break:** the price moves clearly through the 50- or 200-day average, or above the previous 20-session high / below the 20-session low. A level that moves past a still price does not count; the same level waits 6 hours before alerting again.
+- **Model lean flip:** the forecast lean changes between bullish and bearish (passing through Neutral is not a flip; at most one flip alert per 2 hours).
+- **AI analyst stance change** in a new note.
+- **Scheduled reports:** EIA storage and oil reports, Fed decisions an hour before; earnings dates from the evening before. A report shared by several markets is one message.
+
+The first build after this was added only records the current state, so nothing old is sent.
+
+**Get them on Telegram (free):**
+1. In Telegram, message **@BotFather**, send `/newbot`, pick a name, and copy the token it gives you (or reuse the token of your existing alert bot).
+2. Open your new bot and press **Start** (send it any message).
+3. In a browser open `https://api.telegram.org/bot<TOKEN>/getUpdates` (your token in place of `<TOKEN>`) and find `"chat":{"id":` followed by a number: that is your chat id.
+4. In the repository: **Settings → Secrets and variables → Actions → New repository secret**: `TELEGRAM_BOT_TOKEN` = the token, `TELEGRAM_CHAT_ID` = the number.
+
+Alerts then arrive within about 5 minutes of happening, with a link to the market. Optional repository **variables**: `ALERT_TYPES` (default `move,level,flip,analyst,event`), `ALERT_MARKETS` (e.g. `NATGAS,BRENT`; default all), `ALERT_QUIET_HOURS` (e.g. `23-7`: sent without sound during those hours, Bucharest time), `ALERT_EVENT_LEAD_MIN` (default 60), `ALERT_TZ` (default `Europe/Bucharest`). The site only sends messages, so the same bot can also run the separate alert bot.
+
 ## Track record (added November 2026)
 
 - **Published log:** once per trading day, just after the close (16:15 New York for stocks, 17:00 for NATGAS and Brent, 17:15 for currencies and metals, 00:00 UTC for crypto), the build writes down that market's 1, 3 and 5-day forecasts. Each is scored against the actual close 1, 3 or 5 sessions later. The page shows, per horizon: how often the direction was right, how often the close landed inside the 68% and 90% ranges, and the average miss compared with assuming no change.
