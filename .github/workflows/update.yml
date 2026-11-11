@@ -25,8 +25,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Fetch prices + news, build forecast
@@ -50,12 +50,12 @@ jobs:
           ALERT_EVENT_LEAD_MIN: ${{ vars.ALERT_EVENT_LEAD_MIN }} # optional, default 60
           ALERT_TZ: ${{ vars.ALERT_TZ }}                         # optional, default Europe/Bucharest
           # SITE_URL: "https://your-custom-domain.example/"   # only if you use a custom domain
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
       - name: Make sure the 5-minute ticker is running
         if: always()
         env:

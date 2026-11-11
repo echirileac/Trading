@@ -71,30 +71,67 @@ function marketStatus(now) {
   if (hm >= 17 * 60 && hm < 18 * 60) return 'break';
   return 'open';
 }
-function nextSessions(now, h, everyDay) {
-  // h-th next daily close after today (weekends skipped unless the market trades every day, e.g. crypto)
+// ---------- exchange holidays ----------
+// 'us': NYSE / Nasdaq full closures, which CME also uses for energy settlements (NATGAS): on these days there is
+//       no settlement and trading counts towards the next day.
+// 'ice': ICE Brent: only New Year's Day, Good Friday and Christmas Day stop it.
+// 'none': currencies, spot metals and crypto.
+function easterSunday(y) { // anonymous Gregorian algorithm
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+  return Date.UTC(y, month - 1, day);
+}
+const HOL_CACHE = new Map();
+function exchangeHolidays(y, kind) {
+  const key = `${kind}:${y}`;
+  if (HOL_CACHE.has(key)) return HOL_CACHE.get(key);
+  const iso = (t) => new Date(t).toISOString().slice(0, 10);
+  const nth = (mon, wd, n) => { const first = new Date(Date.UTC(y, mon, 1)).getUTCDay(); return Date.UTC(y, mon, 1 + ((wd - first + 7) % 7) + 7 * (n - 1)); };
+  const lastMon = (mon) => { const last = new Date(Date.UTC(y, mon + 1, 0)); return Date.UTC(y, mon, last.getUTCDate() - ((last.getUTCDay() + 6) % 7)); };
+  // a fixed-date holiday on Saturday is observed on Friday, on Sunday on Monday (New Year's Day on a Saturday is not moved into December)
+  const observed = (mon, day, moveBack = true) => { const t = Date.UTC(y, mon, day), w = new Date(t).getUTCDay(); return w === 6 ? (moveBack ? t - 864e5 : null) : w === 0 ? t + 864e5 : t; };
+  const goodFriday = easterSunday(y) - 2 * 864e5;
+  let days = [];
+  if (kind === 'us') days = [observed(0, 1, false), nth(0, 1, 3), nth(1, 1, 3), goodFriday, lastMon(4), observed(5, 19), observed(6, 4), nth(8, 1, 1), nth(10, 4, 4), observed(11, 25)];
+  else if (kind === 'ice') days = [observed(0, 1, false), goodFriday, observed(11, 25)];
+  const set = new Set(days.filter((t) => t != null).map(iso));
+  HOL_CACHE.set(key, set);
+  return set;
+}
+// which holiday calendar a market follows
+function holKind(m) {
+  const c = m?.category;
+  if (m?.id === 'NATGAS' || /natural gas|nat-?gas/i.test(`${m?.name || ''}`)) return 'us';
+  if (c === 'energy') return 'ice';
+  if (c === 'equity' || c === 'etf' || c === 'index') return 'us';
+  return 'none';
+}
+const isSession = (t, kind, everyDay) => { const d = new Date(t); const w = d.getUTCDay(); if (!everyDay && (w === 0 || w === 6)) return false; return kind === 'none' || !kind || !exchangeHolidays(d.getUTCFullYear(), kind).has(d.toISOString().slice(0, 10)); };
+function nextSessions(now, h, everyDay, kind) {
+  // h-th next daily close after today (weekends and exchange holidays skipped unless the market trades every day, e.g. crypto)
   let d = new Date(new Date(now).toISOString().slice(0, 10) + 'T00:00:00Z');
-  for (let k = 0; k < h;) { d = new Date(d.getTime() + 864e5); if (everyDay || (d.getUTCDay() !== 0 && d.getUTCDay() !== 6)) k++; }
+  for (let k = 0; k < h;) { d = new Date(d.getTime() + 864e5); if (isSession(d, kind, everyDay)) k++; }
   return d;
 }
 const US_CASH = ['equity', 'etf', 'index']; // close 16:00 New York; currencies, metals and oil roll at 17:00
-function targetClose(now, h, calendar, category) {
+function targetClose(now, h, calendar, category, kind) {
   // Same rule for every market: the h-th daily close that is at least ~6 hours away.
   // Before this, non-futures markets counted from the UTC date, so late in the US evening the "1-day" forecast pointed two closes ahead.
-  if (calendar === 'ng') return targetSettle(new Date(now), h);
+  if (calendar === 'ng') return targetSettle(new Date(now), h, 8 * 60 + 30, kind);
   if (calendar === 'daily') { // crypto: daily bars close at 24:00 UTC
     const d = new Date(now); let t = Date.parse(d.toISOString().slice(0, 10) + 'T00:00:00Z');
     if (d.getUTCHours() >= 18) t += 864e5;
     return new Date(t + (h - 1) * 864e5);
   }
-  return targetSettle(new Date(now), h, US_CASH.includes(category) ? 10 * 60 : 11 * 60);
+  return targetSettle(new Date(now), h, US_CASH.includes(category) ? 10 * 60 : 11 * 60, kind);
 }
-function targetSettle(now, h, cutoffMin = 8 * 60 + 30) {
-  // NG settles at 14:30 ET. Horizon h = the h-th settlement at least ~6 hours from now (weekends skipped; US holidays not modelled).
+function targetSettle(now, h, cutoffMin = 8 * 60 + 30, kind = 'none') {
+  // NG settles at 14:30 ET. Horizon h = the h-th settlement at least ~6 hours from now (weekends and the market's exchange holidays skipped).
   // cutoffMin = the close minus 6 hours, in New York minutes of the day (08:30 for NG).
   const p = nyParts(now);
   let d = new Date(Date.UTC(p.y, p.m - 1, p.d));
-  const isWeekend = (x) => x.getUTCDay() === 0 || x.getUTCDay() === 6;
+  const isWeekend = (x) => !isSession(x, kind);
   const nowMin = p.h * 60 + p.min;
   if (isWeekend(d) || nowMin > cutoffMin) { do { d = new Date(d.getTime() + 864e5); } while (isWeekend(d)); }
   for (let k = 1; k < h; k++) { do { d = new Date(d.getTime() + 864e5); } while (isWeekend(d)); }
@@ -614,7 +651,7 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   const horizons = {};
   for (const h of [1, 3, 5]) {
     const mu = driftPerDay * h, sd = sigma * Math.sqrt(h);
-    const target = targetClose(now, h, opts.calendar, opts.category);
+    const target = targetClose(now, h, opts.calendar, opts.category, opts.hol);
     horizons[h] = {
       days: h,
       targetDate: target.toISOString().slice(0, 10),
@@ -712,12 +749,13 @@ async function attachEvents(m, out, prev, now) {
 let BASE = null;           // live site URL, set in main()
 let TRACK_UNSAFE = false;  // the log could not be read back from the live site: do not publish over it
 const ymd = (t) => new Date(t).toISOString().slice(0, 10);
-function justClosed(now, calendar, category) {
-  // Session date that closed within the last 3 hours, else null.
+function justClosed(now, calendar, category, kind) {
+  // Session date that closed within the last 3 hours, else null (no session on weekends and exchange holidays).
   const d = new Date(now);
   if (calendar === 'daily') return d.getUTCHours() < 3 ? ymd(d.getTime() - 864e5) : null;
   const p = nyParts(d);
   if (p.wd === 'Sat' || p.wd === 'Sun') return null;
+  if (!isSession(Date.UTC(p.y, p.m - 1, p.d), kind)) return null;
   const close = calendar === 'ng' ? 17 * 60 : (US_CASH.includes(category) ? 16 * 60 : 17 * 60) + 15; // +15 min so the closing quote has arrived
   const hm = p.h * 60 + p.min;
   return hm >= close && hm <= close + 180 ? `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}` : null;
@@ -809,12 +847,12 @@ async function trackRecord(m, px, fc, out, prev, log, now, opts) {
   }
   log.open = still;
   // 2) log today's forecasts once, just after the close of a session that actually traded
-  const d0 = justClosed(now, opts.calendar, opts.category);
+  const d0 = justClosed(now, opts.calendar, opts.category, opts.hol);
   const logged = (d) => log.open.some((f) => f.d0 === d) || log.done.some((f) => f.d0 === d);
   if (d0 && !px.stale && px.last > 0 && bars.some((b) => b.date === d0) && !logged(d0)) {
     for (const h of [1, 3, 5]) {
       const z = fc.horizons[h];
-      log.open.push({ h, d0, made: new Date(now).toISOString(), target: ymd(nextSessions(Date.parse(d0 + 'T12:00:00Z'), h, opts.calendar === 'daily')),
+      log.open.push({ h, d0, made: new Date(now).toISOString(), target: ymd(nextSessions(Date.parse(d0 + 'T12:00:00Z'), h, opts.calendar === 'daily', opts.hol)),
         p0: round(px.last, 6), c: z.center, lo68: z.lo68, hi68: z.hi68, lo90: z.lo90, hi90: z.hi90, pUp: z.pUp, score: fc.score,
         sig: Object.fromEntries(fc.signals.map((s) => [s.id, s.value])) }); // kept so each signal, news included, can be scored later
     }
@@ -1274,9 +1312,9 @@ async function buildNatgas(base, now) {
   const log = await carryForward('NATGAS', prev, now);
   const px = await loadPrices(prev, now);
   const news = await loadNews(prev, now, GAS_PROFILE);
-  const fc = buildForecast(px, news, now, { calendar: 'ng', category: 'energy' });
+  const fc = buildForecast(px, news, now, { calendar: 'ng', category: 'energy', hol: holKind(NATGAS) });
   const out = packOutput(NATGAS, px, news, fc, now, marketStatus(new Date(now)));
-  await trackRecord(NATGAS, px, fc, out, prev, log, now, { calendar: 'ng', category: 'energy' });
+  await trackRecord(NATGAS, px, fc, out, prev, log, now, { calendar: 'ng', category: 'energy', hol: holKind(NATGAS) });
   await attachEvents(NATGAS, out, prev, now);
   out.ai = await aiFor(NATGAS, out, prev?.ai, now);
   out.alerts = alertsFor(NATGAS, out, prev, now);
@@ -1294,9 +1332,9 @@ async function buildCnbcFutures(m, base, now, plan) {
   const news = await loadNews(prev, now, prof);
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
   await aiScoreNews(m, news, prev?.news, now);
-  const fc = buildForecast(px, news, now, { calendar: 'ng', category: m.category });
+  const fc = buildForecast(px, news, now, { calendar: 'ng', category: m.category, hol: holKind(m) });
   const out = packOutput(m, px, news, fc, now, marketStatus(new Date(now)));
-  await trackRecord(m, px, fc, out, prev, log, now, { calendar: 'ng', category: m.category });
+  await trackRecord(m, px, fc, out, prev, log, now, { calendar: 'ng', category: m.category, hol: holKind(m) });
   await attachEvents(m, out, prev, now);
   out.ai = await aiFor(m, out, prev?.ai, now);
   out.alerts = alertsFor(m, out, prev, now);
@@ -1366,9 +1404,9 @@ async function buildTwelveData(m, prev, now, plan) {
   const news = await loadNews(prev, now, prof);
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
   await aiScoreNews(m, news, prev?.news, now);
-  const fc = buildForecast(px, news, now, { category: m.category, calendar: m.category === 'crypto' ? 'daily' : 'weekday', today: daily.at(-1) ? new Date(daily.at(-1).t).toISOString().slice(0, 10) : todayUTC });
+  const fc = buildForecast(px, news, now, { category: m.category, hol: holKind(m), calendar: m.category === 'crypto' ? 'daily' : 'weekday', today: daily.at(-1) ? new Date(daily.at(-1).t).toISOString().slice(0, 10) : todayUTC });
   const out = packOutput({ ...m, provider: 'twelvedata' }, px, news, fc, now, market, { meta: { historyDate }, price: { quotedAt: quotedAt ? new Date(quotedAt).toISOString() : null } });
-  await trackRecord(m, px, fc, out, prev, log, now, { calendar: m.category === 'crypto' ? 'daily' : 'weekday', category: m.category });
+  await trackRecord(m, px, fc, out, prev, log, now, { calendar: m.category === 'crypto' ? 'daily' : 'weekday', category: m.category, hol: holKind(m) });
   await attachEvents(m, out, prev, now);
   return { out };
 }

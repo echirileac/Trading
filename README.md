@@ -57,6 +57,10 @@ The first build after this was added only records the current state, so nothing 
 
 Alerts then arrive within about 5 minutes of happening, with a link to the market. Optional repository **variables**: `ALERT_TYPES` (default `move,level,flip,analyst,event`), `ALERT_MARKETS` (e.g. `NATGAS,BRENT`; default all), `ALERT_QUIET_HOURS` (e.g. `23-7`: sent without sound during those hours, Bucharest time), `ALERT_EVENT_LEAD_MIN` (default 60), `ALERT_TZ` (default `Europe/Bucharest`). The site only sends messages, so the same bot can also run the separate alert bot.
 
+## Trading calendars (added November 2026)
+
+Forecast target dates and the track record count real trading sessions. Weekends are skipped, and so are exchange holidays: the NYSE calendar (including Good Friday and the Saturday/Sunday observance rules) for stocks, ETFs and natural gas, whose CME settlements follow the same days; ICE closures (New Year's Day, Good Friday, Christmas) for Brent; none for currencies, spot metals and crypto. Checked against NYSE's published 2026-2028 calendar. Half-days (the day after Thanksgiving, Christmas Eve) count as normal sessions.
+
 ## Risk helper (added November 2026)
 
 A card on each market page works out a position size so that hitting the stop costs a chosen share of your account. Everything runs in your browser; your inputs are remembered there and never sent anywhere.
