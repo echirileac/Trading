@@ -40,6 +40,8 @@ jobs:
           GROQ_MODELS: ${{ vars.GROQ_MODELS }}        # optional, default openai/gpt-oss-120b,openai/gpt-oss-20b
           AI_MODEL: ${{ vars.AI_MODEL }}          # optional repo variable, default claude-sonnet-5-5
           AI_EVERY_MIN: ${{ vars.AI_EVERY_MIN }}  # optional, default 60
+          NEWS_AI_MODELS: ${{ vars.NEWS_AI_MODELS }}          # optional, default llama-3.3-70b-versatile,llama-3.1-8b-instant (headline scoring)
+          NEWS_AI_CATEGORIES: ${{ vars.NEWS_AI_CATEGORIES }}  # optional, default equity,etf (add energy,metal,index,fx,crypto to extend)
           # SITE_URL: "https://your-custom-domain.example/"   # only if you use a custom domain
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

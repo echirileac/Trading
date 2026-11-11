@@ -108,6 +108,8 @@
   .rd { font-size: 11px; color: var(--muted); }
   .rd-full { color: var(--accent); }
   .kp { font-size: 12px; color: var(--muted); }
+  .aib { font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; cursor: help; }
+  .news li.off a { color: var(--muted); }
   .chip { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; border: 1px solid currentColor; }
   .sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
   .sources li::before { content: "●"; margin-right: 6px; color: var(--up); }
@@ -372,6 +374,7 @@
     <ul>
       <li>Prices: NATGAS uses the NYMEX Henry Hub front-month futures quote from CNBC plus its own daily history; every other market comes from Twelve Data (daily history once a day, live quotes every 10–15 minutes to stay within the free plan).</li>
       <li>News: stories from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence, Rigzone and others) found with a search built for each market, refreshed about every 15 minutes. The server opens each article and reads its full text where the publisher allows it; every relevant sentence is scored with a keyword list for that kind of market (natural gas: weather, storage, production, LNG; oil: OPEC, inventories; metals: dollar, rates, safe-haven demand; stocks and indices: earnings, guidance, rates; crypto: ETF flows, regulation; plus general market language). The article body counts for 70% of a story's score and the headline 30%; paywalled stories fall back to the headline. Stories are weighted by recency.</li>
+      <li>Stocks and ETFs: because keyword lists catch mostly generic words for a company, each new headline is also read once by a free AI model (Llama on Groq). It says whether the story is really about the company and rates its likely effect on the share price over 1 to 5 sessions from -2 to +2, with a short reason shown under the story. That rating counts for 75% of the story's score and the keyword score of the article text for 25%; stories judged not to be about the company are left out. If the AI is unavailable, keyword scoring is used.</li>
       <li>Charts: the Live chart is TradingView's free embedded chart with its own data feed (real-time for forex and crypto, delayed for stocks; CFD prices for commodities and indices). The Forecast view draws the model's lines on the daily prices the forecast itself uses.</li>
       <li>Track record: every trading day at the close the site writes down its 1, 3 and 5-day forecasts and later scores each against the actual close. The log is kept on the site (data/h/) and nothing in it is edited afterwards. The backtest replays only the price signals on past closes, so it says how well the ranges are sized, not how good the news reading is.</li>
       <li>Events: weekly EIA reports follow their usual day and time (they move in US holiday weeks), Fed decision days come from the Fed's published calendar, and a stock's next earnings date is looked up once a day from Nasdaq and can be an estimate. Events are flagged on the forecast and given to the AI analyst; the ranges are not widened for them.</li>
@@ -1216,8 +1219,13 @@
     const nFull = items.filter((n) => n.read && n.read.status === 'full').length;
     const nPart = items.filter((n) => n.read && n.read.status === 'partial').length;
     const nSum = items.filter((n) => n.read && n.read.status === 'summary').length;
+    const nAi = items.filter((n) => n.ai).length, nOff = items.filter((n) => n.ai && n.ai.rel === false).length;
+    const sc = DATA.news.scorer;
+    const how = nAi
+      ? ` ${nAi} stories were scored by an AI model (${(sc && sc.model) || 'Llama on Groq'}) reading the headline, with the keyword score of the article text as a smaller input${nOff ? `; ${nOff === 1 ? '1 story' : nOff + ' stories'} judged not to be about this market ${nOff === 1 ? 'is' : 'are'} greyed out and left out of the forecast` : ''}${nAi < items.length ? '. The rest are scored with keywords until the AI catches up' : ''}.`
+      : sc && sc.kind ? ' AI scoring is not available right now, so stories are scored with keywords.' : '';
     $('news-note').textContent = items.length
-      ? `${items.length} stories from trusted outlets, fetched ${ago(DATA.news.fetchedAt)}. ${nFull} read in full, ${nPart} partly, ${nSum} paywalled (publisher summary read), the rest blocked to automated readers and scored on the headline only. Tags show how the model scored each story for price direction.`
+      ? `${items.length} stories from trusted outlets, fetched ${ago(DATA.news.fetchedAt)}. ${nFull} read in full, ${nPart} partly, ${nSum} paywalled (publisher summary read), the rest blocked to automated readers and scored on the headline only.${how} Tags show how each story was scored for price direction.`
       : 'No trusted headlines on the last refresh.';
     const ul = $('news'); ul.replaceChildren();
     for (const n of items.slice(0, 30)) {
@@ -1225,11 +1233,16 @@
       const href = (n.read && n.read.url) || n.link;
       const a = el('a', { href, target: '_blank', rel: 'noopener noreferrer' }, n.title);
       const meta = el('div', { class: 'meta' });
-      const tag = n.score > 0.3 ? ['Bullish', 'up'] : n.score < -0.3 ? ['Bearish', 'down'] : ['Neutral', 'flat'];
+      const off = n.ai && n.ai.rel === false;
+      const tag = off ? ['Not about this market', 'flat'] : n.score > 0.3 ? ['Bullish', 'up'] : n.score < -0.3 ? ['Bearish', 'down'] : ['Neutral', 'flat'];
       const r = n.read || { status: 'headline' };
       const readTxt = r.status === 'full' ? `Full article · ${r.words} words` : r.status === 'partial' ? `Partly read · ${r.words} words` : r.status === 'summary' ? 'Paywalled · summary read' : 'Headline only';
-      meta.append(el('span', { class: 'chip ' + tag[1] }, tag[0]), el('span', { class: 'rd rd-' + r.status, title: r.reason || '' }, readTxt), el('span', {}, n.source), el('span', {}, ago(n.publishedAt)));
+      meta.append(el('span', { class: 'chip ' + tag[1] }, tag[0]));
+      if (n.ai) meta.append(el('span', { class: 'aib', title: `Scored by ${n.ai.m || 'AI'}: ${n.ai.s > 0 ? '+' : ''}${n.ai.s} on a -2 to +2 scale` }, 'AI'));
+      meta.append(el('span', { class: 'rd rd-' + r.status, title: r.reason || '' }, readTxt), el('span', {}, n.source), el('span', {}, ago(n.publishedAt)));
+      if (off) li.classList.add('off');
       li.append(a, meta);
+      if (n.ai && n.ai.why) li.append(el('div', { class: 'kp' }, 'AI: ' + n.ai.why));
       if (r.keyPhrases && r.keyPhrases.length) li.append(el('div', { class: 'kp' }, 'Signals in the text: ' + r.keyPhrases.join(', ')));
       ul.append(li);
     }
