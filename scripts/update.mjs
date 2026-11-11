@@ -468,6 +468,18 @@ function profileFor(m) {
     maxStories: 25, maxReads: 10
   };
 }
+// One story's score. Keywords: the headline sets the angle and the article body carries most of the weight once read.
+// AI-scored stories (see aiScoreNews): the AI's reading of the headline counts 75%, the keyword score of the body 25%;
+// a story the AI judged not to be about this market scores 0 and is left out of the news signal.
+function storyScore(it) {
+  const body = it.read && it.read.status !== 'headline' && it.read.bodyScore != null;
+  if (it.ai && it.ai.v === NEWS_AI_VERSION) {
+    if (it.ai.rel === false) return 0;
+    return round(body ? clamp(0.75 * it.ai.s + 0.25 * it.read.bodyScore, -2.5, 2.5) : it.ai.s, 2);
+  }
+  const wBody = it.read && it.read.status === 'summary' ? 0.5 : 0.7;
+  return round(body ? clamp((1 - wBody) * it.headlineScore + wBody * it.read.bodyScore, -2.5, 2.5) : it.headlineScore, 2);
+}
 const FEEDTEXT = new Map();
 async function loadNews(prev, now, prof = GAS_PROFILE) {
   const status = [];
@@ -523,10 +535,7 @@ async function loadNews(prev, now, prof = GAS_PROFILE) {
   for (const it of top) {
     delete it._key;
     if (!it.read) it.read = { status: 'headline', reason: 'not read yet (queued for next refresh)' };
-    const body = it.read.status !== 'headline' && it.read.bodyScore != null;
-    // headline sets the angle; the article body carries most of the weight once read
-    const wBody = it.read.status === 'summary' ? 0.5 : 0.7;
-    it.score = round(body ? clamp((1 - wBody) * it.headlineScore + wBody * it.read.bodyScore, -2.5, 2.5) : it.headlineScore, 2);
+    it.score = storyScore(it);
   }
   const full = top.filter((x) => x.read.status === 'full').length, part = top.filter((x) => x.read.status === 'partial').length, summ = top.filter((x) => x.read.status === 'summary').length;
   status.push({ name: `Article reader: ${full} full, ${part} partial, ${summ} paywalled (summary only) of ${top.length} stories`, ok: full + part > 0 || !top.length, error: full + part ? '' : 'no article bodies could be read' });
@@ -584,14 +593,16 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   const { sigma, s20, s50, s200, r, ret5, trendSig, momSig, rsiSig } = techCore(series, opts.category);
 
   // News sentiment: recency-weighted (half-life ~ 18h), trusted headlines from the last 72h
-  const recent = (news.items || []).filter((n) => now - Date.parse(n.publishedAt) < 72 * 36e5);
+  const recentAll = (news.items || []).filter((n) => now - Date.parse(n.publishedAt) < 72 * 36e5);
+  const recent = recentAll.filter((n) => !(n.ai && n.ai.rel === false)); // stories the AI judged not to be about this market
+  const nAi = recent.filter((n) => n.ai).length, offTopic = recentAll.length - recent.length;
   let wsum = 0, ssum = 0;
   for (const n of recent) { const age = (now - Date.parse(n.publishedAt)) / 36e5; const w = Math.pow(0.5, age / 18); wsum += w; ssum += w * n.score; }
   const newsRaw = wsum > 0 ? ssum / wsum : 0;
   const newsSig = Math.tanh(newsRaw * 0.9);
 
   const signals = [
-    { id: 'news', name: 'News sentiment', weight: WEIGHT.news, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && ['full', 'partial'].includes(n.read.status)).length} read in full or in part, ${recent.filter((n) => n.read && n.read.status === 'summary').length} paywalled summaries), recency-weighted score ${newsRaw.toFixed(2)}` },
+    { id: 'news', name: 'News sentiment', weight: WEIGHT.news, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && ['full', 'partial'].includes(n.read.status)).length} read in full or in part, ${recent.filter((n) => n.read && n.read.status === 'summary').length} paywalled summaries${nAi ? `, ${nAi} scored by AI` : ''}${offTopic ? `; ${offTopic} set aside as not about this market` : ''}), recency-weighted score ${newsRaw.toFixed(2)}` },
     { id: 'trend', name: 'Trend vs 20-day average', weight: WEIGHT.trend, value: trendSig, detail: s20 ? `Price ${(100 * (last / s20 - 1)).toFixed(1)}% vs 20-day average $${s20.toFixed(3)}` : 'Not enough history' },
     { id: 'momentum', name: '5-day momentum', weight: WEIGHT.momentum, value: momSig, detail: `${(100 * (Math.exp(ret5) - 1)).toFixed(1)}% over 5 sessions` },
     { id: 'rsi', name: 'Overbought / oversold (RSI 14)', weight: WEIGHT.rsi, value: rsiSig, detail: r == null ? 'Not enough history' : `RSI ${r.toFixed(0)} (below 30 oversold, above 70 overbought)` }
@@ -861,7 +872,7 @@ function packOutput(m, px, news, fc, now, market, extra = {}) {
       daily, intraday: lastSession, ...extra.price
     },
     forecast: fc,
-    news: { fetchedAt: news.fetchedAt, items: news.items },
+    news: { fetchedAt: news.fetchedAt, items: news.items, scorer: news.scorer },
     sources: [...px.status, ...news.status],
     method: METHOD
   };
@@ -876,11 +887,13 @@ const AI_PROVIDERS = (process.env.AI_PROVIDERS || 'anthropic,groq').split(',').m
 const aiConfigured = () => AI_PROVIDERS.some((p) => (p === 'anthropic' && AI_KEY) || (p === 'groq' && GROQ_KEY));
 const exhausted = new Set(); // models that hit a daily/minute limit during this run
 
-async function openAIChat(url, key, model, system, user, extraHeaders = {}) {
+const GROQ_URL = process.env.GROQ_URL || 'https://api.groq.com/openai/v1/chat/completions'; // overridable for local tests
+async function openAIChat(url, key, model, system, user, extraHeaders = {}, extraBody = {}) {
   const reasoning = /gpt-5|\/o\d|gpt-oss/i.test(model);
   const body = { model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
   if (/gpt-5|\/o\d/i.test(model)) body.max_completion_tokens = 4000; else { body.max_tokens = reasoning ? 4000 : 1800; body.temperature = 0.3; }
   if (/gpt-oss/i.test(model)) body.reasoning_effort = 'low';
+  Object.assign(body, extraBody);
   const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(90000), headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json', ...extraHeaders }, body: JSON.stringify(body) });
   const raw = await res.text(); let j = null; try { j = JSON.parse(raw); } catch { /* not json */ }
   if (!res.ok) { const e = new Error(`HTTP ${res.status} ${(j?.error?.message || j?.message || raw).toString().slice(0, 160)}`); e.status = res.status; throw e; }
@@ -909,7 +922,7 @@ async function callLLM(system, user) {
           if (!res.ok) { const e = new Error(`HTTP ${res.status} ${j?.error?.message || ''}`); e.status = res.status; throw e; }
           r = { text: (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''), usage: j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : undefined };
         } else {
-          r = await openAIChat('https://api.groq.com/openai/v1/chat/completions', GROQ_KEY, model, system, user);
+          r = await openAIChat(GROQ_URL, GROQ_KEY, model, system, user);
         }
         if (!r.text.includes('{')) throw new Error(`reply had no JSON: ${(r.text || r.raw || '').replace(/\s+/g, ' ').slice(0, 220)}`);
         return { ...r, provider: p, model };
@@ -985,7 +998,7 @@ async function aiFor(m, out, prevAi, now) {
     last30Closes: out.price.daily.slice(-30).map((r) => [r.date, r.c]),
     keyLevels: f.levels,
     quantModel: { bias: f.bias, score: f.score, dailyVolatilityPct: round(f.sigmaDaily * 100, 2), signals: f.signals.map((x) => ({ name: x.name, value: x.value, detail: x.detail })), horizons: f.horizons },
-    news: (out.news.items || []).slice(0, 15).map((n) => ({ title: n.title, source: n.source, hoursAgo: round((now - Date.parse(n.publishedAt)) / 36e5, 1), read: n.read?.status || 'headline', modelScore: n.score, keyPhrases: n.read?.keyPhrases || [] }))
+    news: (out.news.items || []).filter((n) => !(n.ai && n.ai.rel === false)).slice(0, 15).map((n) => ({ title: n.title, source: n.source, hoursAgo: round((now - Date.parse(n.publishedAt)) / 36e5, 1), read: n.read?.status || 'headline', modelScore: n.score, scoredBy: n.ai ? 'ai' : 'keywords', keyPhrases: n.read?.keyPhrases || [] }))
   };
   try {
     let userMsg = `Write the analyst note for this market data:\n${JSON.stringify(payload)}`;
@@ -1014,6 +1027,78 @@ async function aiFor(m, out, prevAi, now) {
   }
 }
 
+// ---------- AI news scoring (stocks) ----------
+// The keyword lists are built for natural gas and commodities; for a company they mostly catch generic words.
+// Here a free Groq model reads each new headline once and says (a) whether the story is really about this market
+// and (b) its likely effect on the price over 1-5 sessions (-2..+2). Results are cached per headline, so only new
+// headlines are sent, in one batch per market per news refresh. These Llama models have their own free daily
+// allowance on Groq (separate from the gpt-oss models the analyst note uses). Any failure keeps the keyword scores.
+const NEWS_AI_VERSION = 1;
+const NEWS_AI_MODELS = (process.env.NEWS_AI_MODELS || 'llama-3.3-70b-versatile,llama-3.1-8b-instant').split(',').map((x) => x.trim()).filter(Boolean);
+const NEWS_AI_CATEGORIES = (process.env.NEWS_AI_CATEGORIES || 'equity,etf').split(',').map((x) => x.trim()).filter(Boolean);
+const NEWS_AI_BATCH = 20;          // headlines per request
+const NEWS_AI_RETRY_MIN = 14;      // after a failed attempt, wait for the next news refresh
+let newsAiCallsLeft = Number(process.env.NEWS_AI_MAX_PER_RUN) || 6;
+const NEWS_AI_SYSTEM = `You score news headlines for a trader who watches one market.
+For each numbered headline return:
+- "about": true if the story is mainly about this company or directly affects its share price; false if it only mentions the company in passing, lists many stocks, or is mainly about something else.
+- "score": the likely effect on this market's price over the next 1 to 5 trading days, an integer from -2 to 2: -2 clearly negative, -1 mildly negative, 0 neutral, mixed, unclear or already priced in, 1 mildly positive, 2 clearly positive. A headline that only reports a past price move ("shares fall 5%") gets at most 1 point in that direction. Opinion pieces and "should you buy" articles get at most 1 point.
+- "why": the reason in at most 12 plain words.
+Judge only from the headline and source. Do not assume facts that are not in the headline.
+Answer with only a JSON object: {"items":[{"i":1,"about":true,"score":0,"why":"..."}]}`;
+
+async function aiScoreNews(m, news, prevNews, now) {
+  const items = news.items || [];
+  if (!NEWS_AI_CATEGORIES.includes(m.category) || !items.length) return;
+  // reuse earlier AI scores for the same headline
+  const cache = new Map((prevNews?.items || []).filter((x) => x.ai && x.ai.v === NEWS_AI_VERSION).map((x) => [titleKey(x.title), x.ai]));
+  for (const it of items) if (!it.ai || it.ai.v !== NEWS_AI_VERSION) { const c = cache.get(titleKey(it.title)); if (c) it.ai = c; else delete it.ai; }
+  const prevScorer = news.scorer || prevNews?.scorer || {};
+  news.scorer = { kind: 'ai', model: prevScorer.model, triedAt: prevScorer.triedAt, error: prevScorer.error };
+  const todo = items.filter((it) => !it.ai).slice(0, NEWS_AI_BATCH); // newest first
+  const retryOk = !news.reused || !prevScorer.error || !prevScorer.triedAt || now - Date.parse(prevScorer.triedAt) > NEWS_AI_RETRY_MIN * 60e3;
+  if (todo.length && !GROQ_KEY) news.scorer = { kind: 'keywords', error: 'no GROQ_API_KEY' };
+  else if (todo.length && retryOk && newsAiCallsLeft > 0) {
+    newsAiCallsLeft--;
+    const what = `${m.name} (${m.symbol}${m.exchange ? ', ' + m.exchange : ''}${m.category === 'etf' ? ', ETF' : m.category === 'equity' ? ' shares' : ''})`;
+    const user = `Market: ${what}\nHeadlines:\n` + todo.map((it, k) => `${k + 1}. [${it.source}, ${Math.max(0, Math.round((now - Date.parse(it.publishedAt)) / 36e5))}h ago] ${it.title}`).join('\n');
+    const errors = [];
+    let done = false;
+    for (const model of NEWS_AI_MODELS) {
+      const key = `groq/${model}`;
+      if (exhausted.has(key)) continue;
+      try {
+        const r = await openAIChat(GROQ_URL, GROQ_KEY, model, NEWS_AI_SYSTEM, user, {}, { temperature: 0, max_tokens: 100 + 50 * todo.length, response_format: { type: 'json_object' } });
+        const j = JSON.parse(r.text.slice(r.text.indexOf('{'), r.text.lastIndexOf('}') + 1));
+        let n = 0;
+        for (const x of Array.isArray(j.items) ? j.items : []) {
+          const it = todo[Number(x.i) - 1];
+          const s = Math.round(Number(x.score));
+          if (!it || it.ai || !isFinite(s)) continue;
+          it.ai = { v: NEWS_AI_VERSION, s: clamp(s, -2, 2), rel: x.about !== false && x.about !== 'false', why: String(x.why ?? '').replace(/\s+/g, ' ').trim().slice(0, 100), m: model.replace(/-versatile|-instant/, '') };
+          n++;
+        }
+        if (!n) throw new Error(`no usable scores in the reply: ${r.text.replace(/\s+/g, ' ').slice(0, 160)}`);
+        news.scorer = { kind: 'ai', model, triedAt: new Date(now).toISOString() };
+        console.log(`::notice title=AI news ${m.id}::${n} of ${todo.length} new headlines scored by ${model} (${r.usage ? r.usage.input + ' in / ' + r.usage.output + ' out tokens' : 'usage n/a'})`);
+        done = true;
+        break;
+      } catch (e) {
+        if ([429, 403, 413].includes(e.status)) exhausted.add(key);
+        errors.push(`${model}: ${String(e.message).slice(0, 160)}`);
+      }
+    }
+    if (!done) {
+      news.scorer = { kind: 'ai', model: prevScorer.model, triedAt: new Date(now).toISOString(), error: errors.join(' | ').slice(0, 300) };
+      console.log(`::warning title=AI news ${m.id}::keyword scores kept for new headlines - ${errors.join(' | ').slice(0, 300)}`);
+    }
+  }
+  for (const it of items) it.score = storyScore(it);
+  const nAi = items.filter((it) => it.ai).length, off = items.filter((it) => it.ai && it.ai.rel === false).length;
+  news.status = [...(news.status || []).filter((s) => !/^AI news scoring/.test(s.name)),
+    { name: `AI news scoring: ${nAi} of ${items.length} stories scored${off ? `, ${off} not about this market` : ''}${news.scorer.model ? ` (${news.scorer.model} on Groq)` : ''}`, ok: nAi === items.length || !news.scorer.error, error: news.scorer.error || (nAi < items.length ? 'the rest keep keyword scores until the next refresh' : '') }];
+}
+
 // ---------- NATGAS (CNBC quote + self-maintained history) ----------
 const NATGAS = { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy', provider: 'cnbc', tv: 'OANDA:NATGASUSD', instrument: 'Henry Hub natural gas, NYMEX front-month futures (NG=F)' };
 async function buildNatgas(base, now) {
@@ -1039,6 +1124,7 @@ async function buildCnbcFutures(m, base, now, plan) {
   prof.maxReads = Math.min(prof.maxReads, plan.readsLeft);
   const news = await loadNews(prev, now, prof);
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
+  await aiScoreNews(m, news, prev?.news, now);
   const fc = buildForecast(px, news, now, { calendar: 'ng', category: m.category });
   const out = packOutput(m, px, news, fc, now, marketStatus(new Date(now)));
   await trackRecord(m, px, fc, out, prev, log, now, { calendar: 'ng', category: m.category });
@@ -1109,6 +1195,7 @@ async function buildTwelveData(m, prev, now, plan) {
   prof.maxReads = Math.min(prof.maxReads, plan.readsLeft);
   const news = await loadNews(prev, now, prof);
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
+  await aiScoreNews(m, news, prev?.news, now);
   const fc = buildForecast(px, news, now, { category: m.category, calendar: m.category === 'crypto' ? 'daily' : 'weekday', today: daily.at(-1) ? new Date(daily.at(-1).t).toISOString().slice(0, 10) : todayUTC });
   const out = packOutput({ ...m, provider: 'twelvedata' }, px, news, fc, now, market, { meta: { historyDate }, price: { quotedAt: quotedAt ? new Date(quotedAt).toISOString() : null } });
   await trackRecord(m, px, fc, out, prev, log, now, { calendar: m.category === 'crypto' ? 'daily' : 'weekday', category: m.category });
