@@ -77,13 +77,26 @@ function nextSessions(now, h, everyDay) {
   for (let k = 0; k < h;) { d = new Date(d.getTime() + 864e5); if (everyDay || (d.getUTCDay() !== 0 && d.getUTCDay() !== 6)) k++; }
   return d;
 }
-function targetSettle(now, h) {
+const US_CASH = ['equity', 'etf', 'index']; // close 16:00 New York; currencies, metals and oil roll at 17:00
+function targetClose(now, h, calendar, category) {
+  // Same rule for every market: the h-th daily close that is at least ~6 hours away.
+  // Before this, non-futures markets counted from the UTC date, so late in the US evening the "1-day" forecast pointed two closes ahead.
+  if (calendar === 'ng') return targetSettle(new Date(now), h);
+  if (calendar === 'daily') { // crypto: daily bars close at 24:00 UTC
+    const d = new Date(now); let t = Date.parse(d.toISOString().slice(0, 10) + 'T00:00:00Z');
+    if (d.getUTCHours() >= 18) t += 864e5;
+    return new Date(t + (h - 1) * 864e5);
+  }
+  return targetSettle(new Date(now), h, US_CASH.includes(category) ? 10 * 60 : 11 * 60);
+}
+function targetSettle(now, h, cutoffMin = 8 * 60 + 30) {
   // NG settles at 14:30 ET. Horizon h = the h-th settlement at least ~6 hours from now (weekends skipped; US holidays not modelled).
+  // cutoffMin = the close minus 6 hours, in New York minutes of the day (08:30 for NG).
   const p = nyParts(now);
   let d = new Date(Date.UTC(p.y, p.m - 1, p.d));
   const isWeekend = (x) => x.getUTCDay() === 0 || x.getUTCDay() === 6;
   const nowMin = p.h * 60 + p.min;
-  if (isWeekend(d) || nowMin > 8 * 60 + 30) { do { d = new Date(d.getTime() + 864e5); } while (isWeekend(d)); }
+  if (isWeekend(d) || nowMin > cutoffMin) { do { d = new Date(d.getTime() + 864e5); } while (isWeekend(d)); }
   for (let k = 1; k < h; k++) { do { d = new Date(d.getTime() + 864e5); } while (isWeekend(d)); }
   return d;
 }
@@ -537,6 +550,25 @@ function rsi(closes, n = 14) {
 // the ranges of calm markets (currencies, indices) about twice too wide.
 const SIGMA_FLOOR = { fx: 0.0025, index: 0.005, etf: 0.005, metal: 0.005, equity: 0.008, energy: 0.012, crypto: 0.012 };
 
+const WEIGHT = { news: 0.45, trend: 0.2, momentum: 0.15, rsi: 0.2 };
+const DRIFT_K = 0.25; // drift per day = score x DRIFT_K x daily volatility
+// Volatility and the three price signals from a series of daily closes (last element = the price being forecast from).
+function techCore(series, category) {
+  const rets = [];
+  for (let i = 1; i < series.length; i++) rets.push(clamp(Math.log(series[i] / series[i - 1]), -0.12, 0.12)); // caps contract-roll jumps
+  const sigma20 = stdev(rets.slice(-20));
+  const sigma60 = stdev(rets.slice(-60));
+  const sigma = clamp(Math.sqrt(0.6 * sigma20 ** 2 + 0.4 * sigma60 ** 2), SIGMA_FLOOR[category] ?? 0.012, 0.09);
+  const last = series.at(-1);
+  const s20 = sma(series, 20), s50 = sma(series, 50), s200 = sma(series, 200);
+  const r = rsi(series, 14);
+  const ret5 = series.length > 5 ? Math.log(last / series.at(-6)) : 0;
+  const trendSig = s20 ? Math.tanh((last / s20 - 1) / (sigma * Math.sqrt(5))) : 0;
+  const momSig = Math.tanh(ret5 / (sigma * Math.sqrt(5)));
+  const rsiSig = r == null ? 0 : r < 30 ? clamp((30 - r) / 15, 0, 1) : r > 70 ? -clamp((r - 70) / 15, 0, 1) : 0;
+  return { sigma, s20, s50, s200, r, ret5, trendSig, momSig, rsiSig };
+}
+
 function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   const closes = px.daily.map((r) => r.c);
   const series = [...closes];
@@ -544,16 +576,8 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   const lastDay = new Date(px.daily.at(-1).t).toISOString().slice(0, 10);
   const today = opts.calendar === 'ng' ? (() => { const p = nyParts(new Date(now)); return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`; })() : (opts.today || new Date(now).toISOString().slice(0, 10));
   if (lastDay >= today) series[series.length - 1] = px.last; else series.push(px.last);
-  const rets = [];
-  for (let i = 1; i < series.length; i++) rets.push(clamp(Math.log(series[i] / series[i - 1]), -0.12, 0.12)); // caps contract-roll jumps
-  const sigma20 = stdev(rets.slice(-20));
-  const sigma60 = stdev(rets.slice(-60));
-  const sigma = clamp(Math.sqrt(0.6 * sigma20 ** 2 + 0.4 * sigma60 ** 2), SIGMA_FLOOR[opts.category] ?? 0.012, 0.09);
-
   const last = px.last;
-  const s20 = sma(series, 20), s50 = sma(series, 50), s200 = sma(series, 200);
-  const r = rsi(series, 14);
-  const ret5 = series.length > 5 ? Math.log(last / series.at(-6)) : 0;
+  const { sigma, s20, s50, s200, r, ret5, trendSig, momSig, rsiSig } = techCore(series, opts.category);
 
   // News sentiment: recency-weighted (half-life ~ 18h), trusted headlines from the last 72h
   const recent = (news.items || []).filter((n) => now - Date.parse(n.publishedAt) < 72 * 36e5);
@@ -562,29 +586,27 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   const newsRaw = wsum > 0 ? ssum / wsum : 0;
   const newsSig = Math.tanh(newsRaw * 0.9);
 
-  const trendSig = s20 ? Math.tanh((last / s20 - 1) / (sigma * Math.sqrt(5))) : 0;
-  const momSig = Math.tanh(ret5 / (sigma * Math.sqrt(5)));
-  const rsiSig = r == null ? 0 : r < 30 ? clamp((30 - r) / 15, 0, 1) : r > 70 ? -clamp((r - 70) / 15, 0, 1) : 0;
   const signals = [
-    { id: 'news', name: 'News sentiment', weight: 0.45, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && ['full', 'partial'].includes(n.read.status)).length} read in full or in part, ${recent.filter((n) => n.read && n.read.status === 'summary').length} paywalled summaries), recency-weighted score ${newsRaw.toFixed(2)}` },
-    { id: 'trend', name: 'Trend vs 20-day average', weight: 0.2, value: trendSig, detail: s20 ? `Price ${(100 * (last / s20 - 1)).toFixed(1)}% vs 20-day average $${s20.toFixed(3)}` : 'Not enough history' },
-    { id: 'momentum', name: '5-day momentum', weight: 0.15, value: momSig, detail: `${(100 * (Math.exp(ret5) - 1)).toFixed(1)}% over 5 sessions` },
-    { id: 'rsi', name: 'Overbought / oversold (RSI 14)', weight: 0.2, value: rsiSig, detail: r == null ? 'Not enough history' : `RSI ${r.toFixed(0)} (below 30 oversold, above 70 overbought)` }
+    { id: 'news', name: 'News sentiment', weight: WEIGHT.news, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && ['full', 'partial'].includes(n.read.status)).length} read in full or in part, ${recent.filter((n) => n.read && n.read.status === 'summary').length} paywalled summaries), recency-weighted score ${newsRaw.toFixed(2)}` },
+    { id: 'trend', name: 'Trend vs 20-day average', weight: WEIGHT.trend, value: trendSig, detail: s20 ? `Price ${(100 * (last / s20 - 1)).toFixed(1)}% vs 20-day average $${s20.toFixed(3)}` : 'Not enough history' },
+    { id: 'momentum', name: '5-day momentum', weight: WEIGHT.momentum, value: momSig, detail: `${(100 * (Math.exp(ret5) - 1)).toFixed(1)}% over 5 sessions` },
+    { id: 'rsi', name: 'Overbought / oversold (RSI 14)', weight: WEIGHT.rsi, value: rsiSig, detail: r == null ? 'Not enough history' : `RSI ${r.toFixed(0)} (below 30 oversold, above 70 overbought)` }
   ].map((s) => ({ ...s, value: round(s.value, 3), contribution: round(s.value * s.weight, 3) }));
   const score = clamp(signals.reduce((t, s) => t + s.value * s.weight, 0), -1, 1);
-  const driftPerDay = score * 0.25 * sigma;
+  const driftPerDay = score * DRIFT_K * sigma;
+  const rd = (x) => round(x, last >= 20 ? 3 : 5); // currencies and low-priced markets need more than 3 decimals
 
   const horizons = {};
   for (const h of [1, 3, 5]) {
     const mu = driftPerDay * h, sd = sigma * Math.sqrt(h);
-    const target = opts.calendar === 'ng' ? targetSettle(new Date(now), h) : nextSessions(now, h, opts.calendar === 'daily');
+    const target = targetClose(now, h, opts.calendar, opts.category);
     horizons[h] = {
       days: h,
       targetDate: target.toISOString().slice(0, 10),
-      center: round(last * Math.exp(mu)),
+      center: rd(last * Math.exp(mu)),
       changePct: round(100 * (Math.exp(mu) - 1), 2),
-      lo68: round(last * Math.exp(mu - sd)), hi68: round(last * Math.exp(mu + sd)),
-      lo90: round(last * Math.exp(mu - 1.645 * sd)), hi90: round(last * Math.exp(mu + 1.645 * sd)),
+      lo68: rd(last * Math.exp(mu - sd)), hi68: rd(last * Math.exp(mu + sd)),
+      lo90: rd(last * Math.exp(mu - 1.645 * sd)), hi90: rd(last * Math.exp(mu + 1.645 * sd)),
       pUp: round(normCdf(mu / sd), 3)
     };
   }
@@ -593,7 +615,7 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   // Key levels
   const prevBar = px.daily.length > 1 ? (lastDay === today ? px.daily.at(-2) : px.daily.at(-1)) : null;
   const levels = [];
-  const add = (label, price, kind) => { if (price != null && isFinite(price)) levels.push({ label, price: round(price), kind }); };
+  const add = (label, price, kind) => { if (price != null && isFinite(price)) levels.push({ label, price: rd(price), kind }); };
   add('20-day average', s20, last >= s20 ? 'support' : 'resistance');
   add('50-day average', s50, s50 && last >= s50 ? 'support' : 'resistance');
   add('200-day average', s200, s200 && last >= s200 ? 'support' : 'resistance');
@@ -611,6 +633,118 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   return { sigmaDaily: round(sigma, 4), score: round(score, 3), bias, signals, horizons, levels, rsi: round(r, 1) };
 }
 
+// ---------- track record ----------
+// Published log: once per session, at the close, the 1/3/5-day forecasts are written down; each is scored against
+// the close 1/3/5 sessions later. Backtest: the price signals replayed on the stored daily history (news cannot be replayed).
+let BASE = null;           // live site URL, set in main()
+let TRACK_UNSAFE = false;  // the log could not be read back from the live site: do not publish over it
+const ymd = (t) => new Date(t).toISOString().slice(0, 10);
+function justClosed(now, calendar, category) {
+  // Session date that closed within the last 3 hours, else null.
+  const d = new Date(now);
+  if (calendar === 'daily') return d.getUTCHours() < 3 ? ymd(d.getTime() - 864e5) : null;
+  const p = nyParts(d);
+  if (p.wd === 'Sat' || p.wd === 'Sun') return null;
+  const close = calendar === 'ng' ? 17 * 60 : (US_CASH.includes(category) ? 16 * 60 : 17 * 60) + 15; // +15 min so the closing quote has arrived
+  const hm = p.h * 60 + p.min;
+  return hm >= close && hm <= close + 180 ? `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}` : null;
+}
+function trackStats(done) {
+  const out = {};
+  for (const h of [1, 3, 5]) {
+    const a = done.filter((x) => x.h === h);
+    const dir = a.filter((x) => x.actual !== x.p0 && x.c !== x.p0);
+    out[h] = {
+      n: a.length, dirN: dir.length, dirHit: dir.filter((x) => (x.actual > x.p0) === (x.c > x.p0)).length,
+      in68: a.filter((x) => x.actual >= x.lo68 && x.actual <= x.hi68).length,
+      in90: a.filter((x) => x.actual >= x.lo90 && x.actual <= x.hi90).length,
+      mae: a.length ? round(100 * mean(a.map((x) => Math.abs(x.actual - x.c) / x.p0)), 2) : null,
+      maeNaive: a.length ? round(100 * mean(a.map((x) => Math.abs(x.actual - x.p0) / x.p0)), 2) : null
+    };
+  }
+  return out;
+}
+function backtest(px, opts) {
+  // Completed sessions only (the last bar is still moving). Each forecast uses only the closes up to its own day.
+  const bars = px.daily.slice(0, -1).filter((b) => b.c > 0);
+  const closes = bars.map((b) => b.c), done = [];
+  const START = 60;
+  for (let t = START; t < closes.length - 1; t++) {
+    const k = techCore(closes.slice(0, t + 1), opts.category);
+    const score = clamp(WEIGHT.trend * k.trendSig + WEIGHT.momentum * k.momSig + WEIGHT.rsi * k.rsiSig, -1, 1);
+    const p0 = closes[t];
+    for (const h of [1, 3, 5]) {
+      if (t + h >= closes.length) continue;
+      const mu = score * DRIFT_K * k.sigma * h, sd = k.sigma * Math.sqrt(h);
+      done.push({ h, p0, c: p0 * Math.exp(mu), lo68: p0 * Math.exp(mu - sd), hi68: p0 * Math.exp(mu + sd), lo90: p0 * Math.exp(mu - 1.645 * sd), hi90: p0 * Math.exp(mu + 1.645 * sd), actual: closes[t + h] });
+    }
+  }
+  const sessions = Math.max(0, closes.length - 1 - START);
+  return { sessions, from: sessions ? ymd(bars[START].t) : null, to: sessions ? ymd(bars.at(-1).t) : null, ...trackStats(done) };
+}
+async function loadTrack(id, prev, now) {
+  const empty = () => ({ id, since: null, open: [], done: [] });
+  const valid = (j) => (j && Array.isArray(j.open) && Array.isArray(j.done) ? j : null);
+  if (BASE && !OFFLINE) {
+    for (let i = 0; i < 3; i++) {
+      try {
+        const res = await fetch(`${BASE}data/h/${id}.json?t=${now}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) });
+        // "not found" is only believed while the site itself says no log exists yet
+        if (res.status === 404 && !prev?.track?.since) return empty();
+        if (res.ok) { const j = valid(await res.json()); if (j) return j; }
+      } catch { /* retry */ }
+      await sleep(1500);
+    }
+    return null;
+  }
+  try { return valid(JSON.parse(await readFile(join(DATA_DIR, `h/${id}.json`), 'utf8'))) || empty(); } catch { return empty(); }
+}
+// Called as soon as a market's previous state is loaded: re-saves it unchanged, so a market that fails to build on this run
+// keeps its page data and its forecast log in the next deploy instead of losing them. A successful build overwrites both.
+async function carryForward(id, prev, now) {
+  if (prev) await save(`m/${id}.json`, prev);
+  const log = await loadTrack(id, prev, now);
+  if (log) await save(`h/${id}.json`, log);
+  else {
+    // Never publish an empty log over a real one: this run is not deployed and the next refresh tries again.
+    TRACK_UNSAFE = true;
+    console.log(`::error title=${id} forecast log::could not be read back from the live site; skipping this deploy so nothing is lost`);
+  }
+  return log;
+}
+async function trackRecord(m, px, fc, out, prev, log, now, opts) {
+  const bt = backtest(px, opts);
+  if (!log) {
+    out.track = prev?.track ? { ...prev.track, backtest: bt } : { since: null, live: trackStats([]), backtest: bt, open: [], recent: [] };
+    return;
+  }
+  const bars = px.daily.filter((b) => b.c > 0).map((b) => ({ date: ymd(b.t), c: b.c }));
+  // 1) score forecasts whose target session has closed (a later bar exists, so the close is final)
+  const still = [];
+  for (const f of log.open) {
+    const i = bars.findIndex((b) => b.date >= f.target);
+    if (i >= 0 && i < bars.length - 1) log.done.push({ ...f, actual: round(bars[i].c, 6), actualDate: bars[i].date });
+    else if (now - Date.parse(f.made) < 30 * 864e5) still.push(f); // drop forecasts that can no longer be scored
+  }
+  log.open = still;
+  // 2) log today's forecasts once, just after the close of a session that actually traded
+  const d0 = justClosed(now, opts.calendar, opts.category);
+  const logged = (d) => log.open.some((f) => f.d0 === d) || log.done.some((f) => f.d0 === d);
+  if (d0 && !px.stale && px.last > 0 && bars.some((b) => b.date === d0) && !logged(d0)) {
+    for (const h of [1, 3, 5]) {
+      const z = fc.horizons[h];
+      log.open.push({ h, d0, made: new Date(now).toISOString(), target: ymd(nextSessions(Date.parse(d0 + 'T12:00:00Z'), h, opts.calendar === 'daily')),
+        p0: round(px.last, 6), c: z.center, lo68: z.lo68, hi68: z.hi68, lo90: z.lo90, hi90: z.hi90, pUp: z.pUp, score: fc.score });
+    }
+    if (!log.since) log.since = d0;
+  }
+  log.done = log.done.slice(-900); // about 300 sessions x 3 horizons
+  log.updatedAt = new Date(now).toISOString();
+  await save(`h/${m.id}.json`, log);
+  out.track = { since: log.since, live: trackStats(log.done), backtest: bt, open: log.open,
+    recent: [1, 3, 5].flatMap((h) => log.done.filter((x) => x.h === h).slice(-8)) };
+}
+
 // ---------- main ----------
 function siteUrl() {
   if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/?$/, '/');
@@ -622,7 +756,7 @@ function siteUrl() {
 
 const DATA_DIR = join(ROOT, 'site', 'data');
 const INTRADAY_KEEP_MS = 7 * 864e5; // 5-minute samples kept for the chart's day and week views
-const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.645. Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.';
+const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.645. Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%). Each horizon targets the daily close that many sessions ahead (the first one is the next close at least 6 hours away). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.';
 
 async function loadPrev(base, rel, now) {
   if (base && !OFFLINE) { try { const j = await get(`${base}data/${rel}?t=${now}`, { type: 'json', retries: 0 }); if (j?.price) return j; } catch { /* none */ } }
@@ -639,7 +773,8 @@ function cleanBar(r) {
 }
 function packOutput(m, px, news, fc, now, market, extra = {}) {
   px.daily = px.daily.map(cleanBar);
-  const daily = px.daily.slice(-260).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), o: round(r.o), h: round(r.h), l: round(r.l), c: round(r.c) }));
+  const dd = px.last >= 20 ? 3 : 6; // currencies and low-priced markets lose real information at 3 decimals
+  const daily = px.daily.slice(-260).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), o: round(r.o, dd), h: round(r.h, dd), l: round(r.l, dd), c: round(r.c, dd) }));
   const lastSession = px.intraday.length ? (() => { const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < INTRADAY_KEEP_MS && x.c > 0).map((x) => [x.t, round(x.c, 6)]); })() : [];
   const dec = m.category === 'fx' ? (px.last >= 20 ? 3 : 5) : px.last >= 10 ? 2 : px.last >= 1 ? 3 : 5;
   return {
@@ -810,10 +945,12 @@ async function aiFor(m, out, prevAi, now) {
 const NATGAS = { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy', provider: 'cnbc', tv: 'OANDA:NATGASUSD', instrument: 'Henry Hub natural gas, NYMEX front-month futures (NG=F)' };
 async function buildNatgas(base, now) {
   const prev = (await loadPrev(base, 'm/NATGAS.json', now)) || (await loadPrev(base, 'latest.json', now));
+  const log = await carryForward('NATGAS', prev, now);
   const px = await loadPrices(prev, now);
   const news = await loadNews(prev, now, GAS_PROFILE);
   const fc = buildForecast(px, news, now, { calendar: 'ng', category: 'energy' });
   const out = packOutput(NATGAS, px, news, fc, now, marketStatus(new Date(now)));
+  await trackRecord(NATGAS, px, fc, out, prev, log, now, { calendar: 'ng', category: 'energy' });
   out.ai = await aiFor(NATGAS, out, prev?.ai, now);
   await save('m/NATGAS.json', out);
   await save('latest.json', out); // kept for older links
@@ -822,6 +959,7 @@ async function buildNatgas(base, now) {
 // Other futures on the same free route: CNBC live quote + bootstrapped daily history (data/<seed>)
 async function buildCnbcFutures(m, base, now, plan) {
   const prev = await loadPrev(base, `m/${m.id}.json`, now);
+  const log = await carryForward(m.id, prev, now);
   const px = await loadPrices(prev, now, { yahoo: m.yahoo, cnbc: m.cnbc, seed: m.seed });
   const prof = profileFor(m);
   prof.maxReads = Math.min(prof.maxReads, plan.readsLeft);
@@ -829,6 +967,7 @@ async function buildCnbcFutures(m, base, now, plan) {
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
   const fc = buildForecast(px, news, now, { calendar: 'ng', category: m.category });
   const out = packOutput(m, px, news, fc, now, marketStatus(new Date(now)));
+  await trackRecord(m, px, fc, out, prev, log, now, { calendar: 'ng', category: m.category });
   out.ai = await aiFor(m, out, prev?.ai, now);
   await save(`m/${m.id}.json`, out);
   return out;
@@ -849,10 +988,12 @@ async function td(path, params) {
   return j;
 }
 const tdArgs = (m) => ({ symbol: m.symbol, exchange: ['equity', 'etf'].includes(m.category) ? m.exchange : '' });
-const weekendClosed = (now) => { const d = new Date(now), w = d.getUTCDay(), h = d.getUTCHours(); return w === 6 || (w === 0 && h < 21) || (w === 5 && h >= 21); };
+// Friday quotes run until 23:00 UTC so the US close (21:00 UTC in winter) and the currency close (22:00 UTC) are both captured
+const weekendClosed = (now) => { const d = new Date(now), w = d.getUTCDay(), h = d.getUTCHours(); return w === 6 || (w === 0 && h < 21) || (w === 5 && h >= 23); };
 const num = (v) => { const x = parseFloat(v); return isFinite(x) && x > 0 ? x : null; };
 
 async function buildTwelveData(m, prev, now, plan) {
+  const log = await carryForward(m.id, prev, now);
   const status = [];
   const byDate = new Map((prev?.price?.daily || []).map((r) => [r.date, { t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c }]));
   let last = prev?.price?.last ?? null, prevClose = prev?.price?.prevClose ?? null, lastTime = prev?.price?.asOf ? Date.parse(prev.price.asOf) : now;
@@ -894,7 +1035,9 @@ async function buildTwelveData(m, prev, now, plan) {
   const news = await loadNews(prev, now, prof);
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
   const fc = buildForecast(px, news, now, { category: m.category, calendar: m.category === 'crypto' ? 'daily' : 'weekday', today: daily.at(-1) ? new Date(daily.at(-1).t).toISOString().slice(0, 10) : todayUTC });
-  return { out: packOutput({ ...m, provider: 'twelvedata' }, px, news, fc, now, market, { meta: { historyDate }, price: { quotedAt: quotedAt ? new Date(quotedAt).toISOString() : null } }) };
+  const out = packOutput({ ...m, provider: 'twelvedata' }, px, news, fc, now, market, { meta: { historyDate }, price: { quotedAt: quotedAt ? new Date(quotedAt).toISOString() : null } });
+  await trackRecord(m, px, fc, out, prev, log, now, { calendar: m.category === 'crypto' ? 'daily' : 'weekday', category: m.category });
+  return { out };
 }
 
 function summary(out, m, error) {
@@ -907,6 +1050,7 @@ function summary(out, m, error) {
 async function main() {
   const now = Date.now();
   const base = siteUrl();
+  BASE = base;
   let watch = { markets: [] };
   try { watch = JSON.parse(await readFile(join(ROOT, 'watchlist.json'), 'utf8')); } catch { /* default */ }
   const markets = (watch.markets || []).filter((m) => m.provider === 'twelvedata');
@@ -937,6 +1081,7 @@ async function main() {
   }
   index.markets.push(...results);
   await save('index.json', index);
+  if (TRACK_UNSAFE) { console.log('::error title=Not published::the forecast log could not be read back from the live site, so this refresh is not deployed (the site keeps its previous data; the next refresh retries)'); process.exitCode = 1; }
 }
 
 main().catch(async (e) => {

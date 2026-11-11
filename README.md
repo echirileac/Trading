@@ -36,6 +36,14 @@ From then on it refreshes itself every ~5 minutes.
   - Cadence: about every hour per market while it trades (6 hours when closed), sooner after a 1.5% move, at most 1 note per refresh. Change with repository variables `AI_EVERY_MIN`, `AI_PROVIDERS` (order, default `anthropic,groq`; a provider without a key is skipped), `GROQ_MODELS`.
   - A model that hits its limit is skipped until the next refresh; if every option is exhausted the page keeps showing the previous note.
 
+## Track record (added November 2026)
+
+- **Published log:** once per trading day, just after the close (16:15 New York for stocks, 17:00 for NATGAS and Brent, 17:15 for currencies and metals, 00:00 UTC for crypto), the build writes down that market's 1, 3 and 5-day forecasts. Each is scored against the actual close 1, 3 or 5 sessions later. The page shows, per horizon: how often the direction was right, how often the close landed inside the 68% and 90% ranges, and the average miss compared with assuming no change.
+- **Backtest:** the same price signals (trend, momentum, RSI, volatility) replayed on the stored daily history, without news. It shows straight away whether the ranges are sized right; it says nothing about the news reading.
+- The log lives on the site itself (`site/data/h/<market>.json`), like the price history. Each build reads it back from the live site first. If it cannot be read, that build is **not deployed** (the run shows as failed, the site keeps its previous data and the next refresh retries), so the log is never overwritten with an empty one.
+- A market that fails to build on a run now keeps its previous page data and log instead of dropping them.
+- Removing a market from the watchlist ends its log.
+
 ## Good to know
 
 - Refresh timing: GitHub's own 5-minute schedule is unreliable, so the `Refresh ticker` workflow starts an update every 5 minutes. It runs ~5.5 hours, then starts a fresh copy of itself; every update also restarts it if it ever stops. To pause the site's updates, disable both `Refresh ticker` and `Update NATGAS forecast` on the Actions tab.
