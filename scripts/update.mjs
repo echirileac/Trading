@@ -690,6 +690,15 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
 // They are shown on the forecast and given to the analyst. Ranges are NOT widened for them: over the last year the EIA
 // report days were no more volatile at the close than other days (Thursday 0.96x for natural gas, Wednesday 1.13x for Brent).
 const FOMC_DAYS = ['2026-12-09', '2027-01-27', '2027-03-17', '2027-04-28', '2027-06-09', '2027-07-28', '2027-09-15', '2027-10-27', '2027-12-08', '2028-01-26']; // decision days (14:00 New York), from federalreserve.gov; 2027 is tentative
+// US Bureau of Labor Statistics release schedules (8:30 New York), from bls.gov/schedule; BLS can move a date.
+const CPI_DAYS = ['2026-12-10', '2027-01-13', '2027-02-11', '2027-03-10', '2027-04-13', '2027-05-12', '2027-06-10', '2027-07-14', '2027-08-11', '2027-09-14', '2027-10-14', '2027-11-10', '2027-12-10'];
+const JOBS_DAYS = ['2026-12-04', '2027-01-08', '2027-02-05', '2027-03-05', '2027-04-02', '2027-05-07', '2027-06-04', '2027-07-02', '2027-08-06', '2027-09-03', '2027-10-08', '2027-11-05', '2027-12-03'];
+let CAL_WARNED = false;
+function calendarsRunningOut(now) { // remind in the log a month before a date list ends
+  if (CAL_WARNED) return; CAL_WARNED = true;
+  for (const [name, list] of [['Fed decision days (FOMC_DAYS)', FOMC_DAYS], ['CPI dates (CPI_DAYS)', CPI_DAYS], ['jobs report dates (JOBS_DAYS)', JOBS_DAYS]])
+    if (Date.parse(list.at(-1)) - now < 30 * 864e5) console.log(`::warning title=Calendar::${name} end on ${list.at(-1)}: add the next dates in scripts/update.mjs`);
+}
 const pad2 = (n) => String(n).padStart(2, '0');
 function nyToUtc(date, h, min) { // a New York wall-clock time as a UTC instant (handles daylight saving)
   const [y, m, d] = date.split('-').map(Number);
@@ -702,6 +711,7 @@ function usHolidays(y) { // US federal holidays: EIA reports usually move a day 
   return new Set([[0, 1], [0, nth(0, 1, 3)], [1, nth(1, 1, 3)], [4, lastMon(4)], [5, 19], [6, 4], [8, nth(8, 1, 1)], [9, nth(9, 1, 2)], [10, 11], [10, nth(10, 4, 4)], [11, 25]].map(([mo, d]) => `${y}-${pad2(mo + 1)}-${pad2(d)}`));
 }
 function marketEvents(m, now, earnings) {
+  calendarsRunningOut(now);
   const text = `${m.id} ${m.name} ${(m.keywords || []).join(' ')}`;
   const gas = m.id === 'NATGAS' || /natural gas|nat-?gas/i.test(text);
   const oil = !gas && m.category === 'energy' && /brent|crude|wti|\boil\b/i.test(text);
@@ -715,6 +725,8 @@ function marketEvents(m, now, earnings) {
     if (gas && wd === 4) out.push({ id: 'eia-gas', name: 'EIA natural gas storage report', date, at: new Date(nyToUtc(date, 10, 30)).toISOString(), note });
     if (oil && wd === 3) out.push({ id: 'eia-oil', name: 'EIA weekly oil inventories', date, at: new Date(nyToUtc(date, 10, 30)).toISOString(), note });
     if (FOMC_DAYS.includes(date) && !gas) out.push({ id: 'fomc', name: 'Fed interest-rate decision', date, at: new Date(nyToUtc(date, 14, 0)).toISOString(), note: '' });
+    if (CPI_DAYS.includes(date) && !gas) out.push({ id: 'cpi', name: 'US inflation report (CPI)', date, at: new Date(nyToUtc(date, 8, 30)).toISOString(), note: '' });
+    if (JOBS_DAYS.includes(date) && !gas) out.push({ id: 'jobs', name: 'US jobs report (payrolls)', date, at: new Date(nyToUtc(date, 8, 30)).toISOString(), note: '' });
     if (earnings?.date === date) out.push({ id: 'earnings', name: 'Earnings report (expected date)', date, at: new Date(nyToUtc(date, 9, 30)).toISOString(), allDay: true, note: 'Ranges do not include the earnings move' });
   }
   return out.filter((e) => e.allDay ? e.date >= `${p.y}-${pad2(p.m)}-${pad2(p.d)}` : Date.parse(e.at) > now - 36e5);

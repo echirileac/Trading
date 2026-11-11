@@ -45,7 +45,7 @@ Every build compares the new data with the previous build and records alerts in 
 - **Key level break:** the price moves clearly through the 50- or 200-day average, or above the previous 20-session high / below the 20-session low. A level that moves past a still price does not count; the same level waits 6 hours before alerting again.
 - **Model lean flip:** the forecast lean changes between bullish and bearish (passing through Neutral is not a flip; at most one flip alert per 2 hours).
 - **AI analyst stance change** in a new note.
-- **Scheduled reports:** EIA storage and oil reports, Fed decisions an hour before; earnings dates from the evening before. A report shared by several markets is one message.
+- **Scheduled reports:** EIA storage and oil reports, Fed decisions, US inflation (CPI) and jobs reports an hour before; earnings dates from the evening before. A report shared by several markets is one message.
 
 The first build after this was added only records the current state, so nothing old is sent.
 
@@ -84,7 +84,7 @@ A card on each market page works out a position size so that hitting the stop co
 
 ## Events (added November 2026)
 
-- Each market lists the scheduled releases of the next 9 days: the EIA natural gas storage report (Thursday 10:30 New York) for NATGAS, EIA oil inventories (Wednesday 10:30) for oil, Fed decision days (list `FOMC_DAYS` in `scripts/update.mjs`, update it once a year from federalreserve.gov), and the next earnings date for US stocks (Nasdaq public data, once a day, best effort: it shows under Data sources whether the lookup worked).
+- Each market lists the scheduled releases of the next 9 days: the EIA natural gas storage report (Thursday 10:30 New York) for NATGAS, EIA oil inventories (Wednesday 10:30) for oil, Fed decision days (list `FOMC_DAYS` in `scripts/update.mjs`, update it once a year from federalreserve.gov), US inflation (CPI) and jobs report days for every market except natural gas (lists `CPI_DAYS` and `JOBS_DAYS`, from bls.gov/schedule; the build log warns a month before any of these lists runs out), and the next earnings date for US stocks (Nasdaq public data, once a day, best effort: it shows under Data sources whether the lookup worked).
 - A forecast whose target close comes after one of these shows a notice, and the AI analyst is told about them.
 - Ranges are not widened for events: on the past year's closes the EIA report days were not more volatile than other days, and there is no earnings history to measure yet.
 - "Events and economic calendar" at the bottom of the page also embeds TradingView's free economic calendar.
