@@ -23,11 +23,13 @@ From then on it refreshes itself every ~5 minutes.
 - NATGAS is built in. Add up to 8 more markets (stocks, ETFs, indices, forex, crypto, metals, oil) from the page: **+ Add market** → search → **Add**. That opens a pre-filled GitHub issue; press **Create** and the `Watchlist change` workflow updates `watchlist.json`, rebuilds the site and closes the issue (about 2 minutes). Only the repository owner's requests are applied.
 - Remove a market with the **Remove** button next to its name (same GitHub flow), or edit `watchlist.json` directly.
 - Prices for these markets come from **Twelve Data**. Add your free API key once: GitHub repo → Settings → Secrets and variables → Actions → **New repository secret**, name `TWELVE_DATA_KEY`.
-- Free plan limits (800 requests/day, 8/minute) mean live quotes refresh every 10–15 minutes depending on how many markets you watch; daily history is fetched once a day. Some indices need a paid Twelve Data plan.
+- Free plan limits (800 requests/day, 8/minute) mean live quotes refresh every 10–15 minutes depending on how many markets you watch; daily history is fetched once a day.
+- The free plan covers US listings, forex and crypto. Listings on other exchanges (for example a US stock's Swiss or German line) and some indices need a paid plan: the search marks them "Paid data plan" and the watchlist job refuses them. Pick the NASDAQ or NYSE listing instead.
 
 ## Pro chart and AI analyst (added November 2026)
 
-- **Chart:** daily candlesticks (TradingView Lightweight Charts, bundled in `site/vendor`), 1M/3M/6M/1Y, zoom and pan, toggles for 20/50/200-day averages, Bollinger bands, the model's forecast lines, and RSI / MACD panels. Your choices are remembered per browser.
+- **Live chart (default view):** TradingView's free Advanced Chart widget, loaded from tradingview.com with its own data, so it needs no key and has no request limit. Real candles on every timeframe, volume, 100+ indicators, drawing tools. Forex and crypto are real-time, stocks are delayed. Commodities and indices use CFD symbols (NATGAS: `OANDA:NATGASUSD`, Brent: `TVC:UKOIL`) because exchange futures are not in the free widget. The symbol is worked out from each market; set `"tv": "EXCHANGE:SYMBOL"` on a market in `watchlist.json` to fix it for everyone, or type one under the chart to change it in your own browser.
+- **Forecast view:** daily candlesticks (TradingView Lightweight Charts, bundled in `site/vendor`), 1M/3M/6M/1Y, zoom and pan, toggles for 20/50/200-day averages, Bollinger bands, the model's forecast lines, and RSI / MACD panels. Your choices are remembered per browser.
 - **AI analyst:** each market's indicators, key levels, quant forecast and latest trusted news (with what was read in full) go to an AI model, which writes a short note: stance, summary, chart and news bullets, levels to watch, 1/3/5-day outlook, what would change the view, risks. The note says which model wrote it.
   - **Free:** a Groq key (console.groq.com → API keys, no card needed) saved as repository secret `GROQ_API_KEY`. Uses `openai/gpt-oss-120b`, then `openai/gpt-oss-20b` (free plan: about 1,000 requests and 200K tokens a day per model, 8K tokens a minute). GitHub Models is not used: GitHub retired it on 2026-07-30.
   - **Paid upgrade (optional):** repository secret `ANTHROPIC_API_KEY` puts Claude (`AI_MODEL`, default `claude-sonnet-5-5`) first in line; about 1 cent per note.
@@ -39,7 +41,7 @@ From then on it refreshes itself every ~5 minutes.
 - Refresh timing: GitHub's own 5-minute schedule is unreliable, so the `Refresh ticker` workflow starts an update every 5 minutes. It runs ~5.5 hours, then starts a fresh copy of itself; every update also restarts it if it ever stops. To pause the site's updates, disable both `Refresh ticker` and `Update NATGAS forecast` on the Actions tab.
 - The page shows how old its data is and warns if it's over 30 minutes.
 - GitHub pauses scheduled workflows in a repo with no commits for 60 days. If that happens, click **Enable workflow** on the Actions tab (or push any small change).
-- The price feed (Yahoo Finance's public chart endpoint) is unofficial and free. If it stops answering, the script falls back to CNBC and Stooq, then to the last good price, and the page flags it.
+- NATGAS and Brent prices come from CNBC's public quote feed (unofficial and free) plus a daily history the site keeps itself. If the feed stops answering, the page shows the last good price and flags it. Yahoo Finance is no longer called: it blocks GitHub's servers (HTTP 429). To try it again, add `USE_YAHOO: "1"` to the `env` block in `update.yml`.
 - The trusted-outlet list and the keyword scoring live at the top of `scripts/update.mjs` (`TRUSTED`, `QUERIES`, `LEX`) — edit them to tune the model.
 - Test locally: `node scripts/update.mjs` then serve `site/` (e.g. `npx serve site`).
 

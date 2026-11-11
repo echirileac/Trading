@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Market watch · live 1 / 3 / 5-day forecasts</title>
-<meta name="description" content="Live Henry Hub natural gas price with 1, 3 and 5-day forecast ranges built from prices and trusted news.">
+<meta name="description" content="Live market watchlist: natural gas, oil, stocks, forex and crypto with live charts, an AI analyst note and 1, 3 and 5-day forecast ranges built from prices and trusted news.">
 <meta name="theme-color" content="#121214">
 <meta name="color-scheme" content="dark light">
 <script>
@@ -170,6 +170,14 @@
   .pc-sub .pc-tag { position: absolute; z-index: 2; top: 4px; left: 8px; font-size: 11px; color: var(--muted); pointer-events: none; font-variant-numeric: tabular-nums; }
   .pc-credit { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
   @media (max-width: 520px) { .pc-main { height: 300px; } .pc-sub { height: 100px; } }
+  .nodata .needs-data { display: none !important; }
+  .view-live .pc-forecast, .view-forecast .pc-live { display: none; }
+  .tv-box { height: 560px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel2); }
+  .tv-box .tradingview-widget-container, .tv-box .tradingview-widget-container__widget { width: 100%; height: 100%; }
+  .tv-sym { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+  .tv-sym input { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; color: var(--fg); font: 12px var(--font); padding: 6px 8px; width: 200px; max-width: 100%; }
+  .tv-sym .btn { padding: 5px 10px; font-size: 12px; }
+  @media (max-width: 520px) { .tv-box { height: 440px; } }
   .theme-btn { display: inline-flex; align-items: center; gap: 6px; }
   .theme-btn svg { width: 16px; height: 16px; }
   @media (max-width: 520px) { .price { font-size: 40px; } .fc-center { font-size: 30px; } }
@@ -191,7 +199,7 @@
       <button type="button" data-f="crypto" aria-pressed="false">Crypto</button>
     </div>
     <ul class="results" id="results"></ul>
-    <p class="hint" id="search-hint">Search results come from Twelve Data. "Add" opens a pre-filled request on GitHub: press <b>Create</b> there and the market appears here in about 2 minutes. Up to 8 markets on the free data plan; some indices need a paid plan.</p>
+    <p class="hint" id="search-hint">Search results come from Twelve Data. "Add" opens a pre-filled request on GitHub: press <b>Create</b> there and the market appears here in about 2 minutes. Up to 8 markets on the free data plan. Listings marked "Paid data plan" (most non-US exchanges and some indices) are not in the free plan: pick the US listing instead.</p>
   </section>
 
   <header class="top">
@@ -200,19 +208,19 @@
   </header>
   <div class="banner" id="banner"></div>
 
-  <section class="hero" aria-live="polite">
+  <section class="hero needs-data" aria-live="polite">
     <div class="price" id="price">—</div>
     <div class="chg" id="chg"></div>
     <div class="asof" id="asof"></div>
   </section>
 
-  <nav class="seg" role="tablist" aria-label="Forecast horizon">
+  <nav class="seg needs-data" role="tablist" aria-label="Forecast horizon">
     <button role="tab" data-h="1">1 day</button>
     <button role="tab" data-h="3">3 days</button>
     <button role="tab" data-h="5">5 days</button>
   </nav>
 
-  <section class="card" aria-live="polite">
+  <section class="card needs-data" aria-live="polite">
     <div class="fc-head"><span id="fc-title">Forecast</span><span class="bias" id="bias">—</span></div>
     <div class="fc-main"><div class="fc-center" id="fc-center">—</div><div class="fc-pct" id="fc-pct"></div></div>
     <div class="prob-bar"><span id="pb-down" style="background:var(--down)"></span><span id="pb-up" style="background:var(--up)"></span></div>
@@ -223,17 +231,32 @@
     </div>
   </section>
 
-  <section class="card ai" id="ai-card" aria-live="polite">
+  <section class="card ai needs-data" id="ai-card" aria-live="polite">
     <div class="fc-head"><span>AI analyst</span><span class="bias" id="ai-stance" hidden></span></div>
     <div id="ai-body"></div>
   </section>
 
-  <section class="card">
+  <section class="card view-live" id="pc-card">
     <div class="pc-head">
       <h2>Chart</h2>
-      <div class="chips" id="pc-tf" role="group" aria-label="Timeframe">
-        <button type="button" data-tf="1D">1D</button><button type="button" data-tf="1W">1W</button><button type="button" data-tf="1M">1M</button><button type="button" data-tf="3M">3M</button><button type="button" data-tf="6M">6M</button><button type="button" data-tf="1Y">1Y</button>
+      <div class="chips" id="pc-view" role="group" aria-label="Chart view">
+        <button type="button" data-v="live" title="TradingView chart: real candles on every timeframe, volume, indicators, drawing tools">Live chart</button><button type="button" data-v="forecast" class="needs-data" title="Daily candles with the model's forecast lines">Forecast view</button>
       </div>
+    </div>
+    <div class="pc-live">
+      <div class="tv-box" id="tv-box"></div>
+      <form class="tv-sym" id="tv-form">
+        <label for="tv-input">TradingView symbol</label>
+        <input id="tv-input" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. NASDAQ:AAPL">
+        <button class="btn" type="submit">Apply</button>
+        <button class="btn ghost" type="button" id="tv-reset" hidden>Reset</button>
+      </form>
+      <p class="note" id="tv-note" style="margin:8px 0 0">Live chart from TradingView, free and with its own data: real candles from 1 minute to 1 month, volume, 100+ indicators and drawing tools. Forex and crypto are real-time; stocks are delayed. Commodities and indices show the CFD price, which can differ slightly from the futures price the forecast uses. If the chart says the symbol is not available, type another TradingView symbol above and press Apply; it is remembered in this browser.</p>
+      <p class="pc-credit"><a href="https://www.tradingview.com/" target="_blank" rel="noopener nofollow">Track all markets on TradingView</a></p>
+    </div>
+    <div class="pc-forecast needs-data">
+    <div class="chips" id="pc-tf" role="group" aria-label="Timeframe" style="margin-bottom:8px">
+      <button type="button" data-tf="1D">1D</button><button type="button" data-tf="1W">1W</button><button type="button" data-tf="1M">1M</button><button type="button" data-tf="3M">3M</button><button type="button" data-tf="6M">6M</button><button type="button" data-tf="1Y">1Y</button>
     </div>
     <div class="chips" id="pc-tools" role="group" aria-label="Indicators" style="margin-bottom:10px">
       <button type="button" data-k="ma20"><i style="background:var(--c-ma20)"></i>MA 20</button>
@@ -251,11 +274,12 @@
       <div class="pc-sub" id="pc-rsi-box"><span class="pc-tag" id="pc-rsi-tag">RSI 14</span><div id="pc-rsi" style="height:100%"></div></div>
       <div class="pc-sub" id="pc-macd-box"><span class="pc-tag" id="pc-macd-tag">MACD 12, 26, 9</span><div id="pc-macd" style="height:100%"></div></div>
     </div>
-    <p class="note" style="margin:8px 0 0">1M–1Y: daily candles. 1D and 1W: 15-minute and 1-hour candles. Drag to pan, scroll or pinch to zoom. Dashed lines (daily views): the model's centre forecast and 68% range for the selected horizon.</p>
+    <p class="note" style="margin:8px 0 0">1M–1Y: daily candles. 1D and 1W: 15-minute and 1-hour candles built from the server's own price samples (use the Live chart for true intraday candles). Drag to pan, scroll or pinch to zoom. Dashed lines (daily views): the model's centre forecast and 68% range for the selected horizon.</p>
     <p class="pc-credit">Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>.</p>
+    </div>
   </section>
 
-  <div class="grid2">
+  <div class="grid2 needs-data">
     <section class="card">
       <h2>Latest session</h2>
       <p class="note" id="intra-note">Today's range, where price opened and where it is now versus the previous close.</p>
@@ -268,7 +292,7 @@
     </section>
   </div>
 
-  <div class="grid2">
+  <div class="grid2 needs-data">
     <section class="card">
       <h2>Key levels</h2>
       <p class="note">Computed from recent prices; distance is from the live price.</p>
@@ -281,7 +305,7 @@
     </section>
   </div>
 
-  <section class="card">
+  <section class="card needs-data">
     <h2>Latest trusted news</h2>
     <p class="note" id="news-note"></p>
     <ul class="news" id="news"></ul>
@@ -293,6 +317,7 @@
     <ul>
       <li>Prices: NATGAS uses the NYMEX Henry Hub front-month futures quote from CNBC plus its own daily history; every other market comes from Twelve Data (daily history once a day, live quotes every 10–15 minutes to stay within the free plan).</li>
       <li>News: stories from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence, Rigzone and others) found with a search built for each market, refreshed about every 15 minutes. The server opens each article and reads its full text where the publisher allows it; every relevant sentence is scored with a keyword list for that kind of market (natural gas: weather, storage, production, LNG; oil: OPEC, inventories; metals: dollar, rates, safe-haven demand; stocks and indices: earnings, guidance, rates; crypto: ETF flows, regulation; plus general market language). The article body counts for 70% of a story's score and the headline 30%; paywalled stories fall back to the headline. Stories are weighted by recency.</li>
+      <li>Charts: the Live chart is TradingView's free embedded chart with its own data feed (real-time for forex and crypto, delayed for stocks; CFD prices for commodities and indices). The Forecast view draws the model's lines on the daily prices the forecast itself uses.</li>
       <li>The page itself checks for new data every minute.</li>
       <li>It is a mechanical keyword model, not a human reading. It can be wrong when an article is mixed, quotes opposing views, or is mainly about something else.</li>
     </ul>
@@ -360,12 +385,18 @@
       lastFetch = Date.now();
       render();
     } catch (e) {
+      // No data for this market: hide every price, forecast and news section so the previous market's numbers cannot stay on screen.
       DATA = null;
       const s = INDEX?.markets.find((m) => m.id === CUR_ID);
+      document.body.classList.add('nodata');
       setHeader(s || { id: CUR_ID, name: CUR_ID });
-      $('status').textContent = '';
+      $('status').textContent = ''; $('dot').className = 'dot';
       const b = $('banner'); b.className = 'banner show';
-      b.textContent = s?.error ? `${s.name}: ${s.error}` : `${s?.name || CUR_ID}: ${e.message === 'not built yet' ? 'data is being prepared, it appears within a few minutes of adding a market' : 'could not load (' + e.message + ')'}.`;
+      const paid = /pro or venture|\bgrow\b|upgrad|pricing/i.test(s?.error || '');
+      b.textContent = paid ? `${s.name}: this listing (${s.symbol}${s.exchange ? ' on ' + s.exchange : ''}) is not in the free Twelve Data plan, so it has no price, forecast or news here. Remove it and add the US listing instead. The live chart below still works.`
+        : s?.error ? `${s.name}: ${s.error}` : `${s?.name || CUR_ID}: ${e.message === 'not built yet' ? 'data is being prepared, it appears within a few minutes of adding a market' : 'could not load (' + e.message + ')'}.`;
+      pcDestroy(); PC.key = null;
+      setView(); tvUpdate();
     }
   }
   function select(id) { if (id === CUR_ID) return; CUR_ID = id; setHash(); drawWatchlist(); loadMarket(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
@@ -427,6 +458,8 @@
   document.querySelectorAll('#filters button').forEach((b) => b.addEventListener('click', () => {
     FILTER = b.dataset.f; document.querySelectorAll('#filters button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); runSearch();
   }));
+  // Twelve Data says which plan each listing needs (show_plan=true). Only known paid tiers are blocked, so an unexpected answer never hides a free market.
+  const paidPlan = (r) => { const p = String(r?.access?.plan || '').trim(); return /^(grow|pro|ultra|enterprise|venture)/i.test(p) ? p : ''; };
   function catOf(r) {
     const t = (r.instrument_type || r.category || '').toLowerCase();
     if (r._commodity) return /metal/.test(t) ? 'metal' : 'energy';
@@ -446,16 +479,16 @@
       const com = COMMODITIES.filter((c) => !q || c.symbol.toLowerCase().includes(ql) || c.name.toLowerCase().includes(ql) || (c.category || '').toLowerCase().includes(ql))
         .map((c) => ({ symbol: c.symbol, instrument_name: c.name, instrument_type: c.category, exchange: '', _commodity: true }));
       let api = [];
-      if (q.length >= 2) api = (await fetch(`https://api.twelvedata.com/symbol_search?symbol=${encodeURIComponent(q)}&outputsize=30`).then((r) => r.json())).data || [];
+      if (q.length >= 2) api = (await fetch(`https://api.twelvedata.com/symbol_search?symbol=${encodeURIComponent(q)}&outputsize=30&show_plan=true`).then((r) => r.json())).data || [];
       const al = q ? ALIASES.filter(([re]) => re.test(q)).map(([, r]) => ({ ...r, exchange: r.exchange || '', _alias: true })) : [];
       rows = [...al, ...com, ...api].filter((r, i, arr) => arr.findIndex((x) => x.symbol === r.symbol && (x.exchange || '') === (r.exchange || '')) === i);
     } catch (e) { ul.replaceChildren(el('li', {}, 'Search is unavailable right now (' + e.message + ').')); return; }
     const want = (r) => { const c = catOf(r); return !FILTER || (FILTER === 'commodity' ? ['metal', 'energy'].includes(c) : FILTER === 'equity' ? ['equity', 'etf'].includes(c) : c === FILTER); };
     const Q = q.toUpperCase();
-    const prefer = (r) => (r._alias ? -4 : r.symbol.toUpperCase() === Q && !/stock/i.test(r.instrument_type || '') || r.symbol.toUpperCase().replace('/', '') === Q.replace('/', '') ? -3
+    const prefer = (r) => (paidPlan(r) ? 10 : 0) + (r._alias ? -4 : r.symbol.toUpperCase() === Q && !/stock/i.test(r.instrument_type || '') || r.symbol.toUpperCase().replace('/', '') === Q.replace('/', '') ? -3
       : r._commodity && /\/USD$/.test(r.symbol) && !/gram/i.test(r.instrument_name) ? -2
       : /\/USD$/.test(r.symbol) && /physical currency|digital currency/i.test(r.instrument_type) ? -1
-      : r._commodity ? 0 : /physical currency|digital currency|index/i.test(r.instrument_type) ? 1 : /^(NASDAQ|NYSE|XETR|LSE|Euronext|BVB)$/i.test(r.exchange) ? 2 : 3);
+      : r._commodity ? 0 : /physical currency|digital currency|index/i.test(r.instrument_type) ? 1 : /^(NASDAQ|NYSE)$/i.test(r.exchange) ? 2 : 3);
     rows = rows.filter(want).filter((r) => !/warrant|certificate|structured|bond/i.test(r.instrument_type || '')).sort((a, b) => prefer(a) - prefer(b)).slice(0, 25);
     const have = new Set(INDEX.markets.map((m) => m.symbol + '|' + (m.exchange || '')));
     ul.replaceChildren(...rows.map((r) => {
@@ -466,7 +499,9 @@
       const exch = ['equity', 'etf', 'index'].includes(cat) ? r.exchange : '';
       const already = have.has(r.symbol + '|' + exch) || have.has(r.symbol + '|');
       const full = INDEX.markets.filter((m) => m.id !== 'NATGAS').length >= (INDEX.maxMarkets || 8);
+      const paid = paidPlan(r);
       const btn = already ? el('span', { class: 'rm' }, 'On your list')
+        : paid ? el('span', { class: 'rm', title: `This listing needs the Twelve Data ${paid} plan. Pick the US listing, which is in the free plan.` }, `Paid data plan (${paid})`)
         : r._builtin ? el('span', { class: 'rm', title: 'Uses a separate free data source; ask Claude to add it back' }, 'Ask Claude to add')
         : el('a', { class: 'btn', target: '_blank', rel: 'noopener', href: issueUrl(`watchlist: add ${r.symbol}`, { action: 'add', symbol: r.symbol, name: r.instrument_name, exchange: exch, type: r.instrument_type || '', category: cat }), title: full ? 'Watchlist is full (8 markets): remove one first' : 'Opens a pre-filled request on GitHub' }, full ? 'List full' : 'Add');
       li.append(left, btn); return li;
@@ -497,11 +532,14 @@
 
   function render() {
     setTabs();
-    if (!DATA) return;
+    if (!DATA) { if (document.body.classList.contains('nodata')) { setView(); tvUpdate(); } return; }
+    document.body.classList.toggle('nodata', !DATA.price);
     if (!DATA.price) {
-      $('status').textContent = 'Waiting for price data';
+      $('status').textContent = 'Waiting for price data'; $('dot').className = 'dot';
       const b = $('banner'); b.className = 'banner show';
       b.textContent = 'The price sources did not answer on the last server refresh (' + ago(DATA.generatedAt) + '). The page will fill in automatically once they do.';
+      pcDestroy(); PC.key = null;
+      setView(); tvUpdate();
       return;
     }
     const meta = DATA.meta || { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy' };
@@ -525,12 +563,12 @@
     $('fc-pct').className = 'fc-pct ' + cls(h.changePct);
     $('pb-down').style.width = (100 * (1 - h.pUp)).toFixed(1) + '%';
     $('pb-up').style.width = (100 * h.pUp).toFixed(1) + '%';
-    $('p-down').textContent = `${Math.round(100 * (1 - h.pUp))}% chance lower`;
-    $('p-up').textContent = `${Math.round(100 * h.pUp)}% chance higher`;
+    $('p-down').textContent = `Model lean: ${Math.round(100 * (1 - h.pUp))}% lower`;
+    $('p-up').textContent = `${Math.round(100 * h.pUp)}% higher`;
     $('r68').textContent = `${usd(h.lo68, 2)} – ${usd(h.hi68, 2)}`;
     $('r90').textContent = `${usd(h.lo90, 2)} – ${usd(h.hi90, 2)}`;
 
-    drawAI(); pcUpdate(); drawIntraday(); drawSignals(); drawLevels(); drawNews(); drawSources();
+    drawAI(); setView(); tvUpdate(); pcUpdate(); drawIntraday(); drawSignals(); drawLevels(); drawNews(); drawSources();
     $('method').textContent = DATA.method;
   }
 
@@ -577,7 +615,7 @@
     const model = a.provider === 'github' ? `${pretty(id)} via GitHub Models`
       : a.provider === 'groq' ? `${pretty(id)} via Groq`
       : id.replace(/^claude-/, 'Claude ').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-/g, ' ').replace(/\b(opus|sonnet|haiku|fable)\b/i, (w) => w[0].toUpperCase() + w.slice(1));
-    box.append(el('div', { class: 'foot' }, `Written ${ago(a.at)} by ${model} when price was ${usd(a.price)}. It weighs the chart and news above; refreshed about every 2 hours, sooner after big moves.${a.lastError ? ' Last refresh attempt failed, showing the previous note.' : ''} Market commentary, not financial advice.`));
+    box.append(el('div', { class: 'foot' }, `Written ${ago(a.at)} by ${model} when price was ${usd(a.price)}. It weighs the chart and news above; refreshed about every hour while the market is open (every 6 hours when closed), sooner after big moves.${a.lastError ? ' Last refresh attempt failed, showing the previous note.' : ''} Market commentary, not financial advice.`));
   }
 
   // ---------- pro chart (TradingView Lightweight Charts) ----------
@@ -723,6 +761,7 @@
       .map((r) => ({ time: Math.round(r.k / 1000 - new Date(r.k).getTimezoneOffset() * 60), open: r.open, high: r.high, low: r.low, close: r.close, k: r.k }));
   }
   function pcUpdate() {
+    if (pcView() !== 'forecast') return;
     if (!LWC) { $('pc-main').textContent = 'The chart library did not load. Reload the page to try again.'; return; }
     const p = DATA.price, f = DATA.forecast, id = DATA.meta?.id || 'NATGAS';
     const intra = INTRA[PC_TF] || null, mode = intra ? PC_TF : 'daily';
@@ -787,6 +826,76 @@
   }
   document.querySelectorAll('#pc-tf button').forEach((b) => b.addEventListener('click', () => { const was = INTRA[PC_TF] ? PC_TF : 'daily'; PC_TF = b.dataset.tf; keep('pc-tf', PC_TF); const now = INTRA[PC_TF] ? PC_TF : 'daily'; if (was !== now && DATA) pcUpdate(); else { pcSetVisibility(); pcRange(); } }));
   document.querySelectorAll('#pc-tools button').forEach((b) => b.addEventListener('click', () => { PC_SHOW[b.dataset.k] = !PC_SHOW[b.dataset.k]; keep('pc-show', PC_SHOW); pcSetVisibility(); pcLegend(null); }));
+
+  // ---------- chart views + live chart (TradingView Advanced Chart widget: free, no key, data included) ----------
+  let PC_VIEW = store('pc-view', 'live'); if (!['live', 'forecast'].includes(PC_VIEW)) PC_VIEW = 'live';
+  function pcView() { return document.body.classList.contains('nodata') ? 'live' : PC_VIEW; }
+  function setView() {
+    const v = pcView(), c = $('pc-card');
+    c.classList.toggle('view-live', v === 'live'); c.classList.toggle('view-forecast', v === 'forecast');
+    document.querySelectorAll('#pc-view button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
+  }
+  document.querySelectorAll('#pc-view button').forEach((b) => b.addEventListener('click', () => {
+    PC_VIEW = b.dataset.v; keep('pc-view', PC_VIEW); setView();
+    if (pcView() === 'live') tvUpdate(); else if (DATA && DATA.price) requestAnimationFrame(pcUpdate);
+  }));
+  // TradingView names for the markets on the watchlist. Futures (NYMEX, ICE) are not in the free widget, so commodities and indices use CFD symbols.
+  const TV_EXCH = { NASDAQ: 'NASDAQ', NYSE: 'NYSE', 'NYSE ARCA': 'AMEX', 'NYSE AMERICAN': 'AMEX', AMEX: 'AMEX', CBOE: 'CBOE', BATS: 'CBOE', OTC: 'OTC', XETR: 'XETR', XETRA: 'XETR', LSE: 'LSE', EURONEXT: 'EURONEXT', BVB: 'BVB', SIX: 'SIX', TSX: 'TSX', TSXV: 'TSXV', BME: 'BME', ASX: 'ASX', HKEX: 'HKEX', NSE: 'NSE', BSE: 'BSE' };
+  const TV_MAP = { 'XAU/USD': 'OANDA:XAUUSD', 'XAG/USD': 'OANDA:XAGUSD', 'XPT/USD': 'OANDA:XPTUSD', 'XPD/USD': 'OANDA:XPDUSD', HG1: 'OANDA:XCUUSD', 'WTI/USD': 'TVC:USOIL', 'XTI/USD': 'TVC:USOIL', 'BRENT/USD': 'TVC:UKOIL', 'XBR/USD': 'TVC:UKOIL', 'NG/USD': 'OANDA:NATGASUSD',
+    SPX: 'FOREXCOM:SPXUSD', NDX: 'FOREXCOM:NSXUSD', DJI: 'FOREXCOM:DJI', GDAXI: 'INDEX:DEU40', FTSE: 'FOREXCOM:UKXGBP', N225: 'INDEX:NKY' };
+  function tvDefault(m) {
+    if (!m) return '';
+    if (m.tv) return String(m.tv);
+    if (m.id === 'NATGAS') return 'OANDA:NATGASUSD';
+    if (m.id === 'BRENT') return 'TVC:UKOIL';
+    const sym = String(m.symbol || '').toUpperCase().trim();
+    if (!sym) return '';
+    if (TV_MAP[sym]) return TV_MAP[sym];
+    const pair = sym.match(/^([A-Z0-9]+)\/([A-Z0-9]+)$/);
+    if (pair) {
+      const [, b, q] = pair;
+      if (m.category === 'crypto') return `BINANCE:${b}${q === 'USD' ? 'USDT' : q}`;
+      if (m.category === 'fx') return `FX_IDC:${b}${q}`;
+      if (m.category === 'metal') return `OANDA:${b}${q}`;
+      return b + q;
+    }
+    if (!/^[A-Z0-9.\-]+$/.test(sym)) return '';
+    const ex = TV_EXCH[String(m.exchange || '').toUpperCase()];
+    return ex ? `${ex}:${sym}` : sym;
+  }
+  const TV_OVR = store('tv-sym', {}); // per-market symbol typed by the user
+  const tvMeta = () => (DATA && DATA.meta) || (INDEX && INDEX.markets.find((m) => m.id === CUR_ID)) || { id: CUR_ID };
+  const tvSymbolFor = (m) => TV_OVR[m.id] || tvDefault(m);
+  const isLight = () => { const c = (rgba('--bg').match(/[\d.]+/g) || [0, 0, 0]).map(Number); return (c[0] + c[1] + c[2]) / 3 > 128; };
+  let TV_KEY = '';
+  function tvUpdate() {
+    const m = tvMeta(), sym = tvSymbolFor(m), box = $('tv-box');
+    if (document.activeElement !== $('tv-input')) $('tv-input').value = sym;
+    $('tv-reset').hidden = !TV_OVR[m.id];
+    if (pcView() !== 'live') return;
+    const theme = isLight() ? 'light' : 'dark';
+    const key = `${sym}|${theme}`;
+    if (key === TV_KEY && box.firstChild) return;
+    TV_KEY = key; box.replaceChildren();
+    if (!sym) { box.append(el('p', { class: 'note', style: 'padding:16px' }, 'No TradingView symbol is known for this market yet. Type one below (for example NASDAQ:AAPL, OANDA:XAUUSD, FX_IDC:EURUSD) and press Apply.')); return; }
+    let tz = 'Etc/UTC'; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch { /* keep UTC */ }
+    const wrap = el('div', { class: 'tradingview-widget-container' });
+    wrap.append(el('div', { class: 'tradingview-widget-container__widget' }));
+    const sc = document.createElement('script');
+    sc.type = 'text/javascript'; sc.async = true;
+    sc.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+    sc.text = JSON.stringify({ autosize: true, symbol: sym, interval: '60', timezone: tz, theme, style: '1', locale: 'en', allow_symbol_change: true, withdateranges: true, hide_side_toolbar: false, save_image: false, calendar: false, details: false, hotlist: false, studies: ['STD;RSI'], support_host: 'https://www.tradingview.com' });
+    sc.addEventListener('error', () => { box.replaceChildren(el('p', { class: 'note', style: 'padding:16px' }, 'The TradingView chart could not load (blocked by the network or an ad blocker). The Forecast view still works.')); TV_KEY = ''; });
+    wrap.append(sc); box.append(wrap);
+  }
+  $('tv-form').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const m = tvMeta(), v = $('tv-input').value.trim().toUpperCase();
+    if (!/^[A-Z0-9_.:!&\-]{1,40}$/.test(v)) { $('tv-input').focus(); return; }
+    if (v === tvDefault(m)) delete TV_OVR[m.id]; else TV_OVR[m.id] = v;
+    keep('tv-sym', TV_OVR); $('tv-input').blur(); tvUpdate();
+  });
+  $('tv-reset').addEventListener('click', () => { delete TV_OVR[tvMeta().id]; keep('tv-sym', TV_OVR); $('tv-input').blur(); tvUpdate(); });
 
   // ---------- intraday ----------
   function drawIntraday() {
