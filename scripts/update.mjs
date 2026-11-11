@@ -636,6 +636,62 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   return { sigmaDaily: round(sigma, 4), score: round(score, 3), bias, signals, horizons, levels, rsi: round(r, 1) };
 }
 
+// ---------- scheduled events ----------
+// What is known ahead of time and can move a market: weekly EIA reports, Fed decisions, a stock's next earnings date.
+// They are shown on the forecast and given to the analyst. Ranges are NOT widened for them: over the last year the EIA
+// report days were no more volatile at the close than other days (Thursday 0.96x for natural gas, Wednesday 1.13x for Brent).
+const FOMC_DAYS = ['2026-12-09', '2027-01-27', '2027-03-17', '2027-04-28', '2027-06-09', '2027-07-28', '2027-09-15', '2027-10-27', '2027-12-08', '2028-01-26']; // decision days (14:00 New York), from federalreserve.gov; 2027 is tentative
+const pad2 = (n) => String(n).padStart(2, '0');
+function nyToUtc(date, h, min) { // a New York wall-clock time as a UTC instant (handles daylight saving)
+  const [y, m, d] = date.split('-').map(Number);
+  const guess = Date.UTC(y, m - 1, d, h + 5, min);
+  return nyParts(new Date(guess)).h === h ? guess : guess - 36e5;
+}
+function usHolidays(y) { // US federal holidays: EIA reports usually move a day in these weeks
+  const nth = (mon, wd, n) => { const first = new Date(Date.UTC(y, mon, 1)).getUTCDay(); return 1 + ((wd - first + 7) % 7) + 7 * (n - 1); };
+  const lastMon = (mon) => { const last = new Date(Date.UTC(y, mon + 1, 0)); return last.getUTCDate() - ((last.getUTCDay() + 6) % 7); };
+  return new Set([[0, 1], [0, nth(0, 1, 3)], [1, nth(1, 1, 3)], [4, lastMon(4)], [5, 19], [6, 4], [8, nth(8, 1, 1)], [9, nth(9, 1, 2)], [10, 11], [10, nth(10, 4, 4)], [11, 25]].map(([mo, d]) => `${y}-${pad2(mo + 1)}-${pad2(d)}`));
+}
+function marketEvents(m, now, earnings) {
+  const text = `${m.id} ${m.name} ${(m.keywords || []).join(' ')}`;
+  const gas = m.id === 'NATGAS' || /natural gas|nat-?gas/i.test(text);
+  const oil = !gas && m.category === 'energy' && /brent|crude|wti|\boil\b/i.test(text);
+  const p = nyParts(new Date(now)), today = Date.UTC(p.y, p.m - 1, p.d), out = [];
+  for (let k = 0; k <= 9; k++) {
+    const d = new Date(today + k * 864e5), date = d.toISOString().slice(0, 10), wd = d.getUTCDay();
+    const hol = usHolidays(d.getUTCFullYear());
+    // a federal holiday earlier in the same week (or on the day) pushes the weekly EIA reports
+    const shifted = [...Array(wd).keys()].some((b) => hol.has(new Date(d.getTime() - b * 864e5).toISOString().slice(0, 10)));
+    const note = shifted ? 'US holiday week: the release usually moves by a day' : '';
+    if (gas && wd === 4) out.push({ id: 'eia-gas', name: 'EIA natural gas storage report', date, at: new Date(nyToUtc(date, 10, 30)).toISOString(), note });
+    if (oil && wd === 3) out.push({ id: 'eia-oil', name: 'EIA weekly oil inventories', date, at: new Date(nyToUtc(date, 10, 30)).toISOString(), note });
+    if (FOMC_DAYS.includes(date) && !gas) out.push({ id: 'fomc', name: 'Fed interest-rate decision', date, at: new Date(nyToUtc(date, 14, 0)).toISOString(), note: '' });
+    if (earnings?.date === date) out.push({ id: 'earnings', name: 'Earnings report (expected date)', date, at: new Date(nyToUtc(date, 9, 30)).toISOString(), allDay: true, note: 'Ranges do not include the earnings move' });
+  }
+  return out.filter((e) => e.allDay ? e.date >= `${p.y}-${pad2(p.m)}-${pad2(p.d)}` : Date.parse(e.at) > now - 36e5);
+}
+// Next earnings date for US stocks, asked once a day from Nasdaq's public page data (free, no key; best effort).
+async function earningsDate(m, prev, now) {
+  if (m.category !== 'equity' || !/^(NASDAQ|NYSE)/i.test(m.exchange || '')) return null;
+  const today = ymd(now), had = prev?.meta?.earnings;
+  if (had && had.checked === today && (had.ok || now - Date.parse(had.at || 0) < 6 * 36e5)) return had; // one lookup a day; a failed one is retried after 6 hours
+  const keep = had?.date && had.date >= today ? had.date : null; // keep a date we already know if today's lookup fails
+  try {
+    const j = await get(`https://api.nasdaq.com/api/analyst/${encodeURIComponent(m.symbol)}/earnings-date`, { type: 'json', timeout: 8000, retries: 0 });
+    const txt = JSON.stringify(j?.data || {});
+    const a = txt.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* (\d{1,2}), (\d{4})/), b = txt.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+    const t = a ? Date.parse(`${a[1]} ${a[2]}, ${a[3]} 12:00 UTC`) : b ? Date.UTC(+b[3], +b[1] - 1, +b[2], 12) : NaN;
+    if (isFinite(t) && t - now > -2 * 864e5 && t - now < 200 * 864e5) return { date: ymd(t), checked: today, at: new Date(now).toISOString(), ok: true };
+    return { date: keep, checked: today, at: new Date(now).toISOString(), ok: false, error: 'no date in the answer' };
+  } catch (e) { return { date: keep, checked: today, at: new Date(now).toISOString(), ok: false, error: e.message }; }
+}
+async function attachEvents(m, out, prev, now) {
+  const earn = await earningsDate(m, prev, now);
+  if (earn) { out.meta.earnings = earn; out.sources.push({ name: 'Next earnings date (Nasdaq)', ok: !!earn.ok, error: earn.error }); }
+  out.events = marketEvents(m, now, earn);
+  for (const h of Object.values(out.forecast.horizons)) h.events = out.events.filter((e) => e.date <= h.targetDate).map((e) => e.id);
+}
+
 // ---------- track record ----------
 // Published log: once per session, at the close, the 1/3/5-day forecasts are written down; each is scored against
 // the close 1/3/5 sessions later. Backtest: the price signals replayed on the stored daily history (news cannot be replayed).
@@ -897,6 +953,7 @@ Rules:
 - News items may be headline-only (not fully read) - treat those as weaker evidence.
 - The quant model forecast is one input, not the truth; you may disagree with it and explain why.
 - Be concrete: cite levels and numbers from the data. Plain English, no hype.
+- scheduledEvents lists known releases ahead (reports, central-bank decisions, earnings). If one falls inside an outlook window, name it in that outlook or in risks.
 - This is market commentary, not personal advice: no position sizing, no "you should buy/sell".
 Respond with ONLY a JSON object, no markdown, matching:
 {"stance":"bullish|bearish|neutral","confidence":"low|medium|high","headline":"<=90 chars","summary":"2-3 sentences",
@@ -920,6 +977,7 @@ async function aiFor(m, out, prevAi, now) {
     market: { name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', instrument: out.instrument },
     asOf: out.price.asOf, marketStatus: out.market,
     price: { last: out.price.last, previousClose: out.price.prevClose, changePct: out.price.changePct },
+    scheduledEvents: (out.events || []).slice(0, 5).map((e) => ({ name: e.name, date: e.date, hoursAway: Math.max(0, Math.round((Date.parse(e.at) - now) / 36e5)), note: e.note || undefined })),
     indicators: techIndicators(out.price.daily.map((r) => ({ h: r.h, l: r.l, c: r.c })), out.price.last),
     last30Closes: out.price.daily.slice(-30).map((r) => [r.date, r.c]),
     keyLevels: f.levels,
@@ -963,6 +1021,7 @@ async function buildNatgas(base, now) {
   const fc = buildForecast(px, news, now, { calendar: 'ng', category: 'energy' });
   const out = packOutput(NATGAS, px, news, fc, now, marketStatus(new Date(now)));
   await trackRecord(NATGAS, px, fc, out, prev, log, now, { calendar: 'ng', category: 'energy' });
+  await attachEvents(NATGAS, out, prev, now);
   out.ai = await aiFor(NATGAS, out, prev?.ai, now);
   await save('m/NATGAS.json', out);
   await save('latest.json', out); // kept for older links
@@ -980,6 +1039,7 @@ async function buildCnbcFutures(m, base, now, plan) {
   const fc = buildForecast(px, news, now, { calendar: 'ng', category: m.category });
   const out = packOutput(m, px, news, fc, now, marketStatus(new Date(now)));
   await trackRecord(m, px, fc, out, prev, log, now, { calendar: 'ng', category: m.category });
+  await attachEvents(m, out, prev, now);
   out.ai = await aiFor(m, out, prev?.ai, now);
   await save(`m/${m.id}.json`, out);
   return out;
@@ -1049,6 +1109,7 @@ async function buildTwelveData(m, prev, now, plan) {
   const fc = buildForecast(px, news, now, { category: m.category, calendar: m.category === 'crypto' ? 'daily' : 'weekday', today: daily.at(-1) ? new Date(daily.at(-1).t).toISOString().slice(0, 10) : todayUTC });
   const out = packOutput({ ...m, provider: 'twelvedata' }, px, news, fc, now, market, { meta: { historyDate }, price: { quotedAt: quotedAt ? new Date(quotedAt).toISOString() : null } });
   await trackRecord(m, px, fc, out, prev, log, now, { calendar: m.category === 'crypto' ? 'daily' : 'weekday', category: m.category });
+  await attachEvents(m, out, prev, now);
   return { out };
 }
 
