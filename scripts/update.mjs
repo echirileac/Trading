@@ -211,8 +211,9 @@ async function loadPrices(prev, now, cfg = { yahoo: 'NG=F', cnbc: '@NG.1', seed:
   if (!intraday?.length) {
     // Build the session chart from our own samples (one per run) when Yahoo intraday isn't available.
     const pts = (prev?.price?.intraday || []).filter(([t]) => now - t < INTRADAY_KEEP_MS);
-    if (last != null && !stale && marketStatus(new Date(now)) === 'open') pts.push([now, last]);
-    intraday = pts.map(([t, c]) => ({ t, c }));
+    // each sample also keeps the session's high and low so far (when the quote has them): the page turns new extremes into candle wicks
+    if (last != null && !stale && marketStatus(new Date(now)) === 'open') pts.push([now, last, q?.high ?? null, q?.low ?? null]);
+    intraday = pts.map(([t, c, h, l]) => ({ t, c, h, l }));
   }
   if (!daily?.length || last == null) { FAILED.push(...status.filter((x) => !x.ok)); throw new Error('No price data from any source'); }
   if (prevClose == null && daily.length > 1) prevClose = daily.at(-2).c;
@@ -843,7 +844,7 @@ function packOutput(m, px, news, fc, now, market, extra = {}) {
   px.daily = px.daily.map(cleanBar);
   const dd = px.last >= 20 ? 3 : 6; // currencies and low-priced markets lose real information at 3 decimals
   const daily = px.daily.slice(-260).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), o: round(r.o, dd), h: round(r.h, dd), l: round(r.l, dd), c: round(r.c, dd) }));
-  const lastSession = px.intraday.length ? (() => { const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < INTRADAY_KEEP_MS && x.c > 0).map((x) => [x.t, round(x.c, 6)]); })() : [];
+  const lastSession = px.intraday.length ? (() => { const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < INTRADAY_KEEP_MS && x.c > 0).map((x) => (x.h > 0 && x.l > 0 ? [x.t, round(x.c, 6), round(Math.max(x.h, x.c), 6), round(Math.min(x.l, x.c), 6)] : [x.t, round(x.c, 6)])); })() : [];
   const dec = m.category === 'fx' ? (px.last >= 20 ? 3 : 5) : px.last >= 10 ? 2 : px.last >= 1 ? 3 : 5;
   return {
     generatedAt: new Date(now).toISOString(),
@@ -1070,7 +1071,7 @@ async function buildTwelveData(m, prev, now, plan) {
   const byDate = new Map((prev?.price?.daily || []).map((r) => [r.date, { t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c }]));
   let last = prev?.price?.last ?? null, prevClose = prev?.price?.prevClose ?? null, lastTime = prev?.price?.asOf ? Date.parse(prev.price.asOf) : now;
   let market = prev?.market || 'closed', historyDate = prev?.meta?.historyDate || '', quotedAt = prev?.price?.quotedAt ? Date.parse(prev.price.quotedAt) : 0;
-  let intraday = (prev?.price?.intraday || []).filter(([t]) => now - t < INTRADAY_KEEP_MS).map(([t, c]) => ({ t, c }));
+  let intraday = (prev?.price?.intraday || []).filter(([t]) => now - t < INTRADAY_KEEP_MS).map(([t, c, h, l]) => ({ t, c, h, l }));
   const todayUTC = new Date(now).toISOString().slice(0, 10);
   if (!TD_KEY) status.push({ name: 'Twelve Data', ok: false, error: 'API key missing: add the TWELVE_DATA_KEY repository secret' });
   else {
@@ -1093,7 +1094,7 @@ async function buildTwelveData(m, prev, now, plan) {
         const bar = byDate.get(day) || { t: Date.parse(day + 'T22:00:00Z'), o: num(q.open) ?? last };
         bar.c = last; bar.h = Math.max(bar.h ?? last, num(q.high) ?? last, last); bar.l = Math.min(bar.l ?? last, num(q.low) ?? last, last);
         byDate.set(day, bar);
-        if (market === 'open') intraday.push({ t: now, c: last });
+        if (market === 'open') intraday.push({ t: now, c: last, h: num(q.high), l: num(q.low) });
         status.push({ name: 'Twelve Data live quote', ok: true });
       } catch (e) { status.push({ name: 'Twelve Data live quote', ok: false, error: e.message }); }
     } else status.push({ name: `Twelve Data quote (refreshes every ${plan.intervalMin} min to stay on the free plan)`, ok: true });
