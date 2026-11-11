@@ -47,6 +47,20 @@
         "Intel",
         "INTC"
       ]
+    },
+    {
+      "id": "TTWO-USD-SIX",
+      "symbol": "TTWO.USD",
+      "name": "Take-Two Interactive Software, Inc.",
+      "category": "equity",
+      "exchange": "SIX",
+      "type": "Common Stock",
+      "provider": "twelvedata",
+      "newsQuery": "Take-Two Interactive Software stock",
+      "keywords": [
+        "Take-Two Interactive",
+        "TTWO.USD"
+      ]
     }
   ]
 }
