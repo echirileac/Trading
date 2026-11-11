@@ -551,7 +551,10 @@ function rsi(closes, n = 14) {
 const SIGMA_FLOOR = { fx: 0.0025, index: 0.005, etf: 0.005, metal: 0.005, equity: 0.008, energy: 0.012, crypto: 0.012 };
 
 const WEIGHT = { news: 0.45, trend: 0.2, momentum: 0.15, rsi: 0.2 };
-const DRIFT_K = 0.25; // drift per day = score x DRIFT_K x daily volatility
+const DRIFT_K = 0.25; // drift per day = score x DRIFT_K x daily volatility. Backtest fit (Nov 2026, 5 markets, ~980 forecasts): 0.20 +/- 0.17, so 0.25 stays
+// Width of the wide (90%) range in volatility units. A normal curve says 1.645, but over the last year only 87-89% of closes
+// landed inside that; 1.75 gives 90.5% / 90.1% / 89.5% at 1 / 3 / 5 days. The 68% range (z = 1) covered 69-70% and is unchanged.
+const Z90 = 1.75;
 // Volatility and the three price signals from a series of daily closes (last element = the price being forecast from).
 function techCore(series, category) {
   const rets = [];
@@ -606,7 +609,7 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
       center: rd(last * Math.exp(mu)),
       changePct: round(100 * (Math.exp(mu) - 1), 2),
       lo68: rd(last * Math.exp(mu - sd)), hi68: rd(last * Math.exp(mu + sd)),
-      lo90: rd(last * Math.exp(mu - 1.645 * sd)), hi90: rd(last * Math.exp(mu + 1.645 * sd)),
+      lo90: rd(last * Math.exp(mu - Z90 * sd)), hi90: rd(last * Math.exp(mu + Z90 * sd)),
       pUp: round(normCdf(mu / sd), 3)
     };
   }
@@ -659,7 +662,15 @@ function trackStats(done) {
       in68: a.filter((x) => x.actual >= x.lo68 && x.actual <= x.hi68).length,
       in90: a.filter((x) => x.actual >= x.lo90 && x.actual <= x.hi90).length,
       mae: a.length ? round(100 * mean(a.map((x) => Math.abs(x.actual - x.c) / x.p0)), 2) : null,
-      maeNaive: a.length ? round(100 * mean(a.map((x) => Math.abs(x.actual - x.p0) / x.p0)), 2) : null
+      maeNaive: a.length ? round(100 * mean(a.map((x) => Math.abs(x.actual - x.p0) / x.p0)), 2) : null,
+      signals: (() => { // per signal: [times it pointed the right way, times it pointed anywhere]
+        const s = {};
+        for (const x of a) {
+          if (!x.sig || x.actual === x.p0) continue;
+          for (const [id, v] of Object.entries(x.sig)) { if (!(Math.abs(v) > 0.02)) continue; const e = (s[id] ||= [0, 0]); e[1]++; if ((v > 0) === (x.actual > x.p0)) e[0]++; }
+        }
+        return s;
+      })()
     };
   }
   return out;
@@ -676,7 +687,7 @@ function backtest(px, opts) {
     for (const h of [1, 3, 5]) {
       if (t + h >= closes.length) continue;
       const mu = score * DRIFT_K * k.sigma * h, sd = k.sigma * Math.sqrt(h);
-      done.push({ h, p0, c: p0 * Math.exp(mu), lo68: p0 * Math.exp(mu - sd), hi68: p0 * Math.exp(mu + sd), lo90: p0 * Math.exp(mu - 1.645 * sd), hi90: p0 * Math.exp(mu + 1.645 * sd), actual: closes[t + h] });
+      done.push({ h, p0, c: p0 * Math.exp(mu), lo68: p0 * Math.exp(mu - sd), hi68: p0 * Math.exp(mu + sd), lo90: p0 * Math.exp(mu - Z90 * sd), hi90: p0 * Math.exp(mu + Z90 * sd), actual: closes[t + h], sig: { trend: k.trendSig, momentum: k.momSig, rsi: k.rsiSig } });
     }
   }
   const sessions = Math.max(0, closes.length - 1 - START);
@@ -734,7 +745,8 @@ async function trackRecord(m, px, fc, out, prev, log, now, opts) {
     for (const h of [1, 3, 5]) {
       const z = fc.horizons[h];
       log.open.push({ h, d0, made: new Date(now).toISOString(), target: ymd(nextSessions(Date.parse(d0 + 'T12:00:00Z'), h, opts.calendar === 'daily')),
-        p0: round(px.last, 6), c: z.center, lo68: z.lo68, hi68: z.hi68, lo90: z.lo90, hi90: z.hi90, pUp: z.pUp, score: fc.score });
+        p0: round(px.last, 6), c: z.center, lo68: z.lo68, hi68: z.hi68, lo90: z.lo90, hi90: z.hi90, pUp: z.pUp, score: fc.score,
+        sig: Object.fromEntries(fc.signals.map((s) => [s.id, s.value])) }); // kept so each signal, news included, can be scored later
     }
     if (!log.since) log.since = d0;
   }
@@ -756,7 +768,7 @@ function siteUrl() {
 
 const DATA_DIR = join(ROOT, 'site', 'data');
 const INTRADAY_KEEP_MS = 7 * 864e5; // 5-minute samples kept for the chart's day and week views
-const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.645. Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%). Each horizon targets the daily close that many sessions ahead (the first one is the next close at least 6 hours away). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.';
+const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.75 (wider than the textbook 1.645, which covered only 87-89% of closes in the backtest). Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%). Each horizon targets the daily close that many sessions ahead (the first one is the next close at least 6 hours away). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.';
 
 async function loadPrev(base, rel, now) {
   if (base && !OFFLINE) { try { const j = await get(`${base}data/${rel}?t=${now}`, { type: 'json', retries: 0 }); if (j?.price) return j; } catch { /* none */ } }

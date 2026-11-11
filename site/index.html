@@ -259,7 +259,7 @@
         <button class="btn" type="submit">Apply</button>
         <button class="btn ghost" type="button" id="tv-reset" hidden>Reset</button>
       </form>
-      <p class="note" id="tv-note" style="margin:8px 0 0">Live chart from TradingView, free and with its own data: real candles from 1 minute to 1 month, volume, 100+ indicators and drawing tools. Forex and crypto are real-time; stocks are delayed. Commodities and indices show the CFD price, which can differ slightly from the futures price the forecast uses. If the chart says the symbol is not available, type another TradingView symbol above and press Apply; it is remembered in this browser.</p>
+      <p class="note" id="tv-note" style="margin:8px 0 0">Live chart from TradingView, free and with its own data: real candles from 1 minute to 1 month, volume, 100+ indicators and drawing tools. Forex and crypto are real-time; stocks are delayed. Commodities and indices show one broker's CFD price. Its level can sit several percent away from the futures price the forecast uses (brokers price different contract months or spot), while the moves are nearly the same. If TradingView carries your own broker, use its symbol. If the chart says the symbol is not available, type another TradingView symbol above and press Apply; it is remembered in this browser.</p>
       <p class="pc-credit"><a href="https://www.tradingview.com/" target="_blank" rel="noopener nofollow">Track all markets on TradingView</a></p>
     </div>
     <div class="pc-forecast needs-data">
@@ -1060,6 +1060,13 @@
       const i = el('i'); i.style.width = w + '%'; i.style.left = s.value >= 0 ? '50%' : (50 - w) + '%'; i.style.background = s.value >= 0 ? 'var(--up)' : 'var(--down)';
       bar.append(i);
       row.append(top, bar, el('div', { class: 'sig-detail' }, s.detail));
+      // has this signal earned its weight? right-direction rate in the backtest and in the published log, for the selected horizon
+      const tk = DATA.track, bt = tk && tk.backtest && tk.backtest[H] && tk.backtest[H].signals && tk.backtest[H].signals[s.id], lv = tk && tk.live && tk.live[H] && tk.live[H].signals && tk.live[H].signals[s.id];
+      const rate = (x) => `${Math.round(100 * x[0] / x[1])}% of ${x[1]}`;
+      const parts = [];
+      if (s.id === 'news') parts.push('no backtest (old news cannot be replayed)'); else if (bt && bt[1] >= 10) parts.push(`backtest ${rate(bt)}`);
+      if (lv && lv[1] >= 5) parts.push(`published ${rate(lv)}`); else if (tk) parts.push('published record still building');
+      if (tk && parts.length) row.append(el('div', { class: 'sig-detail' }, `Pointed the right way over ${H} session${H > 1 ? 's' : ''}: ${parts.join(' · ')}. 50% is a coin flip.`));
       box.append(row);
     }
   }
