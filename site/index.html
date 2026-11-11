@@ -78,6 +78,20 @@
   .ranges div { background: var(--panel2); border-radius: 10px; padding: 10px 12px; }
   .ranges small { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
   .ranges b { font-size: 16px; font-variant-numeric: tabular-nums; }
+  .rk-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 10px 14px; margin: 4px 0 12px; }
+  .rk-form label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  .rk-form .row { display: flex; gap: 6px; align-items: center; }
+  .rk-form input, .rk-form select { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; color: var(--fg); font: 15px var(--font); padding: 8px 10px; min-width: 0; width: 100%; }
+  .rk-form select { width: auto; flex: none; min-width: 84px; }
+  .rk-form .row > span { white-space: nowrap; flex: none; }
+  .rk-form input:focus, .rk-form select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .rk-form .chips { margin: 0; }
+  .rk-out { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top: 0; }
+  .rk-out b.big { font-size: 20px; }
+  .rk-lines { list-style: none; margin: 12px 0 0; padding: 0; font-size: 13px; display: grid; gap: 6px; }
+  .rk-lines li.warn { color: var(--neutral); }
+  .rk-lines li.bad { color: var(--down); }
+  .rk-lines button { background: transparent; border: 1px solid var(--line); color: var(--fg); border-radius: 999px; padding: 2px 10px; font: 600 12px var(--font); cursor: pointer; margin-left: 6px; }
   .chart, .spark { position: relative; width: 100%; }
   .chart svg, .spark svg { display: block; width: 100%; height: auto; }
   svg text { font-family: var(--font); }
@@ -339,6 +353,28 @@
       <div id="signals"></div>
     </section>
   </div>
+
+  <section class="card needs-data" id="rk-card">
+    <h2>Risk helper</h2>
+    <p class="note">How big a position can be so that hitting the stop costs a fixed share of your account. The stop is based on the market's average daily range (ATR). Your inputs stay in this browser only.</p>
+    <div class="rk-form">
+      <label>Account balance<span class="row"><input id="rk-bal" type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 10000"><select id="rk-ccy" aria-label="Account currency"><option>RON</option><option>EUR</option><option>USD</option></select></span></label>
+      <label>Risk per trade (% of balance)<input id="rk-pct" type="number" min="0.05" max="20" step="0.05" inputmode="decimal"></label>
+      <label>Direction<span class="chips" id="rk-dir"><button type="button" data-d="1">Buy</button><button type="button" data-d="-1">Sell</button></span></label>
+      <label>Entry price<input id="rk-entry" type="number" step="any" inputmode="decimal"></label>
+      <label>Stop<span class="row"><select id="rk-stop" aria-label="Stop method"><option value="1.5">1.5 × ATR</option><option value="2">2 × ATR</option><option value="1">1 × ATR</option><option value="3">3 × ATR</option><option value="r90">Edge of 1-day 90% range</option><option value="custom">My own price</option></select><input id="rk-stop-px" type="number" step="any" inputmode="decimal" aria-label="Stop price" hidden></span></label>
+      <label><span id="rk-lot-lbl">Units per lot (XTB)</span><input id="rk-lot" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label id="rk-fx-wrap">USD rate<span class="row"><span id="rk-fx-pre">1 USD =</span><input id="rk-fx" type="number" min="0" step="any" inputmode="decimal"><span id="rk-fx-ccy"></span></span></label>
+    </div>
+    <div class="ranges rk-out">
+      <div><small>Position size</small><b class="big" id="rk-size">—</b></div>
+      <div><small>Loss if the stop is hit</small><b id="rk-loss">—</b></div>
+      <div><small>Stop price</small><b id="rk-stop-out">—</b></div>
+      <div><small>Margin needed (XTB retail)</small><b id="rk-margin">—</b></div>
+    </div>
+    <ul class="rk-lines" id="rk-lines"></ul>
+    <p class="note" style="margin:10px 0 0">Stops are not guaranteed: prices can jump past them over weekends or on reports. Spread and overnight costs are not included. This is arithmetic, not advice: check the numbers in xStation before trading.</p>
+  </section>
 
   <div class="grid2 needs-data">
     <section class="card">
@@ -678,7 +714,7 @@
     $('r90').textContent = `${usd(h.lo90, 2)} – ${usd(h.hi90, 2)}`;
     drawEvents(h);
 
-    drawAI(); setView(); tvUpdate(); pcUpdate(); drawTrack(); drawIntraday(); drawSignals(); drawLevels(); drawNews(); drawAlerts(); drawSources();
+    drawAI(); setView(); tvUpdate(); pcUpdate(); drawTrack(); drawIntraday(); drawSignals(); drawLevels(); drawRisk(); drawNews(); drawAlerts(); drawSources();
     $('method').textContent = DATA.method;
   }
 
@@ -1220,6 +1256,159 @@
   }
 
   // ---------- news ----------
+  // ---------- risk helper ----------
+  // XTB contract details. Commodities: units per lot from XTB's specification tables (NATGAS level x 30 000 USD);
+  // shown as "to check" until the user confirms them, because brokers differ by up to 30x on these.
+  const XTB = {
+    NATGAS: { sym: 'NATGAS', unit: 'MMBtu', lot: 30000, step: 0.01, margin: 10, sure: false },
+    BRENT: { sym: 'OIL', unit: 'barrels', lot: 100, step: 0.01, margin: 10, sure: false }
+  };
+  function xtbSpec(meta) {
+    if (XTB[meta.id]) return XTB[meta.id];
+    const c = meta.category;
+    if (c === 'equity' || c === 'etf') return { sym: `${meta.symbol}.US`, unit: 'shares', lot: 1, step: 1, margin: 20, sure: true };
+    if (c === 'fx') return { sym: (meta.symbol || '').replace('/', ''), unit: 'units', lot: 100000, step: 0.01, margin: /^(EUR|GBP|USD|JPY|CHF|CAD)\/(EUR|GBP|USD|JPY|CHF|CAD)$/.test(meta.symbol || '') ? 3.33 : 5, sure: false };
+    if (c === 'crypto') return { sym: (meta.symbol || '').replace('/', ''), unit: 'coins', lot: 1, step: 0.01, margin: 50, sure: false };
+    if (c === 'index') return { sym: meta.symbol, unit: 'units', lot: 1, step: 0.01, margin: 5, sure: false };
+    return { sym: meta.symbol, unit: 'units', lot: 1, step: 0.01, margin: /XAU|GOLD/i.test(meta.symbol || '') ? 5 : 10, sure: false };
+  }
+  const rkGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem('rk-' + k)); return v == null ? d : v; } catch { return d; } };
+  const rkSet = (k, v) => keep('rk-' + k, v);
+  let RK_FX = null; // { date, rates: { EUR, RON } } per 1 USD, ECB reference rates
+  function rkLoadFx() {
+    const c = rkGet('fx', null);
+    if (c && Date.now() - c.at < 12 * 36e5) { RK_FX = c; return; }
+    const urls = ['https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR,RON', 'https://api.frankfurter.app/latest?from=USD&to=EUR,RON'];
+    (async () => {
+      for (const u of urls) {
+        try { const r = await fetch(u); if (!r.ok) continue; const j = await r.json(); if (j?.rates?.EUR) { RK_FX = { at: Date.now(), date: j.date, rates: j.rates }; rkSet('fx', RK_FX); if (DATA?.price) drawRisk(); return; } } catch { /* next */ }
+      }
+    })();
+  }
+  const normCdf = (x) => { const t = 1 / (1 + 0.2316419 * Math.abs(x)); const d = 0.3989423 * Math.exp(-x * x / 2); const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return x > 0 ? 1 - p : p; };
+  function atr14(daily) {
+    const bars = daily.slice(0, -1).slice(-60); // completed sessions only
+    if (bars.length < 15) return null;
+    let a = null;
+    for (let i = 1; i < bars.length; i++) {
+      const b = bars[i], pc = bars[i - 1].c;
+      const h = b.h ?? b.c, l = b.l ?? b.c;
+      const tr = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+      a = i <= 14 ? (a ?? 0) + tr / 14 : (a * 13 + tr) / 14;
+    }
+    return a;
+  }
+  let RK_ID = null;
+  function drawRisk() {
+    if (!DATA?.price) return;
+    const meta = DATA.meta || { id: 'NATGAS', category: 'energy', symbol: 'NG' };
+    const id = meta.id || 'NATGAS', spec = xtbSpec(meta), p = DATA.price, f = DATA.forecast;
+    const ccy = rkGet('ccy', 'RON');
+    // fill the form when the market changes
+    if (RK_ID !== id) {
+      RK_ID = id;
+      $('rk-bal').value = rkGet('bal', '') ?? '';
+      $('rk-ccy').value = ccy;
+      $('rk-pct').value = rkGet('pct', 1);
+      const dirSaved = rkGet('dir-' + id, null);
+      $('rk-dir').dataset.d = String(dirSaved ?? (f.score < -0.15 ? -1 : 1));
+      $('rk-entry').value = '';
+      $('rk-stop').value = rkGet('stop', '1.5');
+      $('rk-stop-px').value = '';
+      $('rk-lot').value = rkGet('lot-' + id, spec.lot);
+    }
+    $('rk-entry').placeholder = fmtNum(p.last, DEC) + ' (live)';
+    const lotOk = spec.sure || rkGet('lot-ok-' + id, false);
+    $('rk-lot-lbl').textContent = `Units per lot (${spec.unit}) · xStation: ${spec.sym}`;
+    const d = Number($('rk-dir').dataset.d) || 1;
+    $('rk-dir').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.d) === d)));
+    const method = $('rk-stop').value;
+    $('rk-stop-px').hidden = method !== 'custom';
+    // currency: prices are in USD (stocks, commodities); currencies are left as quoted
+    const quoteUsd = meta.category !== 'fx' || /\/USD$/.test(meta.symbol || '');
+    const fxWrap = $('rk-fx-wrap');
+    fxWrap.hidden = ccy === 'USD' || !quoteUsd;
+    if (!fxWrap.hidden) {
+      $('rk-fx-ccy').textContent = ccy;
+      const live = RK_FX?.rates?.[ccy];
+      const manual = Number(rkGet('fx-' + ccy, 0));
+      if (document.activeElement !== $('rk-fx')) $('rk-fx').value = manual || (live ? live.toFixed(4) : '');
+      $('rk-fx').title = live ? `ECB reference rate ${RK_FX.date}: ${live.toFixed(4)}` : 'Type the rate if it does not load';
+    }
+    const fx = ccy === 'USD' || !quoteUsd ? 1 : Number($('rk-fx').value) || null;  // account currency per 1 USD
+    const out = (k, v) => { $(k).textContent = v; };
+    const lines = $('rk-lines'); lines.replaceChildren();
+    const line = (txt, cls) => { const li = el('li', cls ? { class: cls } : {}, txt); lines.append(li); return li; };
+
+    const atr = atr14(p.daily || []);
+    const entry = Number($('rk-entry').value) || p.last;
+    let stop = null;
+    if (method === 'custom') stop = Number($('rk-stop-px').value) || null;
+    else if (method === 'r90') stop = d > 0 ? f.horizons[1].lo90 : f.horizons[1].hi90;
+    else if (atr) stop = entry - d * Number(method) * atr;
+    const dist = stop != null ? (entry - stop) * d : null;
+    const bal = Number($('rk-bal').value), pct = Number($('rk-pct').value);
+    const lot = Number($('rk-lot').value) || spec.lot;
+    const money = (usdAmt) => (fx ? `${Math.round(usdAmt * fx).toLocaleString('en-US')} ${ccy}` + (ccy !== 'USD' && quoteUsd ? ` ($${Math.round(usdAmt).toLocaleString('en-US')})` : '') : `$${Math.round(usdAmt).toLocaleString('en-US')}`);
+    out('rk-stop-out', stop != null ? usd(stop) : '—');
+    if (atr) line(`Average daily range (ATR, 14 sessions): ${usd(atr)}, ${(100 * atr / p.last).toFixed(1)}% of the price.`);
+    else line('Not enough daily history yet for the average daily range; use your own stop price.', 'warn');
+    if (!lotOk) {
+      const li = line(`Check the lot size: in xStation open ${spec.sym} → Specification → "Nominal value of 1 lot". If it shows price × ${Number(lot).toLocaleString('en-US')}, this is right.`, 'warn');
+      const b = el('button', { type: 'button' }, 'It matches'); b.addEventListener('click', () => { rkSet('lot-ok-' + id, true); drawRisk(); }); li.append(b);
+    }
+    if (dist == null || !(dist > 0)) {
+      ['rk-size', 'rk-loss', 'rk-margin'].forEach((k) => out(k, '—'));
+      if (stop != null) line(d > 0 ? 'For a buy, the stop must be below the entry.' : 'For a sell, the stop must be above the entry.', 'bad');
+      return;
+    }
+    if (!(bal > 0) || !(pct > 0) || !fx) {
+      ['rk-size', 'rk-loss', 'rk-margin'].forEach((k) => out(k, '—'));
+      line(!(bal > 0) ? 'Enter your account balance to get a position size.' : !fx ? `Enter the USD to ${ccy} rate.` : 'Enter the risk per trade.', 'warn');
+      return;
+    }
+    const riskUsd = (bal * pct / 100) / fx;
+    const units = riskUsd / dist;
+    const lots = Math.floor(units / lot / spec.step + 1e-9) * spec.step;
+    const lotTxt = (x) => spec.step >= 1 ? `${x.toLocaleString('en-US')} ${spec.unit}` : `${x.toFixed(2)} lot${x === 1 ? '' : 's'}`;
+    if (lots <= 0) {
+      const minLoss = spec.step * lot * dist;
+      out('rk-size', '0'); out('rk-loss', '—'); out('rk-margin', '—');
+      line(`Too small: even the minimum ${lotTxt(spec.step)} would lose ${money(minLoss)} at this stop (${(100 * minLoss * fx / bal).toFixed(2)}% of the balance). Use a closer stop, a higher risk %, or skip the trade.`, 'bad');
+    } else {
+      const lossUsd = lots * lot * dist, notional = lots * lot * entry;
+      out('rk-size', lotTxt(lots) + (spec.step < 1 ? ` · ${Math.round(lots * lot).toLocaleString('en-US')} ${spec.unit}` : ''));
+      out('rk-loss', `${money(lossUsd)} · ${(100 * lossUsd * fx / bal).toFixed(2)}%`);
+      out('rk-margin', `${money(notional * spec.margin / 100)} · ${spec.margin}%`);
+      if (notional * spec.margin / 100 * fx > bal) line('The margin is more than the balance, so XTB would not open this position. Lower the risk %, or use a wider stop (a wider stop gives a smaller size).', 'bad');
+      line(`Exposure: ${money(notional)} (${(notional * fx / bal).toFixed(1)}× the balance). Each ${usd(atr || dist)} move ${atr ? '(one average day)' : ''} is ${money(lots * lot * (atr || dist))}.`);
+    }
+    // how the stop compares with normal day-to-day noise, from the forecast's daily volatility
+    if (f.sigmaDaily) {
+      const z = Math.log(1 + dist / entry) / f.sigmaDaily;
+      const pDay = 1 - normCdf(z);
+      const msg = `Stop ${usd(dist)} away (${(100 * dist / entry).toFixed(1)}%${atr ? `, ${(dist / atr).toFixed(1)}× ATR` : ''}). A daily close that far against you happens on about ${Math.round(100 * pDay)}% of days; intraday touches are more frequent.`;
+      line(msg, z < 1 ? 'warn' : '');
+      if (z < 1) line('That is inside one normal day\'s movement, so ordinary noise is likely to stop you out.', 'warn');
+    }
+    // reward compared with risk, using the model's centres for 1, 3 and 5 days
+    const rr = [1, 3, 5].map((h) => { const c = f.horizons[h]?.center; return c ? `${h}d ${((c - entry) * d / dist).toFixed(2)}R` : null; }).filter(Boolean);
+    if (rr.length) line(`Model's expected move as a multiple of the risk (R): ${rr.join(' · ')}. ${(f.horizons[3]?.center - entry) * d < 0 ? 'The model leans against this direction.' : 'Below 1R means the expected move is smaller than the risk.'} The model has shown no reliable direction edge so far: treat this as context.`);
+    if (pct > 2) line('Many traders keep the risk per trade at 1-2% so a losing streak stays survivable.', 'warn');
+    if ((DATA.events || []).some((e) => e.date <= f.horizons[1].targetDate)) line(`Scheduled report before the next close (${DATA.events.filter((e) => e.date <= f.horizons[1].targetDate).map((e) => e.name).join(', ')}): price can jump past a stop.`, 'warn');
+  }
+  ['rk-bal', 'rk-pct', 'rk-entry', 'rk-stop-px', 'rk-lot', 'rk-fx'].forEach((k) => $(k).addEventListener('input', () => {
+    const v = $(k).value;
+    if (k === 'rk-bal') rkSet('bal', v); if (k === 'rk-pct') rkSet('pct', v);
+    if (k === 'rk-lot' && RK_ID) { rkSet('lot-' + RK_ID, Number(v) || null); rkSet('lot-ok-' + RK_ID, true); }
+    if (k === 'rk-fx') rkSet('fx-' + $('rk-ccy').value, Number(v) || 0);
+    drawRisk();
+  }));
+  $('rk-ccy').addEventListener('change', () => { rkSet('ccy', $('rk-ccy').value); drawRisk(); });
+  $('rk-stop').addEventListener('change', () => { rkSet('stop', $('rk-stop').value); if ($('rk-stop').value === 'custom' && !$('rk-stop-px').value && $('rk-stop-out').textContent !== '—') $('rk-stop-px').value = $('rk-stop-out').textContent.replace(/[^0-9.]/g, ''); drawRisk(); });
+  $('rk-dir').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { $('rk-dir').dataset.d = b.dataset.d; if (RK_ID) rkSet('dir-' + RK_ID, Number(b.dataset.d)); drawRisk(); }));
+  rkLoadFx();
+
   // ---------- alerts ----------
   function drawAlerts() {
     const A = DATA.alerts, list = $('al-list');

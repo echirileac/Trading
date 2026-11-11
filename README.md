@@ -57,6 +57,15 @@ The first build after this was added only records the current state, so nothing 
 
 Alerts then arrive within about 5 minutes of happening, with a link to the market. Optional repository **variables**: `ALERT_TYPES` (default `move,level,flip,analyst,event`), `ALERT_MARKETS` (e.g. `NATGAS,BRENT`; default all), `ALERT_QUIET_HOURS` (e.g. `23-7`: sent without sound during those hours, Bucharest time), `ALERT_EVENT_LEAD_MIN` (default 60), `ALERT_TZ` (default `Europe/Bucharest`). The site only sends messages, so the same bot can also run the separate alert bot.
 
+## Risk helper (added November 2026)
+
+A card on each market page works out a position size so that hitting the stop costs a chosen share of your account. Everything runs in your browser; your inputs are remembered there and never sent anywhere.
+
+- **Inputs:** account balance and currency (RON, EUR or USD; the USD rate is the ECB reference rate from frankfurter.dev, or type your own), risk per trade in %, buy or sell, entry (live price by default) and stop: 1, 1.5, 2 or 3 × the 14-session ATR (average daily range), the edge of the 1-day 90% range, or your own price.
+- **Output:** size in lots (XTB steps of 0.01) or shares, the loss at the stop, the stop price, and the margin XTB asks of retail clients (10% commodities, 20% stock CFDs, 5% indices and gold, 3.33-5% currencies, 50% crypto). It also says how often a daily close moves that far against you, the model's expected move as a multiple of the risk, and warns about reports before the next close.
+- **Lot sizes:** stock CFDs are 1 share per lot. For commodities the helper starts from XTB's specification tables (NATGAS: 30,000 MMBtu per lot; OIL: 100 barrels) but asks you to confirm in xStation (instrument → Specification → nominal value of 1 lot), because brokers differ by up to 30× here. Type your own value to change it.
+- Not included: spread, overnight costs, gaps past the stop.
+
 ## Track record (added November 2026)
 
 - **Published log:** once per trading day, just after the close (16:15 New York for stocks, 17:00 for NATGAS and Brent, 17:15 for currencies and metals, 00:00 UTC for crypto), the build writes down that market's 1, 3 and 5-day forecasts. Each is scored against the actual close 1, 3 or 5 sessions later. The page shows, per horizon: how often the direction was right, how often the close landed inside the 68% and 90% ranges, and the average miss compared with assuming no change.
