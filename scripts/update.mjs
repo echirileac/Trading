@@ -1031,10 +1031,11 @@ async function aiFor(m, out, prevAi, now) {
 // The keyword lists are built for natural gas and commodities; for a company they mostly catch generic words.
 // Here a free Groq model reads each new headline once and says (a) whether the story is really about this market
 // and (b) its likely effect on the price over 1-5 sessions (-2..+2). Results are cached per headline, so only new
-// headlines are sent, in one batch per market per news refresh. These Llama models have their own free daily
-// allowance on Groq (separate from the gpt-oss models the analyst note uses). Any failure keeps the keyword scores.
+// headlines are sent, in one batch per market per news refresh. gpt-oss-20b goes first (the analyst note starts on
+// gpt-oss-120b, and each Groq model has its own free daily allowance). Groq's Llama models left the free plan on
+// 16 Aug 2026. A model Groq does not serve is skipped for the rest of the run. Any failure keeps the keyword scores.
 const NEWS_AI_VERSION = 1;
-const NEWS_AI_MODELS = (process.env.NEWS_AI_MODELS || 'llama-3.3-70b-versatile,llama-3.1-8b-instant').split(',').map((x) => x.trim()).filter(Boolean);
+const NEWS_AI_MODELS = (process.env.NEWS_AI_MODELS || 'openai/gpt-oss-20b,openai/gpt-oss-120b').split(',').map((x) => x.trim()).filter(Boolean);
 const NEWS_AI_CATEGORIES = (process.env.NEWS_AI_CATEGORIES || 'equity,etf').split(',').map((x) => x.trim()).filter(Boolean);
 const NEWS_AI_BATCH = 20;          // headlines per request
 const NEWS_AI_RETRY_MIN = 14;      // after a failed attempt, wait for the next news refresh
@@ -1068,14 +1069,14 @@ async function aiScoreNews(m, news, prevNews, now) {
       const key = `groq/${model}`;
       if (exhausted.has(key)) continue;
       try {
-        const r = await openAIChat(GROQ_URL, GROQ_KEY, model, NEWS_AI_SYSTEM, user, {}, { temperature: 0, max_tokens: 100 + 50 * todo.length, response_format: { type: 'json_object' } });
+        const r = await openAIChat(GROQ_URL, GROQ_KEY, model, NEWS_AI_SYSTEM, user, {}, { temperature: 0, max_tokens: (/gpt-oss|qwen/i.test(model) ? 1200 : 100) + 60 * todo.length, response_format: { type: 'json_object' } });
         const j = JSON.parse(r.text.slice(r.text.indexOf('{'), r.text.lastIndexOf('}') + 1));
         let n = 0;
         for (const x of Array.isArray(j.items) ? j.items : []) {
           const it = todo[Number(x.i) - 1];
           const s = Math.round(Number(x.score));
           if (!it || it.ai || !isFinite(s)) continue;
-          it.ai = { v: NEWS_AI_VERSION, s: clamp(s, -2, 2), rel: x.about !== false && x.about !== 'false', why: String(x.why ?? '').replace(/\s+/g, ' ').trim().slice(0, 100), m: model.replace(/-versatile|-instant/, '') };
+          it.ai = { v: NEWS_AI_VERSION, s: clamp(s, -2, 2), rel: x.about !== false && x.about !== 'false', why: String(x.why ?? '').replace(/\s+/g, ' ').trim().slice(0, 100), m: model.replace(/^.*\//, '') };
           n++;
         }
         if (!n) throw new Error(`no usable scores in the reply: ${r.text.replace(/\s+/g, ' ').slice(0, 160)}`);
@@ -1084,10 +1085,11 @@ async function aiScoreNews(m, news, prevNews, now) {
         done = true;
         break;
       } catch (e) {
-        if ([429, 403, 413].includes(e.status)) exhausted.add(key);
+        if ([429, 403, 413, 404].includes(e.status) || /does not exist|model_not_found|decommissioned/i.test(e.message)) exhausted.add(key);
         errors.push(`${model}: ${String(e.message).slice(0, 160)}`);
       }
     }
+    if (!done && !errors.length) errors.push('every AI model is unavailable or at its limit for this run');
     if (!done) {
       news.scorer = { kind: 'ai', model: prevScorer.model, triedAt: new Date(now).toISOString(), error: errors.join(' | ').slice(0, 300) };
       console.log(`::warning title=AI news ${m.id}::keyword scores kept for new headlines - ${errors.join(' | ').slice(0, 300)}`);
