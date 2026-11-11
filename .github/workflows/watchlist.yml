@@ -36,6 +36,7 @@ jobs:
         run: node scripts/watchlist.mjs
         env:
           ISSUE_TITLE: ${{ github.event.issue.title }}
+          TWELVE_DATA_KEY: ${{ secrets.TWELVE_DATA_KEY }}   # lets the script refuse listings the free plan cannot serve
           ISSUE_BODY: ${{ github.event.issue.body }}
       - name: Commit, rebuild the site, close the issue
         env:

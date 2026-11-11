@@ -1,6 +1,7 @@
 // NATGAS live forecast builder.
 // Runs in GitHub Actions every ~5 minutes. No dependencies (Node 20+).
-// 1. Fetches Henry Hub front-month prices (Yahoo Finance, fallbacks: CNBC quote, Stooq daily).
+// 1. Fetches prices: CNBC live quote + self-maintained daily history for futures, Twelve Data for other markets.
+//    (Yahoo Finance blocks GitHub's servers with HTTP 429; it is only tried when USE_YAHOO=1.)
 // 2. Fetches headlines from trusted outlets (Google News RSS filtered by source + EIA RSS) about every 15 min.
 // 3. Scores news sentiment and technical signals, then builds 1/3/5-trading-day forecasts.
 // 4. Writes site/data/latest.json for the static page.
@@ -15,6 +16,7 @@ const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Geck
 const NEWS_EVERY_MIN = Number(process.env.NEWS_EVERY_MIN || 15);
 const OFFLINE = process.env.OFFLINE_FIXTURES; // folder with fixtures for local testing
 const FAILED = []; // every failed source, for diagnostics
+const USE_YAHOO = process.env.USE_YAHOO === '1'; // off: Yahoo answers HTTP 429 to GitHub Actions on every run
 
 // ---------- helpers ----------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -152,11 +154,13 @@ async function seedDaily(file = 'seed-daily.json') {
 async function loadPrices(prev, now, cfg = { yahoo: 'NG=F', cnbc: '@NG.1', seed: 'seed-daily.json' }) {
   const status = [];
   let daily = null, intraday = null, meta = {}, last = null, prevClose = null, source = null, q = null;
-  try {
-    const d = await yahoo('1y', '1d', cfg.yahoo);
-    daily = d.rows; meta = d.meta; source = `Yahoo Finance (${cfg.yahoo})`;
-    status.push({ name: 'Yahoo Finance daily', ok: true });
-  } catch (e) { status.push({ name: 'Yahoo Finance daily', ok: false, error: e.message }); }
+  if (USE_YAHOO && cfg.yahoo) {
+    try {
+      const d = await yahoo('1y', '1d', cfg.yahoo);
+      daily = d.rows; meta = d.meta; source = `Yahoo Finance (${cfg.yahoo})`;
+      status.push({ name: 'Yahoo Finance daily', ok: true });
+    } catch (e) { status.push({ name: 'Yahoo Finance daily', ok: false, error: e.message }); }
+  }
   if (daily) {
     try { const i = await yahoo('5d', '5m', cfg.yahoo); intraday = i.rows; meta = { ...meta, ...i.meta }; status.push({ name: 'Yahoo Finance intraday', ok: true }); }
     catch (e) { status.push({ name: 'Yahoo Finance intraday', ok: false, error: e.message }); }
@@ -521,12 +525,17 @@ async function loadNews(prev, now, prof = GAS_PROFILE) {
 
 // ---------- signals + forecast ----------
 function rsi(closes, n = 14) {
+  // Wilder's smoothing: the same formula as the chart's RSI panel and the analyst note
   if (closes.length <= n) return null;
   let g = 0, l = 0;
-  for (let i = closes.length - n; i < closes.length; i++) { const d = closes[i] - closes[i - 1]; if (d > 0) g += d; else l -= d; }
-  if (l === 0) return 100;
-  const rs = g / l; return 100 - 100 / (1 + rs);
+  for (let i = 1; i <= n; i++) { const d = closes[i] - closes[i - 1]; if (d > 0) g += d; else l -= d; }
+  g /= n; l /= n;
+  for (let i = n + 1; i < closes.length; i++) { const d = closes[i] - closes[i - 1]; g = (g * (n - 1) + Math.max(d, 0)) / n; l = (l * (n - 1) + Math.max(-d, 0)) / n; }
+  return l === 0 ? 100 : 100 - 100 / (1 + g / l);
 }
+// Lowest daily volatility the model will assume, per asset class. One floor for everything (1.2%) made
+// the ranges of calm markets (currencies, indices) about twice too wide.
+const SIGMA_FLOOR = { fx: 0.0025, index: 0.005, etf: 0.005, metal: 0.005, equity: 0.008, energy: 0.012, crypto: 0.012 };
 
 function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   const closes = px.daily.map((r) => r.c);
@@ -539,7 +548,7 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   for (let i = 1; i < series.length; i++) rets.push(clamp(Math.log(series[i] / series[i - 1]), -0.12, 0.12)); // caps contract-roll jumps
   const sigma20 = stdev(rets.slice(-20));
   const sigma60 = stdev(rets.slice(-60));
-  const sigma = clamp(Math.sqrt(0.6 * sigma20 ** 2 + 0.4 * sigma60 ** 2), 0.012, 0.09);
+  const sigma = clamp(Math.sqrt(0.6 * sigma20 ** 2 + 0.4 * sigma60 ** 2), SIGMA_FLOOR[opts.category] ?? 0.012, 0.09);
 
   const last = px.last;
   const s20 = sma(series, 20), s50 = sma(series, 50), s200 = sma(series, 200);
@@ -613,7 +622,7 @@ function siteUrl() {
 
 const DATA_DIR = join(ROOT, 'site', 'data');
 const INTRADAY_KEEP_MS = 7 * 864e5; // 5-minute samples kept for the chart's day and week views
-const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.645. Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%).';
+const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.645. Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.';
 
 async function loadPrev(base, rel, now) {
   if (base && !OFFLINE) { try { const j = await get(`${base}data/${rel}?t=${now}`, { type: 'json', retries: 0 }); if (j?.price) return j; } catch { /* none */ } }
@@ -635,7 +644,7 @@ function packOutput(m, px, news, fc, now, market, extra = {}) {
   const dec = m.category === 'fx' ? (px.last >= 20 ? 3 : 5) : px.last >= 10 ? 2 : px.last >= 1 ? 3 : 5;
   return {
     generatedAt: new Date(now).toISOString(),
-    meta: { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', provider: m.provider, decimals: dec, ...extra.meta },
+    meta: { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', provider: m.provider, decimals: dec, tv: m.tv || undefined, ...extra.meta },
     instrument: m.instrument || `${m.name} (${m.symbol})`,
     market,
     price: {
@@ -798,12 +807,12 @@ async function aiFor(m, out, prevAi, now) {
 }
 
 // ---------- NATGAS (CNBC quote + self-maintained history) ----------
-const NATGAS = { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy', provider: 'cnbc', instrument: 'Henry Hub natural gas, NYMEX front-month futures (NG=F)' };
+const NATGAS = { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy', provider: 'cnbc', tv: 'OANDA:NATGASUSD', instrument: 'Henry Hub natural gas, NYMEX front-month futures (NG=F)' };
 async function buildNatgas(base, now) {
   const prev = (await loadPrev(base, 'm/NATGAS.json', now)) || (await loadPrev(base, 'latest.json', now));
   const px = await loadPrices(prev, now);
   const news = await loadNews(prev, now, GAS_PROFILE);
-  const fc = buildForecast(px, news, now, { calendar: 'ng' });
+  const fc = buildForecast(px, news, now, { calendar: 'ng', category: 'energy' });
   const out = packOutput(NATGAS, px, news, fc, now, marketStatus(new Date(now)));
   out.ai = await aiFor(NATGAS, out, prev?.ai, now);
   await save('m/NATGAS.json', out);
@@ -818,7 +827,7 @@ async function buildCnbcFutures(m, base, now, plan) {
   prof.maxReads = Math.min(prof.maxReads, plan.readsLeft);
   const news = await loadNews(prev, now, prof);
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
-  const fc = buildForecast(px, news, now, { calendar: 'ng' });
+  const fc = buildForecast(px, news, now, { calendar: 'ng', category: m.category });
   const out = packOutput(m, px, news, fc, now, marketStatus(new Date(now)));
   out.ai = await aiFor(m, out, prev?.ai, now);
   await save(`m/${m.id}.json`, out);
@@ -884,14 +893,14 @@ async function buildTwelveData(m, prev, now, plan) {
   prof.maxReads = Math.min(prof.maxReads, plan.readsLeft);
   const news = await loadNews(prev, now, prof);
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
-  const fc = buildForecast(px, news, now, { calendar: m.category === 'crypto' ? 'daily' : 'weekday', today: daily.at(-1) ? new Date(daily.at(-1).t).toISOString().slice(0, 10) : todayUTC });
+  const fc = buildForecast(px, news, now, { category: m.category, calendar: m.category === 'crypto' ? 'daily' : 'weekday', today: daily.at(-1) ? new Date(daily.at(-1).t).toISOString().slice(0, 10) : todayUTC });
   return { out: packOutput({ ...m, provider: 'twelvedata' }, px, news, fc, now, market, { meta: { historyDate }, price: { quotedAt: quotedAt ? new Date(quotedAt).toISOString() : null } }) };
 }
 
 function summary(out, m, error) {
-  if (!out) return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', error };
+  if (!out) return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', tv: m.tv || undefined, error };
   const h = out.forecast.horizons;
-  return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', last: out.price.last, changePct: out.price.changePct, decimals: out.meta.decimals,
+  return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', tv: m.tv || undefined, last: out.price.last, changePct: out.price.changePct, decimals: out.meta.decimals,
     market: out.market, ai: out.ai?.status === 'ok' ? { stance: out.ai.stance, headline: out.ai.headline } : null, bias: out.forecast.bias, score: out.forecast.score, h: Object.fromEntries(Object.entries(h).map(([k, v]) => [k, { center: v.center, changePct: v.changePct, pUp: v.pUp }])), asOf: out.price.asOf, error };
 }
 

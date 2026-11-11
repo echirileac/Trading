@@ -27,6 +27,20 @@ function newsSetup(m) {
   }
 }
 
+// Asks Twelve Data for a quote with the site's own key. Returns the reason when the plan does not cover the listing, '' otherwise
+// (also '' when there is no key or no answer: an add is never blocked by a network problem).
+async function planProblem(symbol, exchange) {
+  const key = process.env.TWELVE_DATA_KEY;
+  if (!key) return '';
+  try {
+    const u = new URL('https://api.twelvedata.com/quote');
+    u.searchParams.set('symbol', symbol); if (exchange) u.searchParams.set('exchange', exchange); u.searchParams.set('apikey', key);
+    const j = await (await fetch(u, { signal: AbortSignal.timeout(15000) })).json();
+    const msg = String(j?.message || '');
+    return j?.status === 'error' && /plan|upgrad|pricing/i.test(msg) ? msg.replace(/\s*Consider upgrading.*$/i, '').slice(0, 140) : '';
+  } catch { return ''; }
+}
+
 async function main() {
   const title = String(process.env.ISSUE_TITLE || '');
   const body = String(process.env.ISSUE_BODY || '');
@@ -57,6 +71,8 @@ async function main() {
   const id = (symbol + (['equity', 'etf', 'index'].includes(category) && exchange ? '-' + exchange : '')).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toUpperCase();
   if (wl.markets.some((m) => m.id === id)) return out(`${name} (${symbol}) is already on the watchlist.`, false);
   if (wl.markets.length >= MAX) return out(`The watchlist already has ${MAX} markets, the most the free Twelve Data plan can refresh. Remove one first.`, false);
+  const blocked = await planProblem(symbol, ['equity', 'etf'].includes(category) ? exchange : '');
+  if (blocked) return out(`${name} (${symbol}${exchange ? ' on ' + exchange : ''}) was not added: this listing is not in the free Twelve Data plan (${blocked}). Search again and pick the US listing (NASDAQ or NYSE), which is free.`, false);
   const m = { id, symbol, name, category, exchange, type: String(req.type || '').slice(0, 40), provider: 'twelvedata', ...newsSetup({ symbol, name, category }) };
   wl.markets.push(m);
   await writeFile(file, JSON.stringify(wl, null, 2) + '\n');

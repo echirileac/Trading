@@ -18,7 +18,8 @@
         "crude oil",
         "oil prices",
         "OPEC"
-      ]
+      ],
+      "tv": "TVC:UKOIL"
     },
     {
       "id": "MRNA-NASDAQ",
@@ -49,17 +50,17 @@
       ]
     },
     {
-      "id": "TTWO-USD-SIX",
-      "symbol": "TTWO.USD",
+      "id": "TTWO-NASDAQ",
+      "symbol": "TTWO",
       "name": "Take-Two Interactive Software, Inc.",
       "category": "equity",
-      "exchange": "SIX",
+      "exchange": "NASDAQ",
       "type": "Common Stock",
       "provider": "twelvedata",
-      "newsQuery": "Take-Two Interactive Software stock",
+      "newsQuery": "Take-Two Interactive stock",
       "keywords": [
         "Take-Two Interactive",
-        "TTWO.USD"
+        "TTWO"
       ]
     }
   ]
