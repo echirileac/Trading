@@ -682,12 +682,14 @@ async function earningsDate(m, prev, now) {
     const a = txt.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* (\d{1,2}), (\d{4})/), b = txt.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
     const t = a ? Date.parse(`${a[1]} ${a[2]}, ${a[3]} 12:00 UTC`) : b ? Date.UTC(+b[3], +b[1] - 1, +b[2], 12) : NaN;
     if (isFinite(t) && t - now > -2 * 864e5 && t - now < 200 * 864e5) return { date: ymd(t), checked: today, at: new Date(now).toISOString(), ok: true };
+    // Right after a report Nasdaq answers normally but has no next date yet ("...hasn't provided us with the upcoming earnings report date")
+    if (/hasn.t provided|Earnings announcement\* for [^:"]+: ?"/i.test(txt)) return { date: keep, checked: today, at: new Date(now).toISOString(), ok: true, pending: true };
     return { date: keep, checked: today, at: new Date(now).toISOString(), ok: false, error: 'no date in the answer' };
   } catch (e) { return { date: keep, checked: today, at: new Date(now).toISOString(), ok: false, error: e.message }; }
 }
 async function attachEvents(m, out, prev, now) {
   const earn = await earningsDate(m, prev, now);
-  if (earn) { out.meta.earnings = earn; out.sources.push({ name: 'Next earnings date (Nasdaq)', ok: !!earn.ok, error: earn.error }); }
+  if (earn) { out.meta.earnings = earn; out.sources.push({ name: earn.pending && !earn.date ? 'Next earnings date (Nasdaq): not announced yet' : 'Next earnings date (Nasdaq)', ok: !!earn.ok, error: earn.error }); }
   out.events = marketEvents(m, now, earn);
   for (const h of Object.values(out.forecast.horizons)) h.events = out.events.filter((e) => e.date <= h.targetDate).map((e) => e.id);
 }
