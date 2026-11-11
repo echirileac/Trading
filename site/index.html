@@ -186,6 +186,15 @@
   .tr-log td.ref { color: var(--muted); font-size: 12px; }
   .tr-stats b { font-size: 15px; }
   .card h3.sub { font-size: 13px; font-weight: 600; margin: 16px 0 6px; }
+  .ev-line { margin: 12px 0 0; font-size: 13px; line-height: 1.5; background: var(--banner-bg); border: 1px solid var(--banner-line); color: var(--banner-fg); border-radius: 10px; padding: 8px 12px; }
+  .ev-list { list-style: none; margin: 0 0 12px; padding: 0; font-size: 13px; }
+  .ev-list li { padding: 6px 0; border-top: 1px solid var(--line); display: flex; gap: 10px; flex-wrap: wrap; }
+  .ev-list li:first-child { border-top: 0; }
+  .ev-list .when { color: var(--muted); min-width: 130px; font-variant-numeric: tabular-nums; }
+  .ev-list .nt { color: var(--muted); font-size: 12px; width: 100%; }
+  details.cal summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+  .cal-box { height: 480px; margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .cal-box .tradingview-widget-container, .cal-box .tradingview-widget-container__widget { width: 100%; height: 100%; }
   .theme-btn { display: inline-flex; align-items: center; gap: 6px; }
   .theme-btn svg { width: 16px; height: 16px; }
   @media (max-width: 520px) { .price { font-size: 40px; } .fc-center { font-size: 30px; } }
@@ -237,6 +246,7 @@
       <div><small>Likely range (68%)</small><b id="r68">—</b></div>
       <div><small>Wide range (90%)</small><b id="r90">—</b></div>
     </div>
+    <p class="ev-line" id="fc-events" hidden></p>
   </section>
 
   <section class="card ai needs-data" id="ai-card" aria-live="polite">
@@ -327,6 +337,15 @@
     <ul class="news" id="news"></ul>
   </section>
 
+  <details class="card cal" id="cal">
+    <summary>Events and economic calendar</summary>
+    <p class="note needs-data" id="ev-note" style="margin:10px 0 8px"></p>
+    <ul class="ev-list needs-data" id="ev-list"></ul>
+    <p class="note" style="margin:0">Economic calendar from TradingView (medium and high importance; United States, euro area, United Kingdom, China), in your local time.</p>
+    <div class="cal-box" id="cal-box"></div>
+    <p class="pc-credit"><a href="https://www.tradingview.com/economic-calendar/" target="_blank" rel="noopener nofollow">Economic calendar by TradingView</a></p>
+  </details>
+
   <details class="card method">
     <summary>How the forecast works</summary>
     <p id="method"></p>
@@ -335,6 +354,7 @@
       <li>News: stories from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence, Rigzone and others) found with a search built for each market, refreshed about every 15 minutes. The server opens each article and reads its full text where the publisher allows it; every relevant sentence is scored with a keyword list for that kind of market (natural gas: weather, storage, production, LNG; oil: OPEC, inventories; metals: dollar, rates, safe-haven demand; stocks and indices: earnings, guidance, rates; crypto: ETF flows, regulation; plus general market language). The article body counts for 70% of a story's score and the headline 30%; paywalled stories fall back to the headline. Stories are weighted by recency.</li>
       <li>Charts: the Live chart is TradingView's free embedded chart with its own data feed (real-time for forex and crypto, delayed for stocks; CFD prices for commodities and indices). The Forecast view draws the model's lines on the daily prices the forecast itself uses.</li>
       <li>Track record: every trading day at the close the site writes down its 1, 3 and 5-day forecasts and later scores each against the actual close. The log is kept on the site (data/h/) and nothing in it is edited afterwards. The backtest replays only the price signals on past closes, so it says how well the ranges are sized, not how good the news reading is.</li>
+      <li>Events: weekly EIA reports follow their usual day and time (they move in US holiday weeks), Fed decision days come from the Fed's published calendar, and a stock's next earnings date is looked up once a day from Nasdaq and can be an estimate. Events are flagged on the forecast and given to the AI analyst; the ranges are not widened for them.</li>
       <li>The page itself checks for new data every minute.</li>
       <li>It is a mechanical keyword model, not a human reading. It can be wrong when an article is mixed, quotes opposing views, or is mainly about something else.</li>
     </ul>
@@ -584,6 +604,7 @@
     $('p-up').textContent = `${Math.round(100 * h.pUp)}% higher`;
     $('r68').textContent = `${usd(h.lo68, 2)} – ${usd(h.hi68, 2)}`;
     $('r90').textContent = `${usd(h.lo90, 2)} – ${usd(h.hi90, 2)}`;
+    drawEvents(h);
 
     drawAI(); setView(); tvUpdate(); pcUpdate(); drawTrack(); drawIntraday(); drawSignals(); drawLevels(); drawNews(); drawSources();
     $('method').textContent = DATA.method;
@@ -913,6 +934,37 @@
     keep('tv-sym', TV_OVR); $('tv-input').blur(); tvUpdate();
   });
   $('tv-reset').addEventListener('click', () => { delete TV_OVR[tvMeta().id]; keep('tv-sym', TV_OVR); $('tv-input').blur(); tvUpdate(); });
+
+  // ---------- scheduled events + economic calendar ----------
+  const evWhen = (e) => (e.allDay ? dayName(e.date) : new Date(e.at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
+  function drawEvents(h) {
+    const evs = DATA.events || [], line = $('fc-events');
+    const hit = evs.filter((e) => (h.events || []).includes(e.id) && e.date <= h.targetDate);
+    line.hidden = !hit.length;
+    if (hit.length) line.textContent = `Before this target close: ${hit.map((e) => `${e.name} (${evWhen(e)}${e.note && e.id !== 'earnings' ? ', may move a day: US holiday week' : ''})`).join(' · ')}. ${hit.some((e) => e.id === 'earnings') ? 'The ranges do not include the earnings move, which can be several times a normal day.' : 'Scheduled releases can move the price sharply within minutes.'}`;
+    const earn = DATA.meta && DATA.meta.earnings && DATA.meta.earnings.date;
+    $('ev-note').textContent = (evs.length ? 'Known releases for this market in the next 9 days:' : 'No scheduled release is known for this market in the next 9 days.') + (earn && !evs.some((e) => e.id === 'earnings') ? ` Next earnings report expected ${dayName(earn)}.` : '');
+    $('ev-list').replaceChildren(...evs.map((e) => { const li = el('li'); li.append(el('span', { class: 'when' }, evWhen(e)), el('span', {}, e.name)); if (e.note) li.append(el('span', { class: 'nt' }, e.note)); return li; }));
+    calUpdate();
+  }
+  let CAL_KEY = '';
+  function calUpdate() { // the calendar loads only when the card is open
+    const box = $('cal-box');
+    if (!$('cal').open) return;
+    const theme = isLight() ? 'light' : 'dark';
+    if (theme === CAL_KEY && box.firstChild) return;
+    CAL_KEY = theme; box.replaceChildren();
+    const wrap = el('div', { class: 'tradingview-widget-container' });
+    wrap.append(el('div', { class: 'tradingview-widget-container__widget' }));
+    const sc = document.createElement('script');
+    sc.type = 'text/javascript'; sc.async = true;
+    sc.src = 'https://s3.tradingview.com/external-embedding/embed-widget-events.js';
+    sc.text = JSON.stringify({ colorTheme: theme, isTransparent: false, width: '100%', height: '100%', locale: 'en', importanceFilter: '0,1', countryFilter: 'us,eu,gb,cn' });
+    sc.addEventListener('error', () => { box.replaceChildren(el('p', { class: 'note', style: 'padding:16px' }, 'The calendar could not load (blocked by the network or an ad blocker).')); CAL_KEY = ''; });
+    wrap.append(sc); box.append(wrap);
+  }
+  $('cal').open = !!store('cal-open', false);
+  $('cal').addEventListener('toggle', () => { keep('cal-open', $('cal').open); calUpdate(); });
 
   // ---------- track record ----------
   function drawTrack() {

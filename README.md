@@ -44,6 +44,13 @@ From then on it refreshes itself every ~5 minutes.
 - A market that fails to build on a run now keeps its previous page data and log instead of dropping them.
 - Removing a market from the watchlist ends its log.
 
+## Events (added November 2026)
+
+- Each market lists the scheduled releases of the next 9 days: the EIA natural gas storage report (Thursday 10:30 New York) for NATGAS, EIA oil inventories (Wednesday 10:30) for oil, Fed decision days (list `FOMC_DAYS` in `scripts/update.mjs`, update it once a year from federalreserve.gov), and the next earnings date for US stocks (Nasdaq public data, once a day, best effort: it shows under Data sources whether the lookup worked).
+- A forecast whose target close comes after one of these shows a notice, and the AI analyst is told about them.
+- Ranges are not widened for events: on the past year's closes the EIA report days were not more volatile than other days, and there is no earnings history to measure yet.
+- "Events and economic calendar" at the bottom of the page also embeds TradingView's free economic calendar.
+
 ## Calibration (November 2026)
 
 Checked against the backtest on the five markets then on the watchlist (about 980 forecasts per horizon):
