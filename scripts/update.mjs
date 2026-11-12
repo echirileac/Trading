@@ -201,6 +201,30 @@ async function seedDaily(file = 'seed-daily.json') {
   return j.rows.map(([D, o, h, l, c]) => ({ t: Date.parse(D + 'T22:00:00Z'), o, h, l, c }));
 }
 
+// One session's daily bar from the price samples taken during it (in time order). before = the last sample of the
+// previous session, if there is one. Each sample also carries the quote's session high and low, but the quote keeps
+// showing the finished session for a while after the next one has begun, so those two are used only
+// (a) when one of them has just moved past its previous value: that price was traded between the two samples, and
+// (b) once the quote's range has been seen to shrink: from then on it describes this session.
+function sessionBar(S, before) {
+  const sane = (v, c) => v > c * 0.8 && v < c * 1.25;
+  let h = S[0].c, l = S[0].c, was = before && before.h > 0 && before.l > 0 ? before : null, fresh = false; // was = the last sample that carried a range
+  for (const s of S) {
+    h = Math.max(h, s.c); l = Math.min(l, s.c);
+    if (!(s.h > 0 && s.l > 0)) continue;
+    if (was) {
+      if (s.h < was.h || s.l > was.l) fresh = true;
+      else { if (s.h > was.h && sane(s.h, s.c)) h = Math.max(h, s.h); if (s.l < was.l && sane(s.l, s.c)) l = Math.min(l, s.l); }
+    }
+    was = s;
+  }
+  const z = S.at(-1);
+  if (fresh && z.h > 0 && z.l > 0 && sane(z.h, z.c) && sane(z.l, z.c)) { h = Math.max(h, z.h); l = Math.min(l, z.l); }
+  return { o: S[0].c, h, l, c: z.c };
+}
+// When the session that settles on a given date starts trading: 18:00 New York the evening before.
+const sessionOpen = (date) => nyToUtc(new Date(Date.parse(date + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10), 18, 0);
+
 async function loadPrices(prev, now, cfg = { yahoo: 'NG=F', cnbc: '@NG.1', seed: 'seed-daily.json' }) {
   const status = [];
   let daily = null, intraday = null, meta = {}, last = null, prevClose = null, source = null, q = null;
@@ -224,19 +248,34 @@ async function loadPrices(prev, now, cfg = { yahoo: 'NG=F', cnbc: '@NG.1', seed:
   let stale = false;
   if (last == null && prev?.price?.last != null) { last = prev.price.last; prevClose = prev.price.prevClose; stale = true; }
 
+  // Our own price samples (one per run while the market is open). Each also keeps the quote's session high and low
+  // so far (when the quote has them): the page turns new extremes into candle wicks.
+  let samples = null;
+  if (!intraday?.length) {
+    const pts = (prev?.price?.intraday || []).filter(([t]) => now - t < INTRADAY_KEEP_MS);
+    if (last != null && !stale && marketStatus(new Date(now)) === 'open') pts.push([now, last, q?.high ?? null, q?.low ?? null]);
+    samples = pts.map(([t, c, h, l]) => ({ t, c, h, l }));
+  }
   if (!daily) {
-    // Self-maintained history: bootstrap file + bars kept from earlier runs, with today's bar updated from the live quote.
+    // Self-maintained history: bootstrap file + bars kept from earlier runs + the sessions the site has watched itself.
     const byDate = new Map();
     try { for (const r of await seedDaily(cfg.seed)) byDate.set(new Date(r.t).toISOString().slice(0, 10), r); } catch { /* no seed */ }
     for (const r of prev?.price?.daily || []) byDate.set(r.date, { t: Date.parse(r.date + 'T22:00:00Z'), o: r.o, h: r.h, l: r.l, c: r.c });
-    if (last != null && !stale) {
-      const sd = sessionDate(new Date(now));
-      const bar = byDate.get(sd) || { t: Date.parse(sd + 'T22:00:00Z'), o: q?.open ?? last, h: last, l: last, c: last };
-      bar.c = last;
-      bar.h = Math.max(bar.h ?? last, q?.high ?? last, last);
-      bar.l = Math.min(bar.l ?? last, q?.low ?? last, last);
-      byDate.set(sd, bar);
+    // Every session we hold samples for gets its bar from those samples. (Until Nov 2026 a new session's bar was started
+    // from the quote's open, high and low, which at that moment still belonged to the session that had just ended, so
+    // each day inherited the previous day's range. Rebuilding from the samples also repairs those bars.)
+    const sessions = new Map();
+    for (const s of samples || []) { if (!(s.c > 0)) continue; const D = sessionDate(new Date(s.t)); if (!sessions.has(D)) sessions.set(D, []); sessions.get(D).push(s); }
+    let before = null;
+    for (const [D, S] of sessions) {
+      const b = sessionBar(S, before), had = byDate.get(D), t = Date.parse(D + 'T22:00:00Z');
+      before = S.at(-1);
+      // Only the end of the oldest session is still inside the sample window: the bar stored earlier covers all of it.
+      const whole = !had || S[0].t - sessionOpen(D) <= 30 * 60e3;
+      byDate.set(D, whole ? { t, ...b } : { t, o: had.o ?? b.o, h: Math.max(had.h ?? b.h, b.h), l: Math.min(had.l ?? b.l, b.l), c: b.c });
     }
+    // Between sessions (daily break, weekend) the next session has no samples yet: it starts as a flat bar at the last price.
+    if (last != null && !stale) { const sd = sessionDate(new Date(now)); if (!sessions.has(sd)) byDate.set(sd, { t: Date.parse(sd + 'T22:00:00Z'), o: last, h: last, l: last, c: last }); }
     daily = [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([, r]) => r).slice(-260);
     source = 'CNBC live quote + self-maintained daily history';
     if (prevClose == null) {
@@ -245,13 +284,7 @@ async function loadPrices(prev, now, cfg = { yahoo: 'NG=F', cnbc: '@NG.1', seed:
       prevClose = before.at(-1)?.c ?? null;
     }
   }
-  if (!intraday?.length) {
-    // Build the session chart from our own samples (one per run) when Yahoo intraday isn't available.
-    const pts = (prev?.price?.intraday || []).filter(([t]) => now - t < INTRADAY_KEEP_MS);
-    // each sample also keeps the session's high and low so far (when the quote has them): the page turns new extremes into candle wicks
-    if (last != null && !stale && marketStatus(new Date(now)) === 'open') pts.push([now, last, q?.high ?? null, q?.low ?? null]);
-    intraday = pts.map(([t, c, h, l]) => ({ t, c, h, l }));
-  }
+  if (!intraday?.length) intraday = samples || []; // the session chart is drawn from our own samples when Yahoo intraday isn't available
   if (!daily?.length || last == null) { FAILED.push(...status.filter((x) => !x.ok)); throw new Error('No price data from any source'); }
   if (prevClose == null && daily.length > 1) prevClose = daily.at(-2).c;
   const lastTime = intraday?.length ? intraday.at(-1).t : (meta.regularMarketTime ? meta.regularMarketTime * 1000 : now);
