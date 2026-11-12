@@ -1257,10 +1257,13 @@
 
   // ---------- news ----------
   // ---------- risk helper ----------
-  // XTB contract details. Commodities: units per lot from XTB's specification tables (NATGAS level x 30 000 USD);
-  // shown as "to check" until the user confirms them, because brokers differ by up to 30x on these.
+  // XTB contract details. Unconfirmed ones are shown as "to check" until the user confirms them, because brokers
+  // differ by up to 30x on lot sizes. NATGAS: from xStation's specification, 12 Nov 2026 (nominal value
+  // "Instrument level * 30000", minimum 0.005 lot, maximum 95, leverage 1:10, daily swap long -0.042833% /
+  // short -0.021056% of the position value, next rollover 20 Nov 2026). Swaps and rollover dates change: update here.
   const XTB = {
-    NATGAS: { sym: 'NATGAS', unit: 'MMBtu', lot: 30000, step: 0.01, margin: 10, sure: false },
+    NATGAS: { sym: 'NATGAS', unit: 'MMBtu', lot: 30000, min: 0.005, step: 0.005, max: 95, margin: 10, sure: true,
+      swap: { long: -0.042833, short: -0.021056, asOf: '12 Nov' }, rollovers: ['2026-11-20'] },
     BRENT: { sym: 'OIL', unit: 'barrels', lot: 100, step: 0.01, margin: 10, sure: false }
   };
   function xtbSpec(meta) {
@@ -1350,6 +1353,7 @@
     const bal = Number($('rk-bal').value), pct = Number($('rk-pct').value);
     const lot = Number($('rk-lot').value) || spec.lot;
     const money = (usdAmt) => (fx ? `${Math.round(usdAmt * fx).toLocaleString('en-US')} ${ccy}` + (ccy !== 'USD' && quoteUsd ? ` ($${Math.round(usdAmt).toLocaleString('en-US')})` : '') : `$${Math.round(usdAmt).toLocaleString('en-US')}`);
+    const money2 = (usdAmt) => { const f = (x) => (Math.abs(x) < 10 ? x.toFixed(2) : Math.round(x).toLocaleString('en-US')); return fx ? `${f(usdAmt * fx)} ${ccy}` + (ccy !== 'USD' && quoteUsd ? ` ($${f(usdAmt)})` : '') : `$${f(usdAmt)}`; };
     out('rk-stop-out', stop != null ? usd(stop) : '—');
     if (atr) line(`Average daily range (ATR, 14 sessions): ${usd(atr)}, ${(100 * atr / p.last).toFixed(1)}% of the price.`);
     else line('Not enough daily history yet for the average daily range; use your own stop price.', 'warn');
@@ -1369,12 +1373,16 @@
     }
     const riskUsd = (bal * pct / 100) / fx;
     const units = riskUsd / dist;
-    const lots = Math.floor(units / lot / spec.step + 1e-9) * spec.step;
-    const lotTxt = (x) => spec.step >= 1 ? `${x.toLocaleString('en-US')} ${spec.unit}` : `${x.toFixed(2)} lot${x === 1 ? '' : 's'}`;
+    const minLot = spec.min ?? spec.step, lotDec = spec.step >= 1 ? 0 : (String(spec.step).split('.')[1] || '').length;
+    let lots = Math.round(Math.floor(units / lot / spec.step + 1e-9) * spec.step * 1e6) / 1e6;
+    if (lots < minLot) lots = 0;
+    const capped = spec.max && lots > spec.max;
+    if (capped) lots = spec.max;
+    const lotTxt = (x) => spec.step >= 1 ? `${x.toLocaleString('en-US')} ${spec.unit}` : `${x.toFixed(lotDec)} lot${x === 1 ? '' : 's'}`;
     if (lots <= 0) {
-      const minLoss = spec.step * lot * dist;
+      const minLoss = minLot * lot * dist;
       out('rk-size', '0'); out('rk-loss', '—'); out('rk-margin', '—');
-      line(`Too small: even the minimum ${lotTxt(spec.step)} would lose ${money(minLoss)} at this stop (${(100 * minLoss * fx / bal).toFixed(2)}% of the balance). Use a closer stop, a higher risk %, or skip the trade.`, 'bad');
+      line(`Too small: even the minimum ${lotTxt(minLot)} would lose ${money(minLoss)} at this stop (${(100 * minLoss * fx / bal).toFixed(2)}% of the balance). Use a closer stop, a higher risk %, or skip the trade.`, 'bad');
     } else {
       const lossUsd = lots * lot * dist, notional = lots * lot * entry;
       out('rk-size', lotTxt(lots) + (spec.step < 1 ? ` · ${Math.round(lots * lot).toLocaleString('en-US')} ${spec.unit}` : ''));
@@ -1382,6 +1390,11 @@
       out('rk-margin', `${money(notional * spec.margin / 100)} · ${spec.margin}%`);
       if (notional * spec.margin / 100 * fx > bal) line('The margin is more than the balance, so XTB would not open this position. Lower the risk %, or use a wider stop (a wider stop gives a smaller size).', 'bad');
       line(`Exposure: ${money(notional)} (${(notional * fx / bal).toFixed(1)}× the balance). Each ${usd(atr || dist)} move ${atr ? '(one average day)' : ''} is ${money(lots * lot * (atr || dist))}.`);
+      if (capped) line(`Capped at XTB's maximum of ${spec.max} lots per position.`, 'warn');
+      if (spec.swap) {
+        const sw = d > 0 ? spec.swap.long : spec.swap.short, night = notional * sw / 100;
+        line(`Overnight cost (XTB swap ${d > 0 ? 'long' : 'short'} ${sw}% a day, as of ${spec.swap.asOf}): ${night < 0 ? 'about ' + money2(-night) + ' charged' : 'about ' + money2(night) + ' credited'} for each night the position is held, ${money2(Math.abs(night) * 7)} a week.`);
+      }
     }
     // how the stop compares with normal day-to-day noise, from the forecast's daily volatility
     if (f.sigmaDaily) {
@@ -1395,6 +1408,8 @@
     const rr = [1, 3, 5].map((h) => { const c = f.horizons[h]?.center; return c ? `${h}d ${((c - entry) * d / dist).toFixed(2)}R` : null; }).filter(Boolean);
     if (rr.length) line(`Model's expected move as a multiple of the risk (R): ${rr.join(' · ')}. ${(f.horizons[3]?.center - entry) * d < 0 ? 'The model leans against this direction.' : 'Below 1R means the expected move is smaller than the risk.'} The model has shown no reliable direction edge so far: treat this as context.`);
     if (pct > 2) line('Many traders keep the risk per trade at 1-2% so a losing streak stays survivable.', 'warn');
+    const roll = (spec.rollovers || []).find((x) => Date.parse(x + 'T23:59:59Z') >= Date.now());
+    if (roll) line(`XTB rolls ${spec.sym} to the next futures month on ${new Date(roll + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}: the quoted price jumps to the new contract and XTB books a correction on open positions. Check your stop in xStation after the rollover.`, 'warn');
     if ((DATA.events || []).some((e) => e.date <= f.horizons[1].targetDate)) line(`Scheduled report before the next close (${DATA.events.filter((e) => e.date <= f.horizons[1].targetDate).map((e) => e.name).join(', ')}): price can jump past a stop.`, 'warn');
   }
   ['rk-bal', 'rk-pct', 'rk-entry', 'rk-stop-px', 'rk-lot', 'rk-fx'].forEach((k) => $(k).addEventListener('input', () => {
