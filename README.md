@@ -50,10 +50,12 @@ Every build compares the new data with the previous build and records alerts in 
 The first build after this was added only records the current state, so nothing old is sent.
 
 **Get them on Telegram (free):**
-1. In Telegram, message **@BotFather**, send `/newbot`, pick a name, and copy the token it gives you (or reuse the token of your existing alert bot).
-2. Open your new bot and press **Start** (send it any message).
-3. In a browser open `https://api.telegram.org/bot<TOKEN>/getUpdates` (your token in place of `<TOKEN>`) and find `"chat":{"id":` followed by a number: that is your chat id.
-4. In the repository: **Settings → Secrets and variables → Actions → New repository secret**: `TELEGRAM_BOT_TOKEN` = the token, `TELEGRAM_CHAT_ID` = the number.
+1. In Telegram, message **@BotFather**, send `/newbot`, pick a name and a username ending in `bot`, and copy the token it gives you (or reuse the token of your existing alert bot).
+2. Open your new bot and press **Start**.
+3. In the repository: **Settings → Secrets and variables → Actions → New repository secret**: name `TELEGRAM_BOT_TOKEN`, value = the token.
+4. **Actions → Telegram test → Run workflow.** The bot replies in Telegram with your chat ID (it is not written to the public log).
+5. Add a second secret: `TELEGRAM_CHAT_ID` = that number.
+6. Run **Telegram test** again: you get a "connected" message. If not, the run's log says what to fix (wrong token, chat not found, no Start pressed).
 
 Alerts then arrive within about 5 minutes of happening, with a link to the market. Optional repository **variables**: `ALERT_TYPES` (default `move,level,flip,analyst,event`), `ALERT_MARKETS` (e.g. `NATGAS,BRENT`; default all), `ALERT_QUIET_HOURS` (e.g. `23-7`: sent without sound during those hours, Bucharest time), `ALERT_EVENT_LEAD_MIN` (default 60), `ALERT_TZ` (default `Europe/Bucharest`). The site only sends messages, so the same bot can also run the separate alert bot.
 
