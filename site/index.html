@@ -226,6 +226,15 @@
   .ov-table td:last-child { white-space: normal; min-width: 150px; }
   @media (max-width: 640px) { .hide-sm { display: none; } }
   .theme-btn { display: inline-flex; align-items: center; gap: 6px; }
+  .tg-btn { display: inline-flex; align-items: center; gap: 7px; }
+  .tg-btn .sw { position: relative; width: 26px; height: 15px; border-radius: 8px; background: var(--line); transition: background .15s; flex: 0 0 auto; }
+  .tg-btn .sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--fg); transition: transform .15s; }
+  .tg-btn[aria-checked="true"] { color: var(--fg); }
+  .tg-btn[aria-checked="true"] .sw { background: var(--accent); }
+  .tg-btn[aria-checked="true"] .sw::after { transform: translateX(11px); background: #fff; }
+  .tg-btn.pending { opacity: .7; }
+  .tg-btn.pending .sw::after { left: 7.5px; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .tg-btn .sw, .tg-btn .sw::after { transition: none; } }
   .theme-btn svg { width: 16px; height: 16px; }
   .to-top { position: fixed; z-index: 20; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border-radius: 50%; color: var(--fg); box-shadow: 0 4px 14px rgba(0,0,0,.25); opacity: 0; visibility: hidden; transform: translateY(8px); transition: opacity .2s ease, transform .2s ease, visibility 0s linear .2s; }
   .to-top.show { opacity: 1; visibility: visible; transform: none; transition: opacity .2s ease, transform .2s ease, visibility 0s; }
@@ -262,7 +271,7 @@
 
   <header class="top">
     <div class="sym"><span class="dot" id="dot"></span><span id="m-name">Loading…</span> <span class="pill" id="m-pill"></span></div>
-    <div class="top-actions"><span class="status" id="status">Loading…</span><a class="btn ghost" id="remove" href="#" target="_blank" rel="noopener" hidden>Remove</a><button class="btn ghost theme-btn" id="theme" type="button" aria-label="Colour theme"></button></div>
+    <div class="top-actions"><span class="status" id="status">Loading…</span><a class="btn ghost tg-btn" id="tg" href="#" target="_blank" rel="noopener" role="switch" aria-checked="false" hidden><span class="sw" aria-hidden="true"></span><span id="tg-lbl">Telegram</span></a><a class="btn ghost" id="remove" href="#" target="_blank" rel="noopener" hidden>Remove</a><button class="btn ghost theme-btn" id="theme" type="button" aria-label="Colour theme"></button></div>
   </header>
   <div class="banner" id="banner"></div>
 
@@ -512,6 +521,7 @@
     } catch (e) {
       // No data for this market: hide every price, forecast and news section so the previous market's numbers cannot stay on screen.
       DATA = null;
+      $('tg').hidden = true;
       const s = INDEX?.markets.find((m) => m.id === CUR_ID);
       document.body.classList.add('nodata');
       setHeader(s || { id: CUR_ID, name: CUR_ID });
@@ -544,6 +554,7 @@
       const biasCol = m.score > 0.15 ? 'var(--up)' : m.score < -0.15 ? 'var(--down)' : 'var(--muted)';
       const dot = el('span', { class: 'b' }); dot.style.background = biasCol;
       const name = el('div', { class: 'n' }); name.append(dot, document.createTextNode(m.id === 'NATGAS' ? 'NATGAS' : m.name));
+      if (m.tgOff) name.append(el('span', { title: 'Telegram alerts off for this market', 'aria-label': 'Telegram alerts off' }, ' 🔕'));
       const dec = m.decimals ?? 3;
       b.append(name, el('div', { class: 's' }, m.id === 'NATGAS' ? 'Henry Hub' : m.symbol),
         el('div', { class: 'p' }, m.last != null ? fmtNum(m.last, dec) : (m.error ? 'No data' : '…')),
@@ -707,7 +718,7 @@
       const b = $('banner'); b.className = 'banner show';
       b.textContent = 'The price sources did not answer on the last server refresh (' + ago(DATA.generatedAt) + '). The page will fill in automatically once they do.';
       pcDestroy(); PC.key = null;
-      setView(); tvUpdate();
+      setView(); tvUpdate(); drawTg();
       return;
     }
     const meta = DATA.meta || { id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month', category: 'energy' };
@@ -1448,7 +1459,32 @@
   rkLoadFx();
 
   // ---------- alerts ----------
+  // Telegram switch per market. The page cannot change the repository itself, so the switch opens a pre-filled GitHub issue
+  // (like Add / Remove); the watchlist job updates watchlist.json and the next refresh reports the new state back here.
+  const TG_PENDING_MIN = 20;
+  const tgPend = () => { try { return JSON.parse(localStorage.getItem('tg-pending')) || {}; } catch { return {}; } };
+  const tgPendSet = (o) => { try { localStorage.setItem('tg-pending', JSON.stringify(o)); } catch { /* private mode */ } };
+  function drawTg() {
+    const a = $('tg'), A = DATA && DATA.alerts, id = DATA?.meta?.id || CUR_ID;
+    if (!A || !A.telegram) { a.hidden = true; return; } // no bot set up: nothing to switch
+    const on = !A.muted, pend = tgPend(), p = pend[id];
+    const waiting = p && p.on !== on && Date.now() - p.t < TG_PENDING_MIN * 60e3;
+    if (p && !waiting) { delete pend[id]; tgPendSet(pend); }
+    const name = id === 'NATGAS' ? 'NATGAS' : DATA.meta?.name || id;
+    a.hidden = false;
+    a.classList.toggle('pending', !!waiting);
+    a.setAttribute('aria-checked', String(waiting ? p.on : on));
+    $('tg-lbl').textContent = waiting ? (p.on ? 'Turning on…' : 'Turning off…') : on ? 'Telegram on' : 'Telegram off';
+    const want = waiting ? !p.on : !on; // a second click while waiting reverses the request
+    a.href = issueUrl(`watchlist: telegram ${want ? 'on' : 'off'} ${id}`, { action: 'telegram', id, telegram: want ? 'on' : 'off' });
+    a.title = waiting
+      ? `Waiting for GitHub: press Create on the request page if you have not yet. The switch updates on the next refresh after that (about 2 minutes).`
+      : `Telegram alerts for ${name} are ${on ? 'on' : 'off'}. Click to turn them ${on ? 'off' : 'on'} (opens a pre-filled request on GitHub: press Create). Alerts keep showing on this page either way.`;
+    a.onclick = () => { const q = tgPend(); q[id] = { on: want, t: Date.now() }; tgPendSet(q); setTimeout(drawTg, 0); };
+  }
+
   function drawAlerts() {
+    drawTg();
     const A = DATA.alerts, list = $('al-list');
     list.replaceChildren();
     const icon = { move: '📈', level: '🧱', flip: '🔄', analyst: '🧠', event: '🗓', step: '' };
@@ -1460,7 +1496,7 @@
     }
     const how = 'Alerts cover every 0.5% price move since the previous price alert (▲ / ▼), unusual daily moves, breaks of the 50- and 200-day averages and the 20-session high or low, the model lean flipping between bullish and bearish, the AI analyst switching between bullish and bearish, and reminders before scheduled reports. Each fires once.';
     $('al-note').textContent = !A ? 'Alerts start with the next refresh.'
-      : (items.length ? '' : 'No alerts for this market in the last 7 days. ') + how + (A.telegram ? ' They are also sent to Telegram.' : ' They can also be sent to Telegram: see the README.');
+      : (items.length ? '' : 'No alerts for this market in the last 7 days. ') + how + (!A.telegram ? ' They can also be sent to Telegram: see the README.' : A.muted ? ' Telegram is switched off for this market (the switch at the top of the page), so they show here only.' : ' They are also sent to Telegram; switch that off for this market at the top of the page.');
   }
 
   function drawNews() {

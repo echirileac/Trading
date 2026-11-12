@@ -60,6 +60,8 @@ The first build after this was added only records the current state, so nothing 
 
 Alerts then arrive within about a minute or two of happening, with a link to the market. Optional repository **variables**: `ALERT_TYPES` (default `move,step,level,flip,analyst,event`), `ALERT_MARKETS` (e.g. `NATGAS,BRENT`; default all), `ALERT_QUIET_HOURS` (e.g. `23-7`: sent without sound during those hours, Bucharest time), `ALERT_EVENT_LEAD_MIN` (default 60), `ALERT_TZ` (default `Europe/Bucharest`). The site only sends messages, so the same bot can also run the separate alert bot.
 
+**Switch Telegram off for one market:** every market page has a **Telegram on / off** switch at the top. It works like Add and Remove: it opens a pre-filled request on GitHub, you press **Create**, and an automatic job adds or removes the market in `telegramOff` in `watchlist.json`. From the next refresh (about 2 minutes) that market's alerts still show on the site but are not sent to Telegram; a 🔕 marks it in the watchlist. Only the repository owner's requests are applied.
+
 ## Trading calendars (added November 2026)
 
 Forecast target dates and the track record count real trading sessions. Weekends are skipped, and so are exchange holidays: the NYSE calendar (including Good Friday and the Saturday/Sunday observance rules) for stocks, ETFs and natural gas, whose CME settlements follow the same days; ICE closures (New Year's Day, Good Friday, Christmas) for Brent; none for currencies, spot metals and crypto. Checked against NYSE's published 2026-2028 calendar. Half-days (the day after Thanksgiving, Christmas Eve) count as normal sessions.
