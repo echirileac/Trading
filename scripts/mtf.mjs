@@ -294,8 +294,12 @@ export function describe(sn) {
   if (!sn?.ready) return `Not enough history yet (${sn?.bars || 0} of ${sn?.need || WARM} bars).`;
   const [a, b] = sn.ma, u = sn.tf === '1d' ? 'day' : 'bar';
   const ma = a > 0 && b > 0 ? `price above its 20- and 50-${u} averages` : a < 0 && b < 0 ? `price below its 20- and 50-${u} averages` : a > 0 ? `price back above its 20-${u} average, which is still under the 50` : a < 0 ? `price under its 20-${u} average, which is still above the 50` : `price on its 20-${u} average`;
-  const st = sn.struct > 0 ? ', higher highs and higher lows' : sn.struct < 0 ? ', lower highs and lower lows' : '';
-  const strength = sn.adx == null ? '' : sn.adx >= 25 ? ` (strong trend, ADX ${sn.adx})` : sn.adx < 18 ? ` (no real trend, ADX ${sn.adx})` : '';
+  // The averages and the swing points can disagree (a fresh rise whose last two swings are still lower). Say so plainly,
+  // and then don't call ADX a "strong trend": ADX measures how strongly price moves, not in which direction.
+  const maDir = a > 0 && b > 0 ? 1 : a < 0 && b < 0 ? -1 : 0, mixed = maDir !== 0 && sn.struct !== 0 && Math.sign(sn.struct) !== maDir;
+  const st = mixed ? `, but its last swings still make ${sn.struct > 0 ? 'higher highs and higher lows' : 'lower highs and lower lows'}`
+    : sn.struct > 0 ? ', higher highs and higher lows' : sn.struct < 0 ? ', lower highs and lower lows' : '';
+  const strength = sn.adx == null ? '' : sn.adx >= 25 ? (mixed ? ` (moving strongly but direction mixed, ADX ${sn.adx})` : ` (strong trend, ADX ${sn.adx})`) : sn.adx < 18 ? ` (no real trend, ADX ${sn.adx})` : '';
   const rsi = sn.rsi >= 70 ? `RSI ${sn.rsi.toFixed(0)} (overbought)` : sn.rsi <= 30 ? `RSI ${sn.rsi.toFixed(0)} (oversold)` : `RSI ${sn.rsi.toFixed(0)}`;
   const macd = { 2: 'MACD above its signal and rising', 1: 'MACD above its signal but fading', '-1': 'MACD below its signal but recovering', '-2': 'MACD below its signal and falling', 0: 'MACD flat' }[sn.macd];
   return `${ma[0].toUpperCase()}${ma.slice(1)}${st}${strength}. ${rsi}, ${macd}.${sn.squeeze ? ' Bollinger bands are unusually tight (a squeeze).' : ''}`;

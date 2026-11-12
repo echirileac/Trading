@@ -246,6 +246,7 @@ async function seedDaily(file = 'seed-daily.json') {
 // (b) once the quote's range has been seen to shrink: from then on it describes this session.
 function sessionBar(S, before) {
   const sane = (v, c) => v > c * 0.8 && v < c * 1.25;
+  S = preOpenTrim(S, before);
   let h = S[0].c, l = S[0].c, was = before && before.h > 0 && before.l > 0 ? before : null, fresh = false; // was = the last sample that carried a range
   for (const s of S) {
     h = Math.max(h, s.c); l = Math.min(l, s.c);
@@ -259,6 +260,22 @@ function sessionBar(S, before) {
   const z = S.at(-1);
   if (fresh && z.h > 0 && z.l > 0 && sane(z.h, z.c) && sane(z.l, z.c)) { h = Math.max(h, z.h); l = Math.min(l, z.l); }
   return { o: S[0].c, h, l, c: z.c };
+}
+// Before the exchange opens, the quote shows the previous settlement as "last" with no session range (seen 12 Nov 2026:
+// NATGAS 3.215 at 18:01 New York, Brent 92.76 from 00:11 to 01:06 UTC), and before that it can still carry the finished
+// session's range. Once a later sample shows a range that has started over, everything up to the last range-less
+// sample came before the first trade and is left out of the bar. Without a range-less sample nothing is dropped, so a
+// quote that is merely slow to reset its range (real trades, old range) keeps all its samples.
+function preOpenTrim(S, before) {
+  const ranged = (s) => s.h > 0 && s.l > 0;
+  let was = before && ranged(before) ? before : null, lastBare = -1;
+  for (let i = 0; i < S.length; i++) {
+    const s = S[i];
+    if (!ranged(s)) { lastBare = i; continue; }
+    if (!was || s.h < was.h || s.l > was.l) return lastBare >= 0 && lastBare < i ? S.slice(lastBare + 1) : S; // first fresh range
+    was = s;
+  }
+  return S;
 }
 // When the session that settles on a given date starts trading: 18:00 New York the evening before.
 const sessionOpen = (date) => nyToUtc(new Date(Date.parse(date + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10), 18, 0);
