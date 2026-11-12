@@ -202,6 +202,17 @@
   .tr-log td.ref { color: var(--muted); font-size: 12px; }
   .tr-stats b { font-size: 15px; }
   .card h3.sub { font-size: 13px; font-weight: 600; margin: 16px 0 6px; }
+  .tf-text { font-size: 14px; line-height: 1.5; margin: 10px 0 12px; }
+  .tf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 10px; }
+  .tf { background: var(--panel2); border-radius: 10px; padding: 10px 12px; display: grid; gap: 7px; align-content: start; min-width: 0; }
+  .tf-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 14px; }
+  .tf-top span { font-size: 13px; font-weight: 600; }
+  .tf .dbar { background: var(--track); }
+  .tf-pats { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .tf-pats .chip { margin-right: 6px; white-space: nowrap; }
+  .ov-table .tfa { letter-spacing: .12em; font-size: 12px; }
+  details.tf-how { margin-top: 12px; }
+  details.tf-how summary { cursor: pointer; font-size: 12px; color: var(--muted); }
   .ev-line { margin: 12px 0 0; font-size: 13px; line-height: 1.5; background: var(--banner-bg); border: 1px solid var(--banner-line); color: var(--banner-fg); border-radius: 10px; padding: 8px 12px; }
   .ev-list { list-style: none; margin: 0 0 12px; padding: 0; font-size: 13px; }
   .ev-list li { padding: 6px 0; border-top: 1px solid var(--line); display: flex; gap: 10px; flex-wrap: wrap; }
@@ -297,6 +308,13 @@
       <div><small>Wide range (90%)</small><b id="r90">—</b></div>
     </div>
     <p class="ev-line" id="fc-events" hidden></p>
+  </section>
+
+  <section class="card needs-data" id="tf-card" aria-live="polite" hidden>
+    <div class="fc-head"><span>Timeframes</span><span class="bias" id="tf-verdict">—</span></div>
+    <p class="tf-text" id="tf-text"></p>
+    <div class="tf-grid" id="tf-grid"></div>
+    <details class="tf-how"><summary>How this is read and scored</summary><p class="note" id="tf-note" style="margin:8px 0 0"></p></details>
   </section>
 
   <section class="card ai needs-data" id="ai-card" aria-live="polite">
@@ -432,6 +450,7 @@
       <li>News: stories from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence, Rigzone and others) found with a search built for each market, refreshed about every 15 minutes. The server opens each article and reads its full text where the publisher allows it; every relevant sentence is scored with a keyword list for that kind of market (natural gas: weather, storage, production, LNG; oil: OPEC, inventories; metals: dollar, rates, safe-haven demand; stocks and indices: earnings, guidance, rates; crypto: ETF flows, regulation; plus general market language). The article body counts for 70% of a story's score and the headline 30%; paywalled stories fall back to the headline. Stories are weighted by recency.</li>
       <li>Stocks and ETFs: because keyword lists catch mostly generic words for a company, each new headline is also read once by a free AI model (gpt-oss on Groq). It says whether the story is really about the company and rates its likely effect on the share price over 1 to 5 sessions from -2 to +2, with a short reason shown under the story. That rating counts for 75% of the story's score and the keyword score of the article text for 25%; stories judged not to be about the company are left out. If the AI is unavailable, keyword scoring is used.</li>
       <li>Charts: the Live chart is TradingView's free embedded chart with its own data feed (real-time for forex and crypto, delayed for stocks; CFD prices for commodities and indices). The Forecast view draws the model's lines on the daily prices the forecast itself uses.</li>
+      <li>Timeframes: on every refresh the 15-minute, 1-hour and daily charts are read with the same fixed textbook rules. Trend: price against its 20- and 50-bar averages and whether highs and lows are rising or falling (ADX says how strong the trend is). Momentum: RSI and MACD. Patterns: engulfing bars, hammers and shooting stars, morning and evening stars, double tops and bottoms, head and shoulders, breakouts from the last 20 bars, RSI divergences, pullbacks that end inside a trend, and average crossovers. A pattern counts only once its bar has closed. For natural gas and Brent the 15-minute bars are built from the site's own price samples (about one a minute, so very short spikes can be missed); for Twelve Data markets the exchange's 15-minute candles are fetched about every 15 minutes. Every pattern is scored on this market's own history (was the close 1 hour, 4 hours or 3 sessions later on its side?) and again from the day it went live.</li>
       <li>Track record: every trading day at the close the site writes down its 1, 3 and 5-day forecasts and later scores each against the actual close. Target dates count trading sessions only: weekends and exchange holidays are skipped (NYSE holidays for stocks and natural gas, ICE closures for Brent; none for currencies, spot metals and crypto). The log is kept on the site (data/h/) and nothing in it is edited afterwards. The backtest replays only the price signals on past closes, so it says how well the ranges are sized, not how good the news reading is.</li>
       <li>Events: weekly EIA reports follow their usual day and time (they move in US holiday weeks), Fed decision days come from the Fed's published calendar, US inflation (CPI) and jobs report days from the Bureau of Labor Statistics schedule (not for natural gas), and a stock's next earnings date is looked up once a day from Nasdaq and can be an estimate. Events are flagged on the forecast and given to the AI analyst; the ranges are not widened for them.</li>
       <li>The page itself checks for new data every minute.</li>
@@ -575,7 +594,7 @@
   function drawOverview() {
     const tb = $('ov-table'); tb.replaceChildren();
     const key = { name: (m) => (m.id === 'NATGAS' ? 'NATGAS' : m.name || '').toLowerCase(), changePct: (m) => m.changePct, lean: (m) => m.h && m.h[H] && m.h[H].pUp, rsi: (m) => m.rsi };
-    const cols = [['name', 'Market'], [null, 'Price'], ['changePct', 'Today'], ['lean', `${H}-day lean`], [null, `${H}-day likely range`, 'hide-sm'], [null, 'Analyst'], ['rsi', 'RSI 14', 'hide-sm'], [null, 'Next event', 'hide-sm']];
+    const cols = [['name', 'Market'], [null, 'Price'], ['changePct', 'Today'], ['lean', `${H}-day lean`], [null, `${H}-day likely range`, 'hide-sm'], [null, 'Analyst'], [null, '15m · 1h · 1d'], ['rsi', 'RSI 14', 'hide-sm'], [null, 'Next event', 'hide-sm']];
     const head = el('tr');
     for (const [k, label, c] of cols) {
       const th = el('th', c ? { class: c } : {});
@@ -594,7 +613,7 @@
       const sub = (t) => el('span', { class: 'sub' }, t);
       const nm = el('button', { class: 'nm', type: 'button' }, m.id === 'NATGAS' ? 'NATGAS' : m.name);
       td('', nm, sub(m.id === 'NATGAS' ? 'Henry Hub' : [m.symbol, m.exchange].filter(Boolean).join(' · ')));
-      if (m.last == null) { const c = td('flat', document.createTextNode(m.error ? 'No data' : 'Preparing')); c.setAttribute('colspan', '7'); tb.append(tr); continue; }
+      if (m.last == null) { const c = td('flat', document.createTextNode(m.error ? 'No data' : 'Preparing')); c.setAttribute('colspan', '8'); tb.append(tr); continue; }
       td('', document.createTextNode(fmtNum(m.last, dec)), sub(m.market === 'open' ? 'open' : m.market === 'break' ? 'daily break' : 'closed'));
       td(cls(m.changePct), document.createTextNode(m.changePct != null ? sp(m.changePct) : '—'));
       const leanCls = m.score > 0.15 ? 'up' : m.score < -0.15 ? 'down' : 'flat';
@@ -602,6 +621,11 @@
       td('hide-sm', document.createTextNode(h && h.lo68 != null ? `${fmtNum(h.lo68, dec)} – ${fmtNum(h.hi68, dec)}` : '—'), h && h.events ? el('span', { class: 'sub warn' }, 'event before target') : null);
       const st = m.ai && m.ai.stance;
       td(st === 'bullish' ? 'up' : st === 'bearish' ? 'down' : 'flat', document.createTextNode(st ? st[0].toUpperCase() + st.slice(1) : '—'), disagrees(m) ? el('span', { class: 'sub warn' }, 'Disagrees with model') : null);
+      { // one arrow per timeframe (15 minutes, 1 hour, 1 day) and the verdict under them
+        const c = td(''), arrows = el('span', { class: 'tfa' });
+        if (m.tf && m.tf.l) { for (const ch of m.tf.l) arrows.append(el('span', { class: ch === 'u' ? 'up' : ch === 'd' ? 'down' : 'flat' }, ch === 'u' ? '▲' : ch === 'd' ? '▼' : ch === 's' ? '◆' : '·')); c.append(arrows, sub(m.tf.title)); }
+        else c.textContent = '—';
+      }
       td('hide-sm' + (m.rsi >= 70 ? ' down' : m.rsi <= 30 ? ' up' : ''), document.createTextNode(m.rsi != null ? Math.round(m.rsi) : '—'), m.rsi >= 70 ? sub('overbought') : m.rsi <= 30 ? sub('oversold') : null);
       td('hide-sm', document.createTextNode(m.next ? m.next.name.replace(/ \(expected date\)/, '') : '—'), m.next ? sub(m.next.allDay ? dayName(m.next.date) : new Date(m.next.at).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })) : null);
       tb.append(tr);
@@ -748,7 +772,7 @@
     $('r90').textContent = `${usd(h.lo90, 2)} – ${usd(h.hi90, 2)}`;
     drawEvents(h);
 
-    drawAI(); setView(); tvUpdate(); pcUpdate(); drawTrack(); drawIntraday(); drawSignals(); drawLevels(); drawRisk(); drawNews(); drawAlerts(); drawSources();
+    drawTimeframes(); drawAI(); setView(); tvUpdate(); pcUpdate(); drawTrack(); drawIntraday(); drawSignals(); drawLevels(); drawRisk(); drawNews(); drawAlerts(); drawSources();
     $('method').textContent = DATA.method;
   }
 
@@ -1118,6 +1142,56 @@
   $('cal').open = !!store('cal-open', false);
   $('cal').addEventListener('toggle', () => { keep('cal-open', $('cal').open); calUpdate(); });
 
+  // ---------- timeframes (15 minutes, 1 hour, 1 day) ----------
+  function drawTimeframes() {
+    const t = DATA.mtf, card = $('tf-card');
+    card.hidden = !(t && t.verdict && t.tfs);
+    if (card.hidden) return;
+    const v = t.verdict;
+    $('tf-verdict').textContent = v.title; $('tf-verdict').className = 'bias ' + cls(v.dir);
+    $('tf-text').textContent = v.text;
+    const names = { '15m': '15 minutes', '1h': '1 hour', '1d': '1 day' }, step = { '15m': 15 * 60e3, '1h': 36e5 };
+    const word = { up: '▲ Up', down: '▼ Down', side: '◆ Sideways' }, dirOf = { up: 1, down: -1, side: 0 };
+    const rate = (r) => `${Math.round(100 * r[0] / r[1])}% of ${r[1]}`;
+    // when a pattern was completed: the close of its bar, in this browser's time (the date for daily bars)
+    const when = (k, p) => (k === '1d' ? 'on ' + new Date(p.t).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+      : 'at ' + new Date(p.t + step[k]).toLocaleString(undefined, Date.now() - p.t > 20 * 36e5 ? { weekday: 'short', hour: '2-digit', minute: '2-digit' } : { hour: '2-digit', minute: '2-digit' }));
+    const grid = $('tf-grid'); grid.replaceChildren();
+    for (const k of ['15m', '1h', '1d']) {
+      const s = t.tfs[k]; if (!s) continue;
+      const box = el('div', { class: 'tf' }), top = el('div', { class: 'tf-top' });
+      top.append(el('b', {}, names[k]), el('span', { class: s.ready ? cls(dirOf[s.label]) : 'flat' }, s.ready ? `${word[s.label]} (${s.score > 0 ? '+' : ''}${s.score.toFixed(2)})` : 'Building history'));
+      box.append(top);
+      if (s.ready) {
+        const bar = el('div', { class: 'dbar' }), w = Math.min(1, Math.abs(s.score)) * 50, i = el('i');
+        i.style.width = w + '%'; i.style.left = s.score >= 0 ? '50%' : (50 - w) + '%'; i.style.background = s.score >= 0 ? 'var(--up)' : 'var(--down)';
+        bar.append(i); box.append(bar);
+      }
+      box.append(el('div', { class: 'sig-detail' }, s.text || ''));
+      if (s.ready) {
+        const R = t.rates && t.rates[k], L = t.live && t.live.pat && t.live.pat[k];
+        const ul = el('ul', { class: 'tf-pats' });
+        for (const p of s.patterns || []) {
+          const li = el('li'), key = p.id + (p.dir > 0 ? '+' : '-'), bt = R && R.pat && R.pat[key], lv = L && L[key];
+          li.append(el('span', { class: 'chip ' + (p.dir > 0 ? 'up' : 'down') }, p.name));
+          let txt = `${when(k, p)}, price ${usd(p.px)}. `;
+          txt += bt && bt[1] >= 10 ? `Right ${rate(bt)} earlier times` : bt ? `Seen ${bt[1]} time${bt[1] > 1 ? 's' : ''} before: too few to judge` : 'Not seen before in this history';
+          if (lv && lv[1] >= 5) txt += `; since launch ${rate(lv)}`;
+          li.append(document.createTextNode(txt + '.')); ul.append(li);
+        }
+        if (!ul.children.length) ul.append(el('li', {}, 'No pattern in the last few bars.'));
+        box.append(ul);
+        if (R && R.all && R.all[1] >= 10) box.append(el('div', { class: 'sig-detail' }, `Scored ${R.ahead} later on ${R.bars} bars: all patterns right ${rate(R.all)}${R.call && R.call[1] >= 10 ? `, the up/down reading right ${rate(R.call)}` : ''}. Coin flip: 50%.`));
+      }
+      grid.append(box);
+    }
+    const al = t.deep && t.deep.align, alTxt = al && al.d1 && al.d1[1] >= 10 ? ` Replayed together at the daily close since ${dayName(t.deep.from)}, the three pointed the right way for the next close ${rate(al.d1)} times${al.d3 && al.d3[1] >= 10 ? ` and for the close three sessions on ${rate(al.d3)} times` : ''}.` : '';
+    $('tf-note').textContent = `Read on every refresh from ${t.source || 'price data'}. Each timeframe gets a score from −1 to +1: half trend (price against its 20- and 50-bar averages, the sequence of highs and lows), 30% momentum (RSI, MACD) and 20% chart patterns. `
+      + 'The verdict follows the triple-screen method: the daily chart sets the direction, the 1-hour chart shows the pullback, the 15-minute chart times the turn. '
+      + 'The percentages count how often a pattern was followed by a move its way on this market; near 50% means it has been no better than a coin flip here.' + alTxt
+      + (t.weight > 0 ? ` This reading counts for ${Math.round(t.weight * 100)}% of the forecast's lean.` : ' This reading does not move the forecast yet: it is scored first, like every other signal (see "What the model sees").');
+  }
+
   // ---------- track record ----------
   function drawTrack() {
     const t = DATA.track, card = $('track-card');
@@ -1258,7 +1332,7 @@
     for (const s of f.signals) {
       const row = el('div', { class: 'sig' });
       const top = el('div', { class: 'sig-top' });
-      top.append(el('span', {}, `${s.name} · ${Math.round(s.weight * 100)}%`), el('span', { class: cls(s.value) }, (s.value > 0 ? '+' : '') + s.value.toFixed(2)));
+      top.append(el('span', {}, `${s.name} · ${s.id === 'mtf' && !s.weight ? 'not counted yet' : Math.round(s.weight * 100) + '%'}`), el('span', { class: cls(s.value) }, (s.value > 0 ? '+' : '') + s.value.toFixed(2)));
       const bar = el('div', { class: 'dbar' });
       const w = Math.abs(s.value) * 50;
       const i = el('i'); i.style.width = w + '%'; i.style.left = s.value >= 0 ? '50%' : (50 - w) + '%'; i.style.background = s.value >= 0 ? 'var(--up)' : 'var(--down)';
@@ -1268,7 +1342,7 @@
       const tk = DATA.track, bt = tk && tk.backtest && tk.backtest[H] && tk.backtest[H].signals && tk.backtest[H].signals[s.id], lv = tk && tk.live && tk.live[H] && tk.live[H].signals && tk.live[H].signals[s.id];
       const rate = (x) => `${Math.round(100 * x[0] / x[1])}% of ${x[1]}`;
       const parts = [];
-      if (s.id === 'news') parts.push('no backtest (old news cannot be replayed)'); else if (bt && bt[1] >= 10) parts.push(`backtest ${rate(bt)}`);
+      if (s.id === 'news') parts.push('no backtest (old news cannot be replayed)'); else if (bt && bt[1] >= 10) parts.push(`backtest ${s.id === 'mtf' ? '(daily chart only) ' : ''}${rate(bt)}`);
       if (lv && lv[1] >= 5) parts.push(`published ${rate(lv)}`); else if (tk) parts.push('published record still building');
       if (tk && parts.length) row.append(el('div', { class: 'sig-detail' }, `Pointed the right way over ${H} session${H > 1 ? 's' : ''}: ${parts.join(' · ')}. 50% is a coin flip.`));
       box.append(row);
