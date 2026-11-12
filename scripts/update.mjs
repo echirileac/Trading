@@ -1082,20 +1082,37 @@ async function openAIChat(url, key, model, system, user, extraHeaders = {}, extr
   Object.assign(body, extraBody);
   const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(90000), headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json', ...extraHeaders }, body: JSON.stringify(body) });
   const raw = await res.text(); let j = null; try { j = JSON.parse(raw); } catch { /* not json */ }
-  if (!res.ok) { const e = new Error(`HTTP ${res.status} ${(j?.error?.message || j?.message || raw).toString().slice(0, 160)}`); e.status = res.status; throw e; }
+  if (!res.ok) {
+    // keep the useful part of a limit message ("on tokens per day ... Please try again in 12m3s") inside the length cap
+    const full = (j?.error?.message || j?.message || raw).toString();
+    const e = new Error(`HTTP ${res.status} ${full.replace(/ in organization `[^`]*`/, '').replace(/ service tier `[^`]*`/, '').replace(/\s*Need more tokens\?.*$/s, '').slice(0, 220)}`);
+    e.status = res.status;
+    const ra = Number(res.headers.get('retry-after'));
+    e.waitMs = groqWaitMs(full) ?? (ra > 0 ? ra * 1000 : null);
+    throw e;
+  }
   const msg = j?.choices?.[0]?.message || {};
   const text = typeof msg.content === 'string' ? msg.content : Array.isArray(msg.content) ? msg.content.map((c) => c.text || '').join('') : '';
   const info = `[${res.status} ${res.headers.get('content-type') || '?'} ${res.url}]`;
   return { text, raw: text ? '' : `${info} ${raw.slice(0, 200)}`, usage: j?.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : undefined };
 }
 // Tries the configured providers in order; a model that is rate-limited is skipped for the rest of the run.
+// Groq's 429 text ends with "Please try again in 1h2m3.5s": the wait in ms, or null.
+function groqWaitMs(msg) {
+  const m = String(msg).match(/try again in\s+((?:\d+h)?(?:\d+m)?(?:[\d.]+s)?)/i);
+  if (!m || !m[1]) return null;
+  const [, h = 0, mi = 0, se = 0] = m[1].match(/(?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?/);
+  const ms = ((+h * 60 + +mi) * 60 + +se) * 1000;
+  return ms > 0 ? ms : null;
+}
 async function callLLM(system, user) {
-  const errors = [];
+  const errors = [], waits = []; let tried = 0;
   for (const p of AI_PROVIDERS) {
     const attempts = p === 'anthropic' && AI_KEY ? [AI_MODEL] : p === 'groq' && GROQ_KEY ? GROQ_MODELS : [];
     for (const model of attempts) {
       const key = `${p}/${model}`;
       if (exhausted.has(key)) continue;
+      tried++;
       try {
         let r;
         if (p === 'anthropic') {
@@ -1114,14 +1131,19 @@ async function callLLM(system, user) {
         return { ...r, provider: p, model };
       } catch (e) {
         if ([429, 403, 413].includes(e.status)) exhausted.add(key); // daily/minute limit or request too large: skip for this run
+        if (e.status === 429) waits.push(e.waitMs ?? 15 * 60e3); // no time given: 15 min
         errors.push(`${key}: ${e.message}`);
       }
     }
   }
-  throw new Error(errors.length ? errors.join(' | ') : 'no AI provider configured');
+  const err = new Error(errors.length ? errors.join(' | ') : 'no AI provider configured');
+  // every model tried was over its limit: wait until the first one frees up
+  if (tried && waits.length === tried) err.waitMs = Math.min(...waits);
+  throw err;
 }
 const AI_EVERY_MIN = Number(process.env.AI_EVERY_MIN) || 60;    // regular cadence while the market is open
 const AI_MOVE_PCT = Number(process.env.AI_MOVE_PCT) || 1.5;     // earlier refresh after a move this big
+let AI_WAIT_UNTIL = 0;  // the AI allowance is used up until then (from Groq's "try again in"); kept in each market's ai.waitUntil
 let aiCallsLeft = Number(process.env.AI_MAX_PER_RUN) || 1;      // spreads notes across runs and markets
 
 function techIndicators(daily, last) {
@@ -1167,6 +1189,9 @@ Respond with ONLY a JSON object, no markdown, matching:
 
 async function aiFor(m, out, prevAi, now) {
   if (!aiConfigured()) { if (!aiFor.warned) { aiFor.warned = true; console.log(`::warning title=AI analyst::off - no key reached the script (GROQ_API_KEY ${GROQ_KEY ? 'set' : 'empty'}, ANTHROPIC_API_KEY ${AI_KEY ? 'set' : 'empty'}, providers ${AI_PROVIDERS.join(',')})`); } return { status: 'off' }; }
+  // The limit is for the whole Groq account: one market that hit it pauses the notes of all of them.
+  if (prevAi?.waitUntil) AI_WAIT_UNTIL = Math.max(AI_WAIT_UNTIL, Date.parse(prevAi.waitUntil) || 0);
+  if (AI_WAIT_UNTIL > now) return prevAi ? { ...prevAi, waitUntil: new Date(AI_WAIT_UNTIL).toISOString() } : { status: 'pending', waitUntil: new Date(AI_WAIT_UNTIL).toISOString() };
   const prevOk = prevAi && prevAi.status === 'ok' && prevAi.at;
   const ageMin = prevOk ? (now - Date.parse(prevAi.at)) / 60e3 : Infinity;
   const moved = prevOk && prevAi.price ? Math.abs(out.price.last / prevAi.price - 1) * 100 : 0;
@@ -1210,8 +1235,15 @@ async function aiFor(m, out, prevAi, now) {
       usage: llm.usage
     };
   } catch (e) {
-    console.log(`::warning title=AI analyst ${m.id}::${String(e.message).slice(0, 300)}`);
-    return prevOk ? { ...prevAi, lastError: String(e.message).slice(0, 200), lastErrorAt: new Date(now).toISOString() } : { status: 'error', error: String(e.message).slice(0, 200), at: new Date(now).toISOString() };
+    let wait = {};
+    if (e.waitMs) {
+      AI_WAIT_UNTIL = now + Math.min(Math.max(e.waitMs, 5 * 60e3), 12 * 36e5); // between 5 min and 12 h
+      wait = { waitUntil: new Date(AI_WAIT_UNTIL).toISOString() };
+      const at = new Date(AI_WAIT_UNTIL).toLocaleTimeString('en-GB', { timeZone: ALERT_TZ, hour: '2-digit', minute: '2-digit' });
+      console.log(`::warning title=AI analyst paused::the free AI allowance is used up on every model; the next note is tried in ${Math.round((AI_WAIT_UNTIL - now) / 60e3)} min (about ${at}, ${ALERT_TZ}). Notes already written stay on the page.`);
+    }
+    console.log(`::warning title=AI analyst ${m.id}::${String(e.message).replace(/organization `[^`]*`/g, 'organization').slice(0, 300)}`);
+    return prevOk ? { ...prevAi, ...wait, lastError: String(e.message).slice(0, 200), lastErrorAt: new Date(now).toISOString() } : { status: 'error', error: String(e.message).slice(0, 200), at: new Date(now).toISOString(), ...wait };
   }
 }
 
