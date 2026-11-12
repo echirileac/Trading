@@ -266,13 +266,20 @@ function sessionBar(S, before) {
 // session's range. Once a later sample shows a range that has started over, everything up to the last range-less
 // sample came before the first trade and is left out of the bar. Without a range-less sample nothing is dropped, so a
 // quote that is merely slow to reset its range (real trades, old range) keeps all its samples.
+// Only the first PRE_OPEN_MAX_MIN minutes of a session can be pre-open (Brent: ICE opens about 2 hours after 18:00 New
+// York). Samples from before 11 Nov 2026 carry no range at all, so in the session where ranges started (11 Nov) the
+// first range came in mid-session; without this limit the whole morning was dropped (PR #35, repaired the same night).
+const PRE_OPEN_MAX_MIN = 180;
 function preOpenTrim(S, before) {
   const ranged = (s) => s.h > 0 && s.l > 0;
   let was = before && ranged(before) ? before : null, lastBare = -1;
   for (let i = 0; i < S.length; i++) {
     const s = S[i];
     if (!ranged(s)) { lastBare = i; continue; }
-    if (!was || s.h < was.h || s.l > was.l) return lastBare >= 0 && lastBare < i ? S.slice(lastBare + 1) : S; // first fresh range
+    if (!was || s.h < was.h || s.l > was.l) { // first fresh range
+      const pre = lastBare >= 0 && lastBare < i && S[lastBare].t - S[0].t <= PRE_OPEN_MAX_MIN * 60e3;
+      return pre ? S.slice(lastBare + 1) : S;
+    }
     was = s;
   }
   return S;
