@@ -246,7 +246,7 @@ async function seedDaily(file = 'seed-daily.json') {
 // (b) once the quote's range has been seen to shrink: from then on it describes this session.
 function sessionBar(S, before) {
   const sane = (v, c) => v > c * 0.8 && v < c * 1.25;
-  S = preOpenTrim(S, before);
+  S = flatOpenTrim(preOpenTrim(S, before));
   let h = S[0].c, l = S[0].c, was = before && before.h > 0 && before.l > 0 ? before : null, fresh = false; // was = the last sample that carried a range
   for (const s of S) {
     h = Math.max(h, s.c); l = Math.min(l, s.c);
@@ -283,6 +283,21 @@ function preOpenTrim(S, before) {
     was = s;
   }
   return S;
+}
+// Samples saved before 11 Nov 2026 have no range, so preOpenTrim() cannot see a pre-open stretch in them. There it shows
+// as a price frozen for a long time at the start of the session (Brent 11 Nov: 92.02 from 23:02 to 23:58 UTC, then the
+// 91.49 settlement until 01:08, first trade 01:13 at 92.10). Leading range-less samples that sit in such a frozen run
+// (same price for at least FLAT_OPEN_MIN minutes) within the first PRE_OPEN_MAX_MIN minutes are left out too.
+const FLAT_OPEN_MIN = 20;
+function flatOpenTrim(S) {
+  const end = S[0].t + PRE_OPEN_MAX_MIN * 60e3, ranged = (s) => s.h > 0 && s.l > 0;
+  let i = 0, cut = 0;
+  while (i < S.length && S[i].t <= end && !ranged(S[i])) {
+    let j = i; while (j + 1 < S.length && S[j + 1].c === S[i].c && !ranged(S[j + 1])) j++;
+    if (S[j].t - S[i].t < FLAT_OPEN_MIN * 60e3) break; // a price that moves: trading has started
+    cut = j + 1; i = j + 1;
+  }
+  return cut > 0 && cut < S.length ? S.slice(cut) : S;
 }
 // When the session that settles on a given date starts trading: 18:00 New York the evening before.
 const sessionOpen = (date) => nyToUtc(new Date(Date.parse(date + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10), 18, 0);
