@@ -74,6 +74,16 @@ Alerts then arrive within about a minute or two of happening, with a link to the
 
 **Switch Telegram off for one market:** every market page has a **Telegram on / off** switch at the top. It works like Add and Remove: it opens a pre-filled request on GitHub, you press **Create**, and an automatic job adds or removes the market in `telegramOff` in `watchlist.json`. From the next refresh (about 2 minutes) that market's alerts still show on the site but are not sent to Telegram; a 🔕 marks it in the watchlist. Only the repository owner's requests are applied.
 
+## Password (added November 2026)
+
+The page can be locked with a password. Add the repo secret `SITE_PASSWORD` (Settings -> Secrets and variables -> Actions -> New repository secret). From the next refresh every data file is published encrypted (AES-256-GCM, key from the password via PBKDF2-SHA256, 600,000 rounds), and the page asks for the password before it shows anything. "Remember on this device" keeps the key (not the password) in the browser; the **Lock** button forgets it.
+
+- **Change the password:** put the current one in a new secret `SITE_PASSWORD_OLD`, then set `SITE_PASSWORD` to the new one. After one refresh you can delete `SITE_PASSWORD_OLD`.
+- **Turn it off:** same, but delete `SITE_PASSWORD` instead of changing it.
+- If a refresh cannot open the live data (wrong or missing password), it is not published: the site keeps its last data and the Actions log says "Password lock".
+- Use a long passphrase (four or more unrelated words): the encrypted files are public, so a short password could be guessed offline.
+- What stays public because the repo is public: the code, `watchlist.json` (which markets you follow), the Telegram on/off requests (GitHub issues) and the Actions log (which markets built; prices and the model lean are left out of it while the lock is on). The live TradingView chart shows public market data only.
+
 ## Trading calendars (added November 2026)
 
 Forecast target dates and the track record count real trading sessions. Weekends are skipped, and so are exchange holidays: the NYSE calendar (including Good Friday and the Saturday/Sunday observance rules) for stocks, ETFs and natural gas, whose CME settlements follow the same days; ICE closures (New Year's Day, Good Friday, Christmas) for Brent; none for currencies, spot metals and crypto. Checked against NYSE's published 2026-2028 calendar. Half-days (the day after Thanksgiving, Christmas Eve) count as normal sessions.

@@ -10,6 +10,8 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pbkdf2Sync, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import * as MTF from './mtf.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -19,6 +21,40 @@ const NEWS_EVERY_MIN = Number(process.env.NEWS_EVERY_MIN || 15);
 const OFFLINE = process.env.OFFLINE_FIXTURES; // folder with fixtures for local testing
 const FAILED = []; // every failed source, for diagnostics
 const USE_YAHOO = process.env.USE_YAHOO === '1'; // off: Yahoo answers HTTP 429 to GitHub Actions on every run
+
+// ---------- password lock ----------
+// With the SITE_PASSWORD secret set, every data file is published encrypted (gzip, then AES-256-GCM with a key made from the
+// password by PBKDF2-SHA256), so the page shows nothing until the password is typed. SITE_PASSWORD_OLD is only needed while
+// changing or removing the password: this build reads back the data published under the old one and republishes it.
+const LOCK_KDF = { alg: 'PBKDF2-SHA256', salt: 'market-watch-lock-v1', iter: 600000 };
+const lockKey = (pw) => (pw ? pbkdf2Sync(pw, LOCK_KDF.salt, LOCK_KDF.iter, 32, 'sha256') : null);
+const LOCK_KEY = lockKey(process.env.SITE_PASSWORD || '');
+const READ_KEYS = [LOCK_KEY, lockKey(process.env.SITE_PASSWORD_OLD || '')].filter(Boolean);
+function seal(obj) {
+  const txt = JSON.stringify(obj);
+  if (!LOCK_KEY) return txt;
+  const iv = randomBytes(12), c = createCipheriv('aes-256-gcm', LOCK_KEY, iv);
+  const ct = Buffer.concat([c.update(gzipSync(txt)), c.final(), c.getAuthTag()]); // tag last, as the browser expects
+  // `at` (build time only) stays readable so the workflow can check that the live site serves this build
+  return JSON.stringify({ enc: 1, ...(obj?.generatedAt ? { at: obj.generatedAt } : {}), kdf: LOCK_KDF, iv: iv.toString('base64'), ct: ct.toString('base64') });
+}
+// Plain files pass through; a locked file is opened with the current or the old password, or comes back null.
+function unseal(j) {
+  if (!j || j.enc !== 1) return j;
+  const iv = Buffer.from(j.iv, 'base64'), buf = Buffer.from(j.ct, 'base64');
+  for (const k of READ_KEYS) {
+    try {
+      const d = createDecipheriv('aes-256-gcm', k, iv);
+      d.setAuthTag(buf.subarray(-16));
+      return JSON.parse(gunzipSync(Buffer.concat([d.update(buf.subarray(0, -16)), d.final()])).toString('utf8'));
+    } catch { /* next key */ }
+  }
+  if (!unseal.warned) {
+    unseal.warned = true;
+    console.log(`::error title=Password lock::the live site's data is locked with a password this build does not have (SITE_PASSWORD ${LOCK_KEY ? 'is set but different' : 'is empty'}${READ_KEYS.length > (LOCK_KEY ? 1 : 0) ? ', SITE_PASSWORD_OLD did not match either' : ''}). When changing or removing the password, put the previous one in the SITE_PASSWORD_OLD secret.`);
+  }
+  return null;
+}
 
 // ---------- helpers ----------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -866,13 +902,13 @@ async function loadTrack(id, prev, now) {
         const res = await fetch(`${BASE}data/h/${id}.json?t=${now}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) });
         // "not found" is only believed while the site itself says no log exists yet
         if (res.status === 404 && !prev?.track?.since) return empty();
-        if (res.ok) { const j = valid(await res.json()); if (j) return j; }
+        if (res.ok) { const j = valid(unseal(await res.json())); if (j) return j; }
       } catch { /* retry */ }
       await sleep(1500);
     }
     return null;
   }
-  try { return valid(JSON.parse(await readFile(join(DATA_DIR, `h/${id}.json`), 'utf8'))) || empty(); } catch { return empty(); }
+  try { return valid(unseal(JSON.parse(await readFile(join(DATA_DIR, `h/${id}.json`), 'utf8')))) || empty(); } catch { return empty(); }
 }
 // Called as soon as a market's previous state is loaded: re-saves it unchanged, so a market that fails to build on this run
 // keeps its page data and its forecast log in the next deploy instead of losing them. A successful build overwrites both.
@@ -948,11 +984,11 @@ const pctOf = (w) => `${Math.round(w * 1000) / 10}%`;
 const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.75 (wider than the textbook 1.645, which covered only 87-89% of closes in the backtest). Signals: news sentiment from trusted outlets (' + pctOf(W.news) + '), trend vs 20-day average (' + pctOf(W.trend) + '), 5-day momentum (' + pctOf(W.momentum) + '), RSI mean reversion (' + pctOf(W.rsi) + ')' + (W.mtf ? ', the 15-minute, 1-hour and daily charts read together (' + pctOf(W.mtf) + ')' : '') + '. Each horizon targets the daily close that many sessions ahead (the first one is the next close at least 6 hours away). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.' + (W.mtf ? '' : ' The 15-minute, 1-hour and daily charts are also read together (trend, momentum, classic patterns); that reading is shown and scored like the other signals but does not move the forecast yet.');
 
 async function loadPrev(base, rel, now) {
-  if (base && !OFFLINE) { try { const j = await get(`${base}data/${rel}?t=${now}`, { type: 'json', retries: 0 }); if (j?.price) return j; } catch { /* none */ } }
-  try { const j = JSON.parse(await readFile(join(DATA_DIR, rel), 'utf8')); if (j?.price) return j; } catch { /* none */ }
+  if (base && !OFFLINE) { try { const j = unseal(await get(`${base}data/${rel}?t=${now}`, { type: 'json', retries: 0 })); if (j?.price) return j; } catch { /* none */ } }
+  try { const j = unseal(JSON.parse(await readFile(join(DATA_DIR, rel), 'utf8'))); if (j?.price) return j; } catch { /* none */ }
   return null;
 }
-async function save(rel, obj) { const f = join(DATA_DIR, rel); await mkdir(dirname(f), { recursive: true }); await writeFile(f, JSON.stringify(obj)); }
+async function save(rel, obj) { const f = join(DATA_DIR, rel); await mkdir(dirname(f), { recursive: true }); await writeFile(f, seal(obj)); }
 
 function cleanBar(r) {
   const c = r.c; if (!(c > 0)) return r;
@@ -1590,6 +1626,9 @@ function summary(out, m, error) {
     rsi: out.forecast.rsi, next: out.events && out.events[0] ? { id: out.events[0].id, name: out.events[0].name, date: out.events[0].date, at: out.events[0].at, allDay: out.events[0].allDay || undefined } : null, asOf: out.price.asOf, tgOff: TG_OFF.has(String(m.id).toUpperCase()) || undefined, error };
 }
 
+// The Actions log of a public repo is public: while the site is locked it only says which markets built.
+const okDetail = (out) => (LOCK_KEY ? '' : ` last=${out.price.last} bias=${out.forecast.bias}`);
+
 async function main() {
   const now = Date.now();
   const base = siteUrl();
@@ -1599,9 +1638,10 @@ async function main() {
   for (const id of watch.telegramOff || []) TG_OFF.add(String(id).toUpperCase());
   const markets = (watch.markets || []).filter((m) => m.provider === 'twelvedata');
   const futures = (watch.markets || []).filter((m) => m.provider === 'cnbc');
+  console.log(LOCK_KEY ? '::notice title=Password lock::on - data files are published encrypted' : 'Password lock: off (no SITE_PASSWORD secret)');
   const index = { generatedAt: new Date(now).toISOString(), keyConfigured: !!TD_KEY, maxMarkets: 8, markets: [] };
 
-  try { const out = await buildNatgas(base, now); index.markets.push(summary(out, NATGAS)); console.log(`OK NATGAS last=${out.price.last} bias=${out.forecast.bias}`); for (const s of out.sources) if (!s.ok) console.log(`::warning title=NATGAS ${s.name}::${(s.error || 'no answer').replace(/\n/g, ' ')}`); }
+  try { const out = await buildNatgas(base, now); index.markets.push(summary(out, NATGAS)); console.log(`OK NATGAS${okDetail(out)}`); for (const s of out.sources) if (!s.ok) console.log(`::warning title=NATGAS ${s.name}::${(s.error || 'no answer').replace(/\n/g, ' ')}`); }
   catch (e) { index.markets.push(summary(null, NATGAS, e.message)); console.log(`::error title=NATGAS failed::${e.message}`); FAILED.length = 0; }
 
   const n = Math.max(1, markets.length);
@@ -1609,7 +1649,7 @@ async function main() {
   // 15-minute candle requests each Twelve Data market can make a day with what the quotes leave (2 a market set aside: daily history and the long candle run)
   plan.candleCalls = Math.floor((TD_DAILY_BUDGET - 2 * n - (n * 1440) / plan.intervalMin) / n);
   for (const m of futures) {
-    try { FAILED.length = 0; const out = await buildCnbcFutures(m, base, now, plan); index.markets.push(summary(out, m)); console.log(`OK ${m.id} last=${out.price.last} bias=${out.forecast.bias}`); for (const s of out.sources) if (!s.ok && /CNBC|history/.test(s.name)) console.log(`::warning title=${m.id} ${s.name}::${s.error || ''}`); }
+    try { FAILED.length = 0; const out = await buildCnbcFutures(m, base, now, plan); index.markets.push(summary(out, m)); console.log(`OK ${m.id}${okDetail(out)}`); for (const s of out.sources) if (!s.ok && /CNBC|history/.test(s.name)) console.log(`::warning title=${m.id} ${s.name}::${s.error || ''}`); }
     catch (e) { index.markets.push(summary(null, m, e.message)); console.log(`::warning title=${m.id} failed::${e.message} ${FAILED.map((x) => x.name + ': ' + x.error).join(' | ')}`); }
   }
   index.quoteIntervalMin = plan.intervalMin;
@@ -1622,7 +1662,7 @@ async function main() {
     plan.left = order.length - 1 - pos; // markets after this one: each keeps one credit for its quote
     try {
       const r = await buildTwelveData(m, prevs[i], now, plan);
-      if (r.out) { r.out.ai = await aiFor(m, r.out, prevs[i]?.ai, now); r.out.alerts = alertsFor(m, r.out, prevs[i], now); await save(`m/${m.id}.json`, r.out); results[i] = summary(r.out, m, r.out.sources.find((x) => !x.ok && /Twelve Data/.test(x.name))?.error); console.log(`OK ${m.id} last=${r.out.price.last} bias=${r.out.forecast.bias}`); }
+      if (r.out) { r.out.ai = await aiFor(m, r.out, prevs[i]?.ai, now); r.out.alerts = alertsFor(m, r.out, prevs[i], now); await save(`m/${m.id}.json`, r.out); results[i] = summary(r.out, m, r.out.sources.find((x) => !x.ok && /Twelve Data/.test(x.name))?.error); console.log(`OK ${m.id}${okDetail(r.out)}`); }
       else { results[i] = summary(null, m, r.error); console.log(`::warning title=${m.id}::${r.error}`); }
     } catch (e) { results[i] = summary(null, m, e.message); console.log(`::warning title=${m.id} failed::${e.message}`); }
   }
