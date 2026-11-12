@@ -413,24 +413,27 @@
 
   <section class="card needs-data" id="rk-card">
     <h2>Risk helper</h2>
-    <p class="note">How big a position can be so that hitting the stop costs a fixed share of your account. The stop is based on the market's average daily range (ATR). Your inputs stay in this browser only.</p>
+    <p class="note">How big a position can be so that hitting the stop costs a fixed share of your account, and what it would make if the price reaches your target. The stop is based on the market's average daily range (ATR). Your inputs stay in this browser only.</p>
     <div class="rk-form">
       <label>Account balance<span class="row"><input id="rk-bal" type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 10000"><select id="rk-ccy" aria-label="Account currency"><option>RON</option><option>EUR</option><option>USD</option></select></span></label>
       <label>Risk per trade (% of balance)<input id="rk-pct" type="number" min="0.05" max="20" step="0.05" inputmode="decimal"></label>
       <label>Direction<span class="chips" id="rk-dir"><button type="button" data-d="1">Buy</button><button type="button" data-d="-1">Sell</button></span></label>
       <label>Entry price<input id="rk-entry" type="number" step="any" inputmode="decimal"></label>
       <label>Stop<span class="row"><select id="rk-stop" aria-label="Stop method"><option value="1.5">1.5 × ATR</option><option value="2">2 × ATR</option><option value="1">1 × ATR</option><option value="3">3 × ATR</option><option value="r90">Edge of 1-day 90% range</option><option value="custom">My own price</option></select><input id="rk-stop-px" type="number" step="any" inputmode="decimal" aria-label="Stop price" hidden></span></label>
+      <label>Profit target<span class="row"><select id="rk-tgt" aria-label="Target method"><option value="2">2 × the risk (2R)</option><option value="1">1 × the risk (1R)</option><option value="1.5">1.5 × the risk (1.5R)</option><option value="3">3 × the risk (3R)</option><option value="r68">Edge of 3-day likely range</option><option value="c3">Model's 3-day centre</option><option value="custom">My own price</option></select><input id="rk-tgt-px" type="number" step="any" inputmode="decimal" aria-label="Target price" hidden></span></label>
       <label><span id="rk-lot-lbl">Units per lot (XTB)</span><input id="rk-lot" type="number" min="0" step="any" inputmode="decimal"></label>
       <label id="rk-fx-wrap">USD rate<span class="row"><span id="rk-fx-pre">1 USD =</span><input id="rk-fx" type="number" min="0" step="any" inputmode="decimal"><span id="rk-fx-ccy"></span></span></label>
     </div>
     <div class="ranges rk-out">
       <div><small>Position size</small><b class="big" id="rk-size">—</b></div>
+      <div><small>Margin needed (XTB retail)</small><b id="rk-margin">—</b></div>
       <div><small>Loss if the stop is hit</small><b id="rk-loss">—</b></div>
       <div><small>Stop price</small><b id="rk-stop-out">—</b></div>
-      <div><small>Margin needed (XTB retail)</small><b id="rk-margin">—</b></div>
+      <div><small>Possible profit at target</small><b id="rk-profit">—</b></div>
+      <div><small>Target price</small><b id="rk-tgt-out">—</b></div>
     </div>
     <ul class="rk-lines" id="rk-lines"></ul>
-    <p class="note" style="margin:10px 0 0">Stops are not guaranteed: prices can jump past them over weekends or on reports. Spread and overnight costs are not included. This is arithmetic, not advice: check the numbers in xStation before trading.</p>
+    <p class="note" style="margin:10px 0 0">Stops are not guaranteed: prices can jump past them over weekends or on reports. Spread and overnight costs are not included in the loss or the profit. This is arithmetic, not advice: check the numbers in xStation before trading.</p>
   </section>
 
   <div class="grid2 needs-data">
@@ -1525,6 +1528,8 @@
       $('rk-entry').value = '';
       $('rk-stop').value = rkGet('stop', '1.5');
       $('rk-stop-px').value = '';
+      $('rk-tgt').value = rkGet('tgt', '2');
+      $('rk-tgt-px').value = '';
       $('rk-lot').value = rkGet('lot-' + id, spec.lot);
     }
     $('rk-entry').placeholder = fmtNum(p.last, DEC) + ' (live)';
@@ -1534,6 +1539,8 @@
     $('rk-dir').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.d) === d)));
     const method = $('rk-stop').value;
     $('rk-stop-px').hidden = method !== 'custom';
+    const tMethod = $('rk-tgt').value;
+    $('rk-tgt-px').hidden = tMethod !== 'custom';
     // currency: prices are in USD (stocks, commodities); currencies are left as quoted
     const quoteUsd = meta.category !== 'fx' || /\/USD$/.test(meta.symbol || '');
     const fxWrap = $('rk-fx-wrap');
@@ -1557,6 +1564,14 @@
     else if (method === 'r90') stop = d > 0 ? f.horizons[1].lo90 : f.horizons[1].hi90;
     else if (atr) stop = entry - d * Number(method) * atr;
     const dist = stop != null ? (entry - stop) * d : null;
+    // profit target: a multiple of the risk, the model's 3-day range edge or centre, or the user's own price
+    let tgt = null;
+    if (tMethod === 'custom') tgt = Number($('rk-tgt-px').value) || null;
+    else if (tMethod === 'r68') tgt = (d > 0 ? f.horizons[3]?.hi68 : f.horizons[3]?.lo68) ?? null;
+    else if (tMethod === 'c3') tgt = f.horizons[3]?.center ?? null;
+    else if (dist > 0) tgt = entry + d * Number(tMethod) * dist;
+    const tdist = tgt != null ? (tgt - entry) * d : null;
+    out('rk-tgt-out', tgt != null ? usd(tgt) : '—');
     const bal = Number($('rk-bal').value), pct = Number($('rk-pct').value);
     const lot = Number($('rk-lot').value) || spec.lot;
     const money = (usdAmt) => (fx ? `${Math.round(usdAmt * fx).toLocaleString('en-US')} ${ccy}` + (ccy !== 'USD' && quoteUsd ? ` ($${Math.round(usdAmt).toLocaleString('en-US')})` : '') : `$${Math.round(usdAmt).toLocaleString('en-US')}`);
@@ -1569,12 +1584,12 @@
       const b = el('button', { type: 'button' }, 'It matches'); b.addEventListener('click', () => { rkSet('lot-ok-' + id, true); drawRisk(); }); li.append(b);
     }
     if (dist == null || !(dist > 0)) {
-      ['rk-size', 'rk-loss', 'rk-margin'].forEach((k) => out(k, '—'));
+      ['rk-size', 'rk-loss', 'rk-margin', 'rk-profit'].forEach((k) => out(k, '—'));
       if (stop != null) line(d > 0 ? 'For a buy, the stop must be below the entry.' : 'For a sell, the stop must be above the entry.', 'bad');
       return;
     }
     if (!(bal > 0) || !(pct > 0) || !fx) {
-      ['rk-size', 'rk-loss', 'rk-margin'].forEach((k) => out(k, '—'));
+      ['rk-size', 'rk-loss', 'rk-margin', 'rk-profit'].forEach((k) => out(k, '—'));
       line(!(bal > 0) ? 'Enter your account balance to get a position size.' : !fx ? `Enter the USD to ${ccy} rate.` : 'Enter the risk per trade.', 'warn');
       return;
     }
@@ -1588,13 +1603,17 @@
     const lotTxt = (x) => spec.step >= 1 ? `${x.toLocaleString('en-US')} ${spec.unit}` : `${x.toFixed(lotDec)} lot${x === 1 ? '' : 's'}`;
     if (lots <= 0) {
       const minLoss = minLot * lot * dist;
-      out('rk-size', '0'); out('rk-loss', '—'); out('rk-margin', '—');
+      out('rk-size', '0'); out('rk-loss', '—'); out('rk-margin', '—'); out('rk-profit', '—');
       line(`Too small: even the minimum ${lotTxt(minLot)} would lose ${money(minLoss)} at this stop (${(100 * minLoss * fx / bal).toFixed(2)}% of the balance). Use a closer stop, a higher risk %, or skip the trade.`, 'bad');
     } else {
       const lossUsd = lots * lot * dist, notional = lots * lot * entry;
       out('rk-size', lotTxt(lots) + (spec.step < 1 ? ` · ${Math.round(lots * lot).toLocaleString('en-US')} ${spec.unit}` : ''));
       out('rk-loss', `${money(lossUsd)} · ${(100 * lossUsd * fx / bal).toFixed(2)}%`);
       out('rk-margin', `${money(notional * spec.margin / 100)} · ${spec.margin}%`);
+      if (tdist > 0) {
+        const profitUsd = lots * lot * tdist;
+        out('rk-profit', `${money(profitUsd)} · ${(100 * profitUsd * fx / bal).toFixed(2)}% · ${(tdist / dist).toFixed(tdist < dist ? 2 : 1)}R`);
+      } else out('rk-profit', '—');
       if (notional * spec.margin / 100 * fx > bal) line('The margin is more than the balance, so XTB would not open this position. Lower the risk %, or use a wider stop (a wider stop gives a smaller size).', 'bad');
       line(`Exposure: ${money(notional)} (${(notional * fx / bal).toFixed(1)}× the balance). Each ${usd(atr || dist)} move ${atr ? '(one average day)' : ''} is ${money(lots * lot * (atr || dist))}.`);
       if (capped) line(`Capped at XTB's maximum of ${spec.max} lots per position.`, 'warn');
@@ -1611,6 +1630,19 @@
       line(msg, z < 1 ? 'warn' : '');
       if (z < 1) line('That is inside one normal day\'s movement, so ordinary noise is likely to stop you out.', 'warn');
     }
+    // the target: how far, how often a close gets there, and the hit rate needed to come out ahead
+    if (tgt != null && !(tdist > 0)) line(tMethod === 'c3' ? 'The model\'s 3-day centre is on the losing side of this entry, so it gives no target in this direction. Pick another target.' : d > 0 ? 'For a buy, the target must be above the entry.' : 'For a sell, the target must be below the entry.', 'bad');
+    else if (tdist > 0) {
+      const R = tdist / dist, need = 100 / (1 + R);
+      let msg = `Target ${usd(tdist)} away (${(100 * tdist / entry).toFixed(1)}%, ${R.toFixed(R < 1 ? 2 : 1)}R). With this stop and target, more than ${Math.round(need)}% of such trades must reach the target first to come out ahead, before spread and overnight costs.`;
+      if (f.sigmaDaily) {
+        const z = Math.log(1 + tdist / entry) / f.sigmaDaily;
+        const pct = (x) => (x < 0.01 ? 'under 1' : String(Math.round(100 * x)));
+        const pc = [1, 3, 5].map((h) => `${h} day${h > 1 ? 's' : ''} ${pct(1 - normCdf(z / Math.sqrt(h)))}%`);
+        msg += ` Chance that the close is at or past it, with no direction assumed: ${pc.join(' · ')} (touching it during the day is more likely).`;
+      }
+      line(msg, R < 1 ? 'warn' : '');
+    }
     // reward compared with risk, using the model's centres for 1, 3 and 5 days
     const rr = [1, 3, 5].map((h) => { const c = f.horizons[h]?.center; return c ? `${h}d ${((c - entry) * d / dist).toFixed(2)}R` : null; }).filter(Boolean);
     if (rr.length) line(`Model's expected move as a multiple of the risk (R): ${rr.join(' · ')}. ${(f.horizons[3]?.center - entry) * d < 0 ? 'The model leans against this direction.' : 'Below 1R means the expected move is smaller than the risk.'} The model has shown no reliable direction edge so far: treat this as context.`);
@@ -1619,7 +1651,7 @@
     if (roll) line(`XTB rolls ${spec.sym} to the next futures month on ${new Date(roll + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}: the quoted price jumps to the new contract and XTB books a correction on open positions. Check your stop in xStation after the rollover.`, 'warn');
     if ((DATA.events || []).some((e) => e.date <= f.horizons[1].targetDate)) line(`Scheduled report before the next close (${DATA.events.filter((e) => e.date <= f.horizons[1].targetDate).map((e) => e.name).join(', ')}): price can jump past a stop.`, 'warn');
   }
-  ['rk-bal', 'rk-pct', 'rk-entry', 'rk-stop-px', 'rk-lot', 'rk-fx'].forEach((k) => $(k).addEventListener('input', () => {
+  ['rk-bal', 'rk-pct', 'rk-entry', 'rk-stop-px', 'rk-tgt-px', 'rk-lot', 'rk-fx'].forEach((k) => $(k).addEventListener('input', () => {
     const v = $(k).value;
     if (k === 'rk-bal') rkSet('bal', v); if (k === 'rk-pct') rkSet('pct', v);
     if (k === 'rk-lot' && RK_ID) { rkSet('lot-' + RK_ID, Number(v) || null); rkSet('lot-ok-' + RK_ID, true); }
@@ -1628,6 +1660,7 @@
   }));
   $('rk-ccy').addEventListener('change', () => { rkSet('ccy', $('rk-ccy').value); drawRisk(); });
   $('rk-stop').addEventListener('change', () => { rkSet('stop', $('rk-stop').value); if ($('rk-stop').value === 'custom' && !$('rk-stop-px').value && $('rk-stop-out').textContent !== '—') $('rk-stop-px').value = $('rk-stop-out').textContent.replace(/[^0-9.]/g, ''); drawRisk(); });
+  $('rk-tgt').addEventListener('change', () => { rkSet('tgt', $('rk-tgt').value); if ($('rk-tgt').value === 'custom' && !$('rk-tgt-px').value && $('rk-tgt-out').textContent !== '—') $('rk-tgt-px').value = $('rk-tgt-out').textContent.replace(/[^0-9.]/g, ''); drawRisk(); });
   $('rk-dir').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { $('rk-dir').dataset.d = b.dataset.d; if (RK_ID) rkSet('dir-' + RK_ID, Number(b.dataset.d)); drawRisk(); }));
   rkLoadFx();
 
