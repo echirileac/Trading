@@ -4,11 +4,13 @@
 //    (Yahoo Finance blocks GitHub's servers with HTTP 429; it is only tried when USE_YAHOO=1.)
 // 2. Fetches headlines from trusted outlets (Google News RSS filtered by source + EIA RSS) about every 15 min.
 // 3. Scores news sentiment and technical signals, then builds 1/3/5-trading-day forecasts.
-// 4. Writes site/data/latest.json for the static page.
+// 4. Reads the 15-minute, 1-hour and daily charts together (scripts/mtf.mjs): trend, momentum, classic patterns.
+// 5. Writes site/data/*.json for the static page.
 
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as MTF from './mtf.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'site', 'data', 'latest.json');
@@ -631,6 +633,12 @@ function rsi(closes, n = 14) {
 const SIGMA_FLOOR = { fx: 0.0025, index: 0.005, etf: 0.005, metal: 0.005, equity: 0.008, energy: 0.012, crypto: 0.012 };
 
 const WEIGHT = { news: 0.45, trend: 0.2, momentum: 0.15, rsi: 0.2 };
+// The timeframe reading (15 min / 1 hour / 1 day, see scripts/mtf.mjs) is shown and scored like the other signals, but
+// counts for nothing in the lean until it has earned it: on the daily history of NATGAS and Brent (Nov 2026) its daily
+// part pointed the right way 47-56% of the time, no better than the other price signals. MTF_WEIGHT (a share, e.g.
+// 0.15) switches it on; the other signals then share what is left in their usual proportions.
+const MTF_WEIGHT = clamp(Number(process.env.MTF_WEIGHT) || 0, 0, 0.5);
+const W = { ...Object.fromEntries(Object.entries(WEIGHT).map(([k, v]) => [k, round(v * (1 - MTF_WEIGHT), 4)])), mtf: MTF_WEIGHT };
 const DRIFT_K = 0.25; // drift per day = score x DRIFT_K x daily volatility. Backtest fit (Nov 2026, 5 markets, ~980 forecasts): 0.20 +/- 0.17, so 0.25 stays
 // Width of the wide (90%) range in volatility units. A normal curve says 1.645, but over the last year only 87-89% of closes
 // landed inside that; 1.75 gives 90.5% / 90.1% / 89.5% at 1 / 3 / 5 days. The 68% range (z = 1) covered 69-70% and is unchanged.
@@ -672,10 +680,11 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   const newsSig = Math.tanh(newsRaw * 0.9);
 
   const signals = [
-    { id: 'news', name: 'News sentiment', weight: WEIGHT.news, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && ['full', 'partial'].includes(n.read.status)).length} read in full or in part, ${recent.filter((n) => n.read && n.read.status === 'summary').length} paywalled summaries${nAi ? `, ${nAi} scored by AI` : ''}${offTopic ? `; ${offTopic} set aside as not about this market` : ''}), recency-weighted score ${newsRaw.toFixed(2)}` },
-    { id: 'trend', name: 'Trend vs 20-day average', weight: WEIGHT.trend, value: trendSig, detail: s20 ? `Price ${(100 * (last / s20 - 1)).toFixed(1)}% vs 20-day average $${s20.toFixed(3)}` : 'Not enough history' },
-    { id: 'momentum', name: '5-day momentum', weight: WEIGHT.momentum, value: momSig, detail: `${(100 * (Math.exp(ret5) - 1)).toFixed(1)}% over 5 sessions` },
-    { id: 'rsi', name: 'Overbought / oversold (RSI 14)', weight: WEIGHT.rsi, value: rsiSig, detail: r == null ? 'Not enough history' : `RSI ${r.toFixed(0)} (below 30 oversold, above 70 overbought)` }
+    { id: 'news', name: 'News sentiment', weight: W.news, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && ['full', 'partial'].includes(n.read.status)).length} read in full or in part, ${recent.filter((n) => n.read && n.read.status === 'summary').length} paywalled summaries${nAi ? `, ${nAi} scored by AI` : ''}${offTopic ? `; ${offTopic} set aside as not about this market` : ''}), recency-weighted score ${newsRaw.toFixed(2)}` },
+    { id: 'trend', name: 'Trend vs 20-day average', weight: W.trend, value: trendSig, detail: s20 ? `Price ${(100 * (last / s20 - 1)).toFixed(1)}% vs 20-day average $${s20.toFixed(3)}` : 'Not enough history' },
+    { id: 'momentum', name: '5-day momentum', weight: W.momentum, value: momSig, detail: `${(100 * (Math.exp(ret5) - 1)).toFixed(1)}% over 5 sessions` },
+    { id: 'rsi', name: 'Overbought / oversold (RSI 14)', weight: W.rsi, value: rsiSig, detail: r == null ? 'Not enough history' : `RSI ${r.toFixed(0)} (below 30 oversold, above 70 overbought)` },
+    ...(opts.mtf ? [{ id: 'mtf', name: 'Timeframes together (15 min, 1 hour, 1 day)', weight: W.mtf, value: opts.mtf.value, detail: opts.mtf.detail }] : [])
   ].map((s) => ({ ...s, value: round(s.value, 3), contribution: round(s.value * s.weight, 3) }));
   const score = clamp(signals.reduce((t, s) => t + s.value * s.weight, 0), -1, 1);
   const driftPerDay = score * DRIFT_K * sigma;
@@ -833,14 +842,16 @@ function backtest(px, opts) {
   const bars = px.daily.slice(0, -1).filter((b) => b.c > 0);
   const closes = bars.map((b) => b.c), done = [];
   const START = 60;
+  // the timeframe reading can be replayed for its daily part only: no intraday history reaches back a year
+  let tf = null; try { tf = MTF.study(bars.map(cleanBar), '1d').S; } catch { /* scored without it */ }
   for (let t = START; t < closes.length - 1; t++) {
-    const k = techCore(closes.slice(0, t + 1), opts.category);
-    const score = clamp(WEIGHT.trend * k.trendSig + WEIGHT.momentum * k.momSig + WEIGHT.rsi * k.rsiSig, -1, 1);
+    const k = techCore(closes.slice(0, t + 1), opts.category), mtf = tf?.[t] ?? 0;
+    const score = clamp(W.trend * k.trendSig + W.momentum * k.momSig + W.rsi * k.rsiSig + W.mtf * mtf, -1, 1);
     const p0 = closes[t];
     for (const h of [1, 3, 5]) {
       if (t + h >= closes.length) continue;
       const mu = score * DRIFT_K * k.sigma * h, sd = k.sigma * Math.sqrt(h);
-      done.push({ h, p0, c: p0 * Math.exp(mu), lo68: p0 * Math.exp(mu - sd), hi68: p0 * Math.exp(mu + sd), lo90: p0 * Math.exp(mu - Z90 * sd), hi90: p0 * Math.exp(mu + Z90 * sd), actual: closes[t + h], sig: { trend: k.trendSig, momentum: k.momSig, rsi: k.rsiSig } });
+      done.push({ h, p0, c: p0 * Math.exp(mu), lo68: p0 * Math.exp(mu - sd), hi68: p0 * Math.exp(mu + sd), lo90: p0 * Math.exp(mu - Z90 * sd), hi90: p0 * Math.exp(mu + Z90 * sd), actual: closes[t + h], sig: { trend: k.trendSig, momentum: k.momSig, rsi: k.rsiSig, mtf } });
     }
   }
   const sessions = Math.max(0, closes.length - 1 - START);
@@ -933,7 +944,8 @@ function thinIntraday(rows, now) {
   }
   return out;
 }
-const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.75 (wider than the textbook 1.645, which covered only 87-89% of closes in the backtest). Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%). Each horizon targets the daily close that many sessions ahead (the first one is the next close at least 6 hours away). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.';
+const pctOf = (w) => `${Math.round(w * 1000) / 10}%`;
+const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.75 (wider than the textbook 1.645, which covered only 87-89% of closes in the backtest). Signals: news sentiment from trusted outlets (' + pctOf(W.news) + '), trend vs 20-day average (' + pctOf(W.trend) + '), 5-day momentum (' + pctOf(W.momentum) + '), RSI mean reversion (' + pctOf(W.rsi) + ')' + (W.mtf ? ', the 15-minute, 1-hour and daily charts read together (' + pctOf(W.mtf) + ')' : '') + '. Each horizon targets the daily close that many sessions ahead (the first one is the next close at least 6 hours away). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.' + (W.mtf ? '' : ' The 15-minute, 1-hour and daily charts are also read together (trend, momentum, classic patterns); that reading is shown and scored like the other signals but does not move the forecast yet.');
 
 async function loadPrev(base, rel, now) {
   if (base && !OFFLINE) { try { const j = await get(`${base}data/${rel}?t=${now}`, { type: 'json', retries: 0 }); if (j?.price) return j; } catch { /* none */ } }
@@ -948,6 +960,49 @@ function cleanBar(r) {
   const o = ok(r.o) ?? c;
   return { ...r, o, h: Math.max(ok(r.h) ?? c, o, c), l: Math.min(ok(r.l) ?? c, o, c) };
 }
+// ---------- timeframes: 15 minutes, 1 hour, 1 day (scripts/mtf.mjs) ----------
+// 15-minute bars come from the site's own price samples; for Twelve Data markets the exchange's candles are used
+// where the plan allows (px.c15), continued with the samples taken since they were fetched. The 1-hour bars are those
+// 15-minute bars put together, the daily bars are the ones the forecast uses. Any error leaves the last reading in place.
+const MTF_KEEP = 520; // 15-minute candles kept per market (about 20 US sessions)
+// Stored with the market as [minutes since 1970, open, high, low, close]. at = when they were fetched, tryAt = the last
+// attempt, fails = attempts in a row that failed, open = the market was trading at that fetch, deep / tried = the day
+// of the last long run / long attempt.
+const readC15 = (prev) => { const c = prev?.price?.c15; return c ? { at: Date.parse(c.at) || 0, tryAt: Date.parse(c.tryAt) || 0, fails: c.fails || 0, deep: c.deep, tried: c.tried, open: !!c.open, rows: (c.rows || []).map(([t, o, h, l, cl]) => ({ t: t * 60e3, o, h, l, c: cl })) } : null; };
+const packC15 = (c, dd) => ({ at: new Date(c.at).toISOString(), tryAt: new Date(c.tryAt).toISOString(), fails: c.fails || undefined, deep: c.deep, tried: c.tried, open: c.open, rows: c.rows.slice(-MTF_KEEP).map((r) => [Math.round(r.t / 60e3), round(r.o, dd), round(r.h, dd), round(r.l, dd), round(r.c, dd)]) });
+function mtfFor(m, px, prev, log, now, { formingDay = true } = {}) {
+  try {
+    const offset1h = US_CASH.includes(m.category) ? 30 * 60e3 : 0; // US shares trade from half past the hour
+    const c15 = px.c15?.rows?.length ? px.c15 : null;
+    const fromSamples = MTF.barsFromSamples(c15 ? px.intraday.filter((x) => x.t > c15.at) : px.intraday);
+    const b15 = c15 ? MTF.mergeBars(c15.rows, fromSamples) : fromSamples;
+    const daily = px.daily.map(cleanBar).filter((b) => b.c > 0);
+    const a = MTF.analyse({ b15, daily, now, formingDay, offset1h });
+    const rates = {};
+    for (const k of MTF.TF_ORDER) rates[k] = { ahead: MTF.TFS[k].aheadText, ...MTF.hitRates(a.studies[k]) };
+    // a long run of exchange candles (fetched once a day) gives the patterns a proper history to be scored on
+    let deep = prev?.mtf?.deep || null;
+    if (px.c15?.long?.length >= 200) {
+      const L = px.c15.long, L1h = MTF.aggregate(L, MTF.TFS['1h'].ms, offset1h), done = formingDay ? daily.slice(0, -1) : daily;
+      const s15 = MTF.study(L, '15m'), s1h = MTF.study(L1h, '1h'), sd = MTF.study(done, '1d');
+      deep = { at: ymd(now), bars: L.length, from: ymd(L[0].t), rates: { '15m': { ahead: MTF.TFS['15m'].aheadText, ...MTF.hitRates(s15) }, '1h': { ahead: MTF.TFS['1h'].aheadText, ...MTF.hitRates(s1h) } }, align: MTF.alignBacktest(L, L1h, done, s15, s1h, sd) };
+    }
+    if (deep) for (const k of ['15m', '1h']) if (deep.rates?.[k]?.n > rates[k].n) rates[k] = deep.rates[k];
+    // running count since launch, kept in the forecast log (the file that is never published over when it cannot be read back)
+    let live = prev?.mtf?.live || null;
+    if (log) { log.mtf = MTF.tally(log.mtf, a.studies, a.bars, new Date(now).toISOString()); live = { since: log.mtf.since, pat: log.mtf.pat }; }
+    const word = { up: 'up', down: 'down', side: 'sideways' };
+    const detail = a.ready.length ? `${a.verdict.title}: ${MTF.TF_ORDER.filter((k) => a.tfs[k].ready).map((k) => `${MTF.TFS[k].label} ${word[a.tfs[k].label]}`).join(', ')}` : 'Not enough price history yet';
+    return {
+      signal: { value: a.ready.length ? a.score : 0, detail },
+      out: { at: new Date(now).toISOString(), score: a.score, weight: W.mtf, verdict: a.verdict, tfs: a.tfs, rates, live, deep, source: c15 ? 'exchange 15-minute candles (Twelve Data), continued with the site\'s own price samples' : 'the site\'s own price samples' }
+    };
+  } catch (e) {
+    console.log(`::warning title=${m.id} timeframes::${String(e?.message || e).slice(0, 200)}`);
+    return { signal: null, out: prev?.mtf || null };
+  }
+}
+
 function packOutput(m, px, news, fc, now, market, extra = {}) {
   px.daily = px.daily.map(cleanBar);
   const dd = px.last >= 20 ? 3 : 6; // currencies and low-priced markets lose real information at 3 decimals
@@ -1064,6 +1119,7 @@ Rules:
 - News items may be headline-only (not fully read) - treat those as weaker evidence.
 - The quant model forecast is one input, not the truth; you may disagree with it and explain why.
 - Be concrete: cite levels and numbers from the data. Plain English, no hype.
+- timeframes (when present) reads the 15-minute, 1-hour and daily charts with fixed textbook rules and lists classic patterns just found. Say in a chart bullet whether the timeframes agree or conflict. Patterns are weak evidence on their own.
 - scheduledEvents lists known releases ahead (reports, central-bank decisions, earnings). If one falls inside an outlook window, name it in that outlook or in risks.
 - This is market commentary, not personal advice: no position sizing, no "you should buy/sell".
 Respond with ONLY a JSON object, no markdown, matching:
@@ -1092,6 +1148,7 @@ async function aiFor(m, out, prevAi, now) {
     indicators: techIndicators(out.price.daily.map((r) => ({ h: r.h, l: r.l, c: r.c })), out.price.last),
     last30Closes: out.price.daily.slice(-30).map((r) => [r.date, r.c]),
     keyLevels: f.levels,
+    timeframes: out.mtf?.verdict ? { verdict: out.mtf.verdict.title, ...Object.fromEntries(MTF.TF_ORDER.filter((k) => out.mtf.tfs[k]?.ready).map((k) => [k, { reading: out.mtf.tfs[k].label, detail: out.mtf.tfs[k].text, patterns: out.mtf.tfs[k].patterns.map((x) => `${x.name} (${x.ago} bar${x.ago === 1 ? '' : 's'} ago)`) }])) } : undefined,
     quantModel: { bias: f.bias, score: f.score, dailyVolatilityPct: round(f.sigmaDaily * 100, 2), signals: f.signals.map((x) => ({ name: x.name, value: x.value, detail: x.detail })), horizons: f.horizons },
     news: (out.news.items || []).filter((n) => !(n.ai && n.ai.rel === false)).slice(0, 15).map((n) => ({ title: n.title, source: n.source, hoursAgo: round((now - Date.parse(n.publishedAt)) / 36e5, 1), read: n.read?.status || 'headline', modelScore: n.score, scoredBy: n.ai ? 'ai' : 'keywords', keyPhrases: n.read?.keyPhrases || [] }))
   };
@@ -1395,8 +1452,10 @@ async function buildNatgas(base, now) {
   const log = await carryForward('NATGAS', prev, now);
   const px = await loadPrices(prev, now);
   const news = await loadNews(prev, now, GAS_PROFILE);
-  const fc = buildForecast(px, news, now, { calendar: 'ng', category: 'energy', hol: holKind(NATGAS) });
+  const tf = mtfFor(NATGAS, px, prev, log, now);
+  const fc = buildForecast(px, news, now, { calendar: 'ng', category: 'energy', hol: holKind(NATGAS), mtf: tf.signal });
   const out = packOutput(NATGAS, px, news, fc, now, marketStatus(new Date(now)));
+  out.mtf = tf.out;
   await trackRecord(NATGAS, px, fc, out, prev, log, now, { calendar: 'ng', category: 'energy', hol: holKind(NATGAS) });
   await attachEvents(NATGAS, out, prev, now);
   out.ai = await aiFor(NATGAS, out, prev?.ai, now);
@@ -1415,8 +1474,10 @@ async function buildCnbcFutures(m, base, now, plan) {
   const news = await loadNews(prev, now, prof);
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
   await aiScoreNews(m, news, prev?.news, now);
-  const fc = buildForecast(px, news, now, { calendar: 'ng', category: m.category, hol: holKind(m) });
+  const tf = mtfFor(m, px, prev, log, now);
+  const fc = buildForecast(px, news, now, { calendar: 'ng', category: m.category, hol: holKind(m), mtf: tf.signal });
   const out = packOutput(m, px, news, fc, now, marketStatus(new Date(now)));
+  out.mtf = tf.out;
   await trackRecord(m, px, fc, out, prev, log, now, { calendar: 'ng', category: m.category, hol: holKind(m) });
   await attachEvents(m, out, prev, now);
   out.ai = await aiFor(m, out, prev?.ai, now);
@@ -1451,6 +1512,7 @@ async function buildTwelveData(m, prev, now, plan) {
   let last = prev?.price?.last ?? null, prevClose = prev?.price?.prevClose ?? null, lastTime = prev?.price?.asOf ? Date.parse(prev.price.asOf) : now;
   let market = prev?.market || 'closed', historyDate = prev?.meta?.historyDate || '', quotedAt = prev?.price?.quotedAt ? Date.parse(prev.price.quotedAt) : 0;
   let intraday = (prev?.price?.intraday || []).filter(([t]) => now - t < INTRADAY_KEEP_MS).map(([t, c, h, l]) => ({ t, c, h, l }));
+  let c15 = readC15(prev);
   const todayUTC = new Date(now).toISOString().slice(0, 10);
   if (!TD_KEY) status.push({ name: 'Twelve Data', ok: false, error: 'API key missing: add the TWELVE_DATA_KEY repository secret' });
   else {
@@ -1477,18 +1539,43 @@ async function buildTwelveData(m, prev, now, plan) {
         status.push({ name: 'Twelve Data live quote', ok: true });
       } catch (e) { status.push({ name: 'Twelve Data live quote', ok: false, error: e.message }); }
     } else status.push({ name: `Twelve Data quote (refreshes every ${plan.intervalMin} min to stay on the free plan)`, ok: true });
+    // 15-minute candles for the timeframe reading: about every 15 minutes while the market trades, once more after the
+    // close, and once a day a long run (5,000 bars, the same single credit) on which the patterns are scored. Quotes
+    // come first: a candle request is made only when a credit is left for every market still to be quoted in this build.
+    const calls = plan.candleCalls || 0, span = US_CASH.includes(m.category) ? 390 : 1440; // minutes a day the market trades
+    const every = calls >= 1 ? Math.max(15, Math.ceil(span / calls / 5) * 5) : 0;           // 0 = no allowance left for candles
+    const wantLong = !!every && c15?.deep !== todayUTC && c15?.tried !== todayUTC && (!weekendClosed(now) || !c15?.rows?.length);
+    const wait = every * 2 ** Math.min(c15?.fails || 0, 4); // after failures the pause doubles, up to 16 times
+    const dueC = !!every && (wantLong || (now - (c15?.tryAt || 0) >= (wait - 0.5) * 60e3 && (market === 'open' || c15?.open || !c15?.rows?.length)));
+    if (dueC && tdCredits - 1 >= (plan.left || 0)) {
+      try {
+        const j = await td('/time_series', { ...tdArgs(m), interval: '15min', outputsize: wantLong ? 5000 : MTF_KEEP, timezone: 'UTC' });
+        const intradayTimes = /\d[ T]\d\d:\d\d/.test(String(j.values?.[0]?.datetime || '')); // "2026-11-12 14:30:00", in UTC as asked
+        const rows = (intradayTimes ? j.values : []).map((v) => cleanBar({ t: Date.parse(String(v.datetime).replace(' ', 'T') + 'Z'), o: num(v.open), h: num(v.high), l: num(v.low), c: num(v.close) }))
+          .filter((r) => isFinite(r.t) && r.c > 0).sort((a, b) => a.t - b.t);
+        if (rows.length < 20) throw new Error('the answer holds no 15-minute candles');
+        c15 = { at: now, tryAt: now, fails: 0, deep: wantLong ? todayUTC : c15?.deep, tried: c15?.tried, open: market === 'open', rows: rows.slice(-MTF_KEEP), long: wantLong ? rows : null };
+        status.push({ name: `Twelve Data 15-minute candles${wantLong ? ` (${rows.length} bars for the pattern scores)` : ''}`, ok: true });
+      } catch (e) {
+        // the long run is tried once a day and its failure does not slow the normal requests down; those pause longer after each failure
+        c15 = { ...(c15 || { at: 0, deep: undefined, open: false, rows: [] }), tryAt: now, fails: wantLong ? c15?.fails || 0 : (c15?.fails || 0) + 1, tried: wantLong ? todayUTC : c15?.tried };
+        status.push({ name: 'Twelve Data 15-minute candles (the timeframes use the site\'s own price samples meanwhile)', ok: false, error: e.message });
+      }
+    }
   }
   const daily = [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([, r]) => r).filter((r) => r.c != null).slice(-260);
   if (!daily.length || last == null) return { error: status.find((x) => !x.ok)?.error || 'no price data yet', status };
   if (prevClose == null && daily.length > 1) prevClose = daily.at(-2).c;
-  const px = { daily, intraday, last, prevClose, lastTime, source: 'Twelve Data', stale: !TD_KEY, status };
+  const px = { daily, intraday, last, prevClose, lastTime, source: 'Twelve Data', stale: !TD_KEY, status, c15 };
   const prof = profileFor(m);
   prof.maxReads = Math.min(prof.maxReads, plan.readsLeft);
   const news = await loadNews(prev, now, prof);
   plan.readsLeft = Math.max(0, plan.readsLeft - (news.reused ? 0 : prof.maxReads));
   await aiScoreNews(m, news, prev?.news, now);
-  const fc = buildForecast(px, news, now, { category: m.category, hol: holKind(m), calendar: m.category === 'crypto' ? 'daily' : 'weekday', today: daily.at(-1) ? new Date(daily.at(-1).t).toISOString().slice(0, 10) : todayUTC });
-  const out = packOutput({ ...m, provider: 'twelvedata' }, px, news, fc, now, market, { meta: { historyDate }, price: { quotedAt: quotedAt ? new Date(quotedAt).toISOString() : null } });
+  const tf = mtfFor(m, px, prev, log, now, { formingDay: market === 'open' }); // after the close today's daily bar is complete and its patterns count
+  const fc = buildForecast(px, news, now, { category: m.category, hol: holKind(m), calendar: m.category === 'crypto' ? 'daily' : 'weekday', today: daily.at(-1) ? new Date(daily.at(-1).t).toISOString().slice(0, 10) : todayUTC, mtf: tf.signal });
+  const out = packOutput({ ...m, provider: 'twelvedata' }, px, news, fc, now, market, { meta: { historyDate }, price: { quotedAt: quotedAt ? new Date(quotedAt).toISOString() : null, c15: c15 ? packC15(c15, last >= 20 ? 3 : 6) : undefined } });
+  out.mtf = tf.out;
   await trackRecord(m, px, fc, out, prev, log, now, { calendar: m.category === 'crypto' ? 'daily' : 'weekday', category: m.category, hol: holKind(m) });
   await attachEvents(m, out, prev, now);
   return { out };
@@ -1499,6 +1586,7 @@ function summary(out, m, error) {
   const h = out.forecast.horizons;
   return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', tv: m.tv || undefined, last: out.price.last, changePct: out.price.changePct, decimals: out.meta.decimals,
     market: out.market, ai: out.ai?.status === 'ok' ? { stance: out.ai.stance, headline: out.ai.headline } : null, bias: out.forecast.bias, score: out.forecast.score, h: Object.fromEntries(Object.entries(h).map(([k, v]) => [k, { center: v.center, changePct: v.changePct, pUp: v.pUp, lo68: v.lo68, hi68: v.hi68, events: v.events && v.events.length ? v.events : undefined }])),
+    tf: out.mtf?.verdict ? { id: out.mtf.verdict.id, dir: out.mtf.verdict.dir, title: out.mtf.verdict.title, l: MTF.TF_ORDER.map((k) => (out.mtf.tfs[k]?.ready ? out.mtf.tfs[k].label[0] : '-')).join('') } : undefined,
     rsi: out.forecast.rsi, next: out.events && out.events[0] ? { id: out.events[0].id, name: out.events[0].name, date: out.events[0].date, at: out.events[0].at, allDay: out.events[0].allDay || undefined } : null, asOf: out.price.asOf, tgOff: TG_OFF.has(String(m.id).toUpperCase()) || undefined, error };
 }
 
@@ -1518,6 +1606,8 @@ async function main() {
 
   const n = Math.max(1, markets.length);
   const plan = { intervalMin: Math.max(10, Math.ceil((n * 1440) / (TD_DAILY_BUDGET - n) / 5) * 5), readsLeft: 30 };
+  // 15-minute candle requests each Twelve Data market can make a day with what the quotes leave (2 a market set aside: daily history and the long candle run)
+  plan.candleCalls = Math.floor((TD_DAILY_BUDGET - 2 * n - (n * 1440) / plan.intervalMin) / n);
   for (const m of futures) {
     try { FAILED.length = 0; const out = await buildCnbcFutures(m, base, now, plan); index.markets.push(summary(out, m)); console.log(`OK ${m.id} last=${out.price.last} bias=${out.forecast.bias}`); for (const s of out.sources) if (!s.ok && /CNBC|history/.test(s.name)) console.log(`::warning title=${m.id} ${s.name}::${s.error || ''}`); }
     catch (e) { index.markets.push(summary(null, m, e.message)); console.log(`::warning title=${m.id} failed::${e.message} ${FAILED.map((x) => x.name + ': ' + x.error).join(' | ')}`); }
@@ -1527,8 +1617,9 @@ async function main() {
   const prevs = await Promise.all(markets.map((m) => loadPrev(base, `m/${m.id}.json`, now)));
   const order = markets.map((m, i) => i).sort((a, b) => Date.parse(prevs[a]?.price?.quotedAt || 0) - Date.parse(prevs[b]?.price?.quotedAt || 0));
   const results = new Array(markets.length);
-  for (const i of order) {
+  for (const [pos, i] of order.entries()) {
     const m = markets[i];
+    plan.left = order.length - 1 - pos; // markets after this one: each keeps one credit for its quote
     try {
       const r = await buildTwelveData(m, prevs[i], now, plan);
       if (r.out) { r.out.ai = await aiFor(m, r.out, prevs[i]?.ai, now); r.out.alerts = alertsFor(m, r.out, prevs[i], now); await save(`m/${m.id}.json`, r.out); results[i] = summary(r.out, m, r.out.sources.find((x) => !x.ok && /Twelve Data/.test(x.name))?.error); console.log(`OK ${m.id} last=${r.out.price.last} bias=${r.out.forecast.bias}`); }
