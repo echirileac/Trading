@@ -1,5 +1,5 @@
 // NATGAS live forecast builder.
-// Runs in GitHub Actions about every minute. No dependencies (Node 20+).
+// Runs in GitHub Actions about every 5 minutes. No dependencies (Node 20+).
 // 1. Fetches prices: CNBC live quote + self-maintained daily history for futures, Twelve Data for other markets.
 //    (Yahoo Finance blocks GitHub's servers with HTTP 429; it is only tried when USE_YAHOO=1.)
 // 2. Fetches headlines from trusted outlets (Google News RSS filtered by source + EIA RSS) about every 15 min.
@@ -888,7 +888,7 @@ function siteUrl() {
 
 const DATA_DIR = join(ROOT, 'site', 'data');
 const INTRADAY_KEEP_MS = 7 * 864e5; // price samples kept for the chart's day and week views
-const INTRADAY_FULL_MS = 864e5;      // samples arrive about once a minute: all kept for the last day, then one per 5 minutes
+const INTRADAY_FULL_MS = 864e5;      // samples arrive every few minutes: all kept for the last day, then one per 5 minutes
 // Older than a day, keep only the latest sample in each 5-minute slot: it carries the session high/low so far,
 // so the chart's wicks are unchanged and the market files stay small.
 function thinIntraday(rows, now) {
