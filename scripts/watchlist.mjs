@@ -1,5 +1,5 @@
 // Applies a watchlist change requested through a GitHub issue opened from the site.
-// Title: "watchlist: add <SYMBOL>" or "watchlist: remove <ID>"; body contains a ```json``` block.
+// Title: "watchlist: add <SYMBOL>", "watchlist: remove <ID>" or "watchlist: telegram on|off <ID>"; body contains a ```json``` block.
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 
 const MAX = 8;
@@ -44,8 +44,8 @@ async function planProblem(symbol, exchange) {
 async function main() {
   const title = String(process.env.ISSUE_TITLE || '');
   const body = String(process.env.ISSUE_BODY || '');
-  const action = (title.match(/^watchlist:\s*(add|remove)\b/i) || [])[1]?.toLowerCase();
-  if (!action) return out('Not a watchlist request (title must start with "watchlist: add" or "watchlist: remove").', false);
+  const action = (title.match(/^watchlist:\s*(add|remove|telegram)\b/i) || [])[1]?.toLowerCase();
+  if (!action) return out('Not a watchlist request (title must start with "watchlist: add", "watchlist: remove" or "watchlist: telegram").', false);
   let req = {};
   try { req = JSON.parse((body.match(/```json\s*([\s\S]*?)```/) || [])[1] || '{}'); } catch { return out('Could not read the request details (the JSON block was changed).', false); }
 
@@ -53,12 +53,28 @@ async function main() {
   const wl = JSON.parse(await readFile(file, 'utf8'));
   wl.markets = wl.markets || [];
 
+  if (action === 'telegram') {
+    // switch Telegram alerts for one market on or off; the site keeps showing its alerts either way
+    const t = title.match(/^watchlist:\s*telegram\s+(on|off)\s+([A-Za-z0-9-]+)/i) || [];
+    const on = String(req.telegram ?? t[1] ?? '').toLowerCase() === 'on' || req.telegram === true;
+    const id = String(req.id || t[2] || '').trim().toUpperCase();
+    const label = id === 'NATGAS' ? 'NATGAS' : wl.markets.find((m) => m.id === id)?.name;
+    if (!label) return out(`${id || 'That market'} is not on the watchlist.`, false);
+    const off = new Set((wl.telegramOff || []).map((x) => String(x).toUpperCase()));
+    if (on ? !off.has(id) : off.has(id)) return out(`Telegram alerts for ${label} are already ${on ? 'on' : 'off'}.`, false);
+    if (on) off.delete(id); else off.add(id);
+    wl.telegramOff = [...off].sort();
+    await writeFile(file, JSON.stringify(wl, null, 2) + '\n');
+    return out(`Telegram alerts for ${label} are now ${on ? 'on' : 'off'}${on ? '' : ' (they still show on the site)'}. This takes effect on the next refresh, in about 2 minutes.`, true);
+  }
+
   if (action === 'remove') {
     const id = String(req.id || title.replace(/^watchlist:\s*remove\s*/i, '')).trim();
     if (id === 'NATGAS') return out('NATGAS is built in and stays on the site.', false);
     const before = wl.markets.length;
     wl.markets = wl.markets.filter((m) => m.id !== id);
     if (wl.markets.length === before) return out(`${id} is not on the watchlist.`, false);
+    if (wl.telegramOff) wl.telegramOff = wl.telegramOff.filter((x) => String(x).toUpperCase() !== id);
     await writeFile(file, JSON.stringify(wl, null, 2) + '\n');
     return out(`Removed ${id} from the watchlist. The site updates in about 2 minutes.`, true);
   }

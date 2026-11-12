@@ -1182,6 +1182,7 @@ const ALERT_STEP_MARKETS = (process.env.ALERT_STEP_MARKETS || '').split(',').map
 const ALERT_STEP_LOG_KEEP = 10; // the page keeps the last 10 step alerts besides the other alerts
 const ALERT_LEVEL_COOLDOWN_H = 6, ALERT_FLIP_COOLDOWN_H = 2, ALERT_ANALYST_COOLDOWN_H = 4, ALERT_LOG_KEEP = 25;
 const OUTBOX = [];             // alerts found in this build, sent at the end of main()
+const TG_OFF = new Set();      // markets whose Telegram alerts were switched off on the page (watchlist.json telegramOff)
 const tzTime = (t, opts = {}) => new Intl.DateTimeFormat('en-GB', { timeZone: ALERT_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...opts }).format(new Date(t));
 const dirOf = (bias) => (/^Bullish/.test(bias || '') ? 1 : /^Bearish/.test(bias || '') ? -1 : 0);
 
@@ -1302,12 +1303,12 @@ function alertsFor(m, out, prev, now) {
   const log = [...found.slice().reverse(), ...(prevA?.log || [])].filter((x) => now - Date.parse(x.t) < 7 * 864e5)
     .filter((x) => (x.type === 'step' ? nStep++ < ALERT_STEP_LOG_KEEP : nOther++ < ALERT_LOG_KEEP));
   if (found.length) OUTBOX.push({ id: m.id, name: m.name, last, changePct: out.price.changePct, dec, items: found });
-  return { v: ALERTS_VERSION, state: st, log, telegram: !!(TG_TOKEN && TG_CHAT) };
+  return { v: ALERTS_VERSION, state: st, log, telegram: !!(TG_TOKEN && TG_CHAT), muted: TG_OFF.has(String(m.id).toUpperCase()) || undefined };
 }
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 function alertMessages(base) {
-  const want = (a) => (!ALERT_MARKETS.length || ALERT_MARKETS.includes(a.id.toUpperCase()));
+  const want = (a) => !TG_OFF.has(a.id.toUpperCase()) && (!ALERT_MARKETS.length || ALERT_MARKETS.includes(a.id.toUpperCase()));
   const boxes = OUTBOX.filter(want).map((b) => ({ ...b, items: b.items.filter((x) => ALERT_TYPES.includes(x.type)) })).filter((b) => b.items.length);
   // a release shared by several markets (Fed day) becomes one line
   const events = new Map();
@@ -1336,7 +1337,7 @@ async function sendAlerts(base, now) {
   if (!total) return;
   const msgs = alertMessages(base);
   if (!TG_TOKEN || !TG_CHAT) { console.log(`::notice title=Alerts::${total} new alert(s), shown on the site only (Telegram not set up: add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)`); return; }
-  if (!msgs.length) { console.log(`::notice title=Alerts::${total} new alert(s), none selected for Telegram (ALERT_TYPES / ALERT_MARKETS)`); return; }
+  if (!msgs.length) { console.log(`::notice title=Alerts::${total} new alert(s), none selected for Telegram (switched off on the page, ALERT_TYPES or ALERT_MARKETS)`); return; }
   let quiet = false;
   if (ALERT_QUIET) {
     const h = Number(tzTime(now, { minute: undefined })), a = Number(ALERT_QUIET[1]), b = Number(ALERT_QUIET[2]);
@@ -1465,7 +1466,7 @@ function summary(out, m, error) {
   const h = out.forecast.horizons;
   return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', tv: m.tv || undefined, last: out.price.last, changePct: out.price.changePct, decimals: out.meta.decimals,
     market: out.market, ai: out.ai?.status === 'ok' ? { stance: out.ai.stance, headline: out.ai.headline } : null, bias: out.forecast.bias, score: out.forecast.score, h: Object.fromEntries(Object.entries(h).map(([k, v]) => [k, { center: v.center, changePct: v.changePct, pUp: v.pUp, lo68: v.lo68, hi68: v.hi68, events: v.events && v.events.length ? v.events : undefined }])),
-    rsi: out.forecast.rsi, next: out.events && out.events[0] ? { id: out.events[0].id, name: out.events[0].name, date: out.events[0].date, at: out.events[0].at, allDay: out.events[0].allDay || undefined } : null, asOf: out.price.asOf, error };
+    rsi: out.forecast.rsi, next: out.events && out.events[0] ? { id: out.events[0].id, name: out.events[0].name, date: out.events[0].date, at: out.events[0].at, allDay: out.events[0].allDay || undefined } : null, asOf: out.price.asOf, tgOff: TG_OFF.has(String(m.id).toUpperCase()) || undefined, error };
 }
 
 async function main() {
@@ -1474,6 +1475,7 @@ async function main() {
   BASE = base;
   let watch = { markets: [] };
   try { watch = JSON.parse(await readFile(join(ROOT, 'watchlist.json'), 'utf8')); } catch { /* default */ }
+  for (const id of watch.telegramOff || []) TG_OFF.add(String(id).toUpperCase());
   const markets = (watch.markets || []).filter((m) => m.provider === 'twelvedata');
   const futures = (watch.markets || []).filter((m) => m.provider === 'cnbc');
   const index = { generatedAt: new Date(now).toISOString(), keyConfigured: !!TD_KEY, maxMarkets: 8, markets: [] };
