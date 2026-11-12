@@ -68,6 +68,20 @@
         "Take-Two Interactive",
         "TTWO"
       ]
+    },
+    {
+      "id": "NVDA-NASDAQ",
+      "symbol": "NVDA",
+      "name": "NVIDIA Corporation",
+      "category": "equity",
+      "exchange": "NASDAQ",
+      "type": "Common Stock",
+      "provider": "twelvedata",
+      "newsQuery": "NVIDIA stock",
+      "keywords": [
+        "NVIDIA",
+        "NVDA"
+      ]
     }
   ]
 }
