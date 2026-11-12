@@ -1,5 +1,5 @@
 // NATGAS live forecast builder.
-// Runs in GitHub Actions every ~5 minutes. No dependencies (Node 20+).
+// Runs in GitHub Actions about every minute. No dependencies (Node 20+).
 // 1. Fetches prices: CNBC live quote + self-maintained daily history for futures, Twelve Data for other markets.
 //    (Yahoo Finance blocks GitHub's servers with HTTP 429; it is only tried when USE_YAHOO=1.)
 // 2. Fetches headlines from trusted outlets (Google News RSS filtered by source + EIA RSS) about every 15 min.
@@ -887,7 +887,19 @@ function siteUrl() {
 }
 
 const DATA_DIR = join(ROOT, 'site', 'data');
-const INTRADAY_KEEP_MS = 7 * 864e5; // 5-minute samples kept for the chart's day and week views
+const INTRADAY_KEEP_MS = 7 * 864e5; // price samples kept for the chart's day and week views
+const INTRADAY_FULL_MS = 864e5;      // samples arrive about once a minute: all kept for the last day, then one per 5 minutes
+// Older than a day, keep only the latest sample in each 5-minute slot: it carries the session high/low so far,
+// so the chart's wicks are unchanged and the market files stay small.
+function thinIntraday(rows, now) {
+  const out = [];
+  for (const r of rows) {
+    const p = out.at(-1);
+    if (p && now - r.t > INTRADAY_FULL_MS && Math.floor(p.t / 3e5) === Math.floor(r.t / 3e5)) out[out.length - 1] = r;
+    else out.push(r);
+  }
+  return out;
+}
 const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.75 (wider than the textbook 1.645, which covered only 87-89% of closes in the backtest). Signals: news sentiment from trusted outlets (45%), trend vs 20-day average (20%), 5-day momentum (15%), RSI mean reversion (20%). Each horizon targets the daily close that many sessions ahead (the first one is the next close at least 6 hours away). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.';
 
 async function loadPrev(base, rel, now) {
@@ -907,7 +919,7 @@ function packOutput(m, px, news, fc, now, market, extra = {}) {
   px.daily = px.daily.map(cleanBar);
   const dd = px.last >= 20 ? 3 : 6; // currencies and low-priced markets lose real information at 3 decimals
   const daily = px.daily.slice(-260).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), o: round(r.o, dd), h: round(r.h, dd), l: round(r.l, dd), c: round(r.c, dd) }));
-  const lastSession = px.intraday.length ? (() => { const lastT = px.intraday.at(-1).t; return px.intraday.filter((x) => lastT - x.t < INTRADAY_KEEP_MS && x.c > 0).map((x) => (x.h > 0 && x.l > 0 ? [x.t, round(x.c, 6), round(Math.max(x.h, x.c), 6), round(Math.min(x.l, x.c), 6)] : [x.t, round(x.c, 6)])); })() : [];
+  const lastSession = px.intraday.length ? (() => { const lastT = px.intraday.at(-1).t; return thinIntraday(px.intraday, now).filter((x) => lastT - x.t < INTRADAY_KEEP_MS && x.c > 0).map((x) => (x.h > 0 && x.l > 0 ? [x.t, round(x.c, 6), round(Math.max(x.h, x.c), 6), round(Math.min(x.l, x.c), 6)] : [x.t, round(x.c, 6)])); })() : [];
   const dec = m.category === 'fx' ? (px.last >= 20 ? 3 : 5) : px.last >= 10 ? 2 : px.last >= 1 ? 3 : 5;
   return {
     generatedAt: new Date(now).toISOString(),
@@ -1356,7 +1368,7 @@ async function buildCnbcFutures(m, base, now, plan) {
 
 // ---------- Twelve Data markets ----------
 const TD_KEY = process.env.TWELVE_DATA_KEY || '';
-const TD_DAILY_BUDGET = 760, TD_PER_RUN = 7; // free plan: 800 credits/day, 8/minute
+const TD_DAILY_BUDGET = 760, TD_PER_RUN = 4; // free plan: 800 credits/day, 8/minute (builds can start <1 min apart, so 4 per build)
 let tdCredits = TD_PER_RUN;
 async function td(path, params) {
   if (tdCredits <= 0) throw new Error('per-minute API budget used; next refresh');
@@ -1391,7 +1403,7 @@ async function buildTwelveData(m, prev, now, plan) {
         if (last == null && j.values?.length) { last = num(j.values[0].close); lastTime = Date.parse(j.values[0].datetime); }
       } catch (e) { status.push({ name: 'Twelve Data daily history', ok: false, error: e.message }); }
     }
-    const due = now - quotedAt >= (plan.intervalMin - 1) * 60e3 && !(m.category !== 'crypto' && weekendClosed(now) && last != null && now - quotedAt < 12 * 36e5);
+    const due = now - quotedAt >= (plan.intervalMin - 0.5) * 60e3 && !(m.category !== 'crypto' && weekendClosed(now) && last != null && now - quotedAt < 12 * 36e5);
     if (due && tdCredits <= 0) status.push({ name: 'Twelve Data quote (queued for the next refresh: per-minute API limit)', ok: true });
     else if (due) {
       try {

@@ -935,8 +935,8 @@
       const span = p.intraday && p.intraday.length ? p.intraday[p.intraday.length - 1][0] - p.intraday[0][0] : 0;
       note.hidden = false;
       note.textContent = rows.length < 4
-        ? `${intra.name} candles appear as the server records prices (about every 5 minutes while the market is open). Not enough yet for this view, so check back shortly.`
-        : `${intra.name} candles built from the price recorded about every 5 minutes${rows[0] ? ` since ${fmtT(rows[0].k)}` : ''}. New session highs and lows are drawn as wicks; other moves between recordings are not captured.${PC_TF === '1W' && span < 6 * 864e5 ? ' The week view fills in over the coming days.' : ''}`;
+        ? `${intra.name} candles appear as the server records prices (about every minute while the market is open). Not enough yet for this view, so check back shortly.`
+        : `${intra.name} candles built from the price recorded about every minute${rows[0] ? ` since ${fmtT(rows[0].k)}` : ''}. New session highs and lows are drawn as wicks; other moves between recordings are not captured.${PC_TF === '1W' && span < 6 * 864e5 ? ' The week view fills in over the coming days.' : ''}`;
     } else {
       note.hidden = true;
       const okv = (v, c) => (v != null && v > c * 0.5 && v < c * 2 ? v : null); // ignore zero / broken ticks
@@ -1182,7 +1182,7 @@
     const pts = (p.intraday || []).filter((q) => q && isFinite(q[1]) && lastS - q[0] < 24 * 36e5);
     const span = pts.length > 1 ? pts.at(-1)[0] - pts[0][0] : 0;
     if (pts.length < 6 || span < 30 * 60e3) {
-      box.append(el('p', { class: 'note', style: 'margin:8px 0 0' }, 'The intraday line appears once the server has collected about 30 minutes of prices (one point every ~5 minutes while the market is open).'));
+      box.append(el('p', { class: 'note', style: 'margin:8px 0 0' }, 'The intraday line appears once the server has collected about 30 minutes of prices (one point about every minute while the market is open).'));
       return;
     }
     const Ht = 140, m = 6, rPad = 56;
