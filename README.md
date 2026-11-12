@@ -3,7 +3,7 @@
 A free, self-updating web page for Henry Hub natural gas (the NATGAS CFD's underlying): live front-month price, 1 / 3 / 5-day forecast ranges, the signals behind them, and the latest headlines from trusted outlets.
 
 - **Hosting:** GitHub Pages (free).
-- **Server refresh:** GitHub Actions every ~5 minutes — prices every run, news about every 15 minutes.
+- **Server refresh:** GitHub Actions about every minute — NATGAS and Brent prices every run, stock quotes every 10–15 minutes (free Twelve Data plan), news about every 15 minutes.
 - **Page refresh:** the open page checks for new data every minute.
 - **Forecast:** a transparent rules-based model (volatility ranges + news sentiment + trend, momentum and RSI). See "How the forecast works" on the page.
 
@@ -16,7 +16,7 @@ A free, self-updating web page for Henry Hub natural gas (the NATGAS CFD's under
 3. In the repo go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**.
 4. Go to **Actions**, open **Update NATGAS forecast**, click **Run workflow**. After ~1 minute the page is live at `https://echirileac.github.io/Trading/`.
 
-From then on it refreshes itself every ~5 minutes.
+From then on it refreshes itself about every minute.
 
 ## Watchlist: any market (added November 2026)
 
@@ -55,7 +55,7 @@ The first build after this was added only records the current state, so nothing 
 3. In a browser open `https://api.telegram.org/bot<TOKEN>/getUpdates` (your token in place of `<TOKEN>`) and find `"chat":{"id":` followed by a number: that is your chat id.
 4. In the repository: **Settings → Secrets and variables → Actions → New repository secret**: `TELEGRAM_BOT_TOKEN` = the token, `TELEGRAM_CHAT_ID` = the number.
 
-Alerts then arrive within about 5 minutes of happening, with a link to the market. Optional repository **variables**: `ALERT_TYPES` (default `move,level,flip,analyst,event`), `ALERT_MARKETS` (e.g. `NATGAS,BRENT`; default all), `ALERT_QUIET_HOURS` (e.g. `23-7`: sent without sound during those hours, Bucharest time), `ALERT_EVENT_LEAD_MIN` (default 60), `ALERT_TZ` (default `Europe/Bucharest`). The site only sends messages, so the same bot can also run the separate alert bot.
+Alerts then arrive within about a minute or two of happening, with a link to the market. Optional repository **variables**: `ALERT_TYPES` (default `move,level,flip,analyst,event`), `ALERT_MARKETS` (e.g. `NATGAS,BRENT`; default all), `ALERT_QUIET_HOURS` (e.g. `23-7`: sent without sound during those hours, Bucharest time), `ALERT_EVENT_LEAD_MIN` (default 60), `ALERT_TZ` (default `Europe/Bucharest`). The site only sends messages, so the same bot can also run the separate alert bot.
 
 ## Trading calendars (added November 2026)
 
@@ -102,7 +102,7 @@ Re-run this check when the watchlist changes or after a few months of new data.
 
 ## Good to know
 
-- Refresh timing: GitHub's own 5-minute schedule is unreliable, so the `Refresh ticker` workflow starts an update every 5 minutes. It runs ~5.5 hours, then starts a fresh copy of itself; every update also restarts it if it ever stops. To pause the site's updates, disable both `Refresh ticker` and `Update NATGAS forecast` on the Actions tab.
+- Refresh timing: GitHub's own 5-minute schedule is unreliable, so the `Refresh ticker` workflow starts an update every minute (a build takes ~30 s). It runs ~5.5 hours, then starts a fresh copy of itself; every update also restarts it if it ever stops. To pause the site's updates, disable both `Refresh ticker` and `Update NATGAS forecast` on the Actions tab.
 - The page shows how old its data is and warns if it's over 30 minutes.
 - GitHub pauses scheduled workflows in a repo with no commits for 60 days. If that happens, click **Enable workflow** on the Actions tab (or push any small change).
 - NATGAS and Brent prices come from CNBC's public quote feed (unofficial and free) plus a daily history the site keeps itself. If the feed stops answering, the page shows the last good price and flags it. Yahoo Finance is no longer called: it blocks GitHub's servers (HTTP 429). To try it again, add `USE_YAHOO: "1"` to the `env` block in `update.yml`.

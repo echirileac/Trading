@@ -56,14 +56,15 @@ jobs:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v5
-      - name: Make sure the 5-minute ticker is running
+      - name: Make sure the 1-minute ticker is running
+        # Checked every 10 minutes (and on scheduled/push runs) to stay well inside GitHub's
+        # 1,000 API requests an hour for the built-in token: builds run 60 times an hour.
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          running=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ticker.yml --status in_progress --json databaseId --jq length || echo 1)
-          queued=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ticker.yml --status queued --json databaseId --jq length || echo 1)
-          pending=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ticker.yml --status pending --json databaseId --jq length || echo 0)
-          if [ "$running" = "0" ] && [ "$queued" = "0" ] && [ "$pending" = "0" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ $(( 10#$(date -u +%M) % 10 )) -ne 0 ]; then exit 0; fi
+          active=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ticker.yml --limit 5 --json status --jq '[.[] | select(.status != "completed")] | length' || echo 1)
+          if [ "$active" = "0" ]; then
             gh workflow run ticker.yml --repo "$GITHUB_REPOSITORY" --ref main && echo "Ticker restarted"
           fi
