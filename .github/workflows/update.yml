@@ -2,7 +2,7 @@ name: Update NATGAS forecast
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # GitHub's shortest schedule; runs can start a few minutes late
+    - cron: "*/15 * * * *"   # backup only: the ticker starts the regular updates; this also restarts the ticker if it stopped
   workflow_dispatch:
   push:
     branches: [main]
@@ -59,9 +59,26 @@ jobs:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v5
-      - name: Make sure the 1-minute ticker is running
+      - name: Check the live site really shows this build
+        # GitHub can report "Reported success!" for a deploy while the live site keeps serving an older
+        # one (12 Nov 2026: frozen for an hour). Read the live data file and fail loudly if it is older
+        # than what this run just built, so the problem shows up as a red run instead of silently.
+        if: steps.deployment.outcome == 'success'
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          built=$(node -e "console.log(JSON.parse(require('fs').readFileSync('site/data/index.json','utf8')).generatedAt)")
+          live=""
+          for i in 1 2 3 4 5 6 7 8; do
+            live=$(curl -fsS --max-time 15 "${PAGE_URL}data/index.json?t=$(date +%s)" 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).generatedAt||'')}catch{console.log('')}})" || true)
+            if [ -n "$live" ] && [[ ! "$live" < "$built" ]]; then echo "Live site is current (built $built, live $live)"; exit 0; fi
+            sleep 10
+          done
+          echo "::error title=Live site is stale::Deploy reported success, but the live site still shows data from ${live:-nothing} (this run built $built)."
+          exit 1
+      - name: Make sure the ticker is running
         # Checked every 10 minutes (and on scheduled/push runs) to stay well inside GitHub's
-        # 1,000 API requests an hour for the built-in token: builds run 60 times an hour.
+        # 1,000 API requests an hour for the built-in token.
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}

@@ -3,7 +3,7 @@
 A free, self-updating web page for Henry Hub natural gas (the NATGAS CFD's underlying): live front-month price, 1 / 3 / 5-day forecast ranges, the signals behind them, and the latest headlines from trusted outlets.
 
 - **Hosting:** GitHub Pages (free).
-- **Server refresh:** GitHub Actions about every minute — NATGAS and Brent prices every run, stock quotes every 10–15 minutes (free Twelve Data plan), news about every 15 minutes.
+- **Server refresh:** GitHub Actions about every 5 minutes — NATGAS and Brent prices every run, stock quotes every 10–15 minutes (free Twelve Data plan), news about every 15 minutes.
 - **Page refresh:** the open page checks for new data every minute.
 - **Forecast:** a transparent rules-based model (volatility ranges + news sentiment + trend, momentum and RSI). See "How the forecast works" on the page.
 
@@ -16,7 +16,7 @@ A free, self-updating web page for Henry Hub natural gas (the NATGAS CFD's under
 3. In the repo go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**.
 4. Go to **Actions**, open **Update NATGAS forecast**, click **Run workflow**. After ~1 minute the page is live at `https://echirileac.github.io/Trading/`.
 
-From then on it refreshes itself about every minute.
+From then on it refreshes itself about every 5 minutes.
 
 ## Watchlist: any market (added November 2026)
 
@@ -119,8 +119,8 @@ Re-run this check when the watchlist changes or after a few months of new data.
 
 ## Good to know
 
-- Refresh timing: GitHub's own 5-minute schedule is unreliable, so the `Refresh ticker` workflow starts an update every minute (a build takes ~30 s). It runs ~5.5 hours, then starts a fresh copy of itself; every update also restarts it if it ever stops. To pause the site's updates, disable both `Refresh ticker` and `Update NATGAS forecast` on the Actions tab.
-- The page shows how old its data is and warns if it's over 30 minutes.
+- Refresh timing: GitHub's own schedule is unreliable, so the `Refresh ticker` workflow starts an update every 5 minutes (a build takes ~30-60 s; repo variable `TICK_SECONDS` changes the interval, minimum 60). A 1-minute interval was tried on 12 Nov 2026 and GitHub Pages stopped publishing after ~3.5 hours, so 5 minutes is the tested setting. Each update also checks that the live site shows its data and fails the run if not. It runs ~5.5 hours, then starts a fresh copy of itself; every update also restarts it if it ever stops. To pause the site's updates, disable both `Refresh ticker` and `Update NATGAS forecast` on the Actions tab.
+- The page shows how old its data is and warns if it's over 15 minutes.
 - GitHub pauses scheduled workflows in a repo with no commits for 60 days. If that happens, click **Enable workflow** on the Actions tab (or push any small change).
 - NATGAS and Brent prices come from CNBC's public quote feed (unofficial and free) plus a daily history the site keeps itself. If the feed stops answering, the page shows the last good price and flags it. Yahoo Finance is no longer called: it blocks GitHub's servers (HTTP 429). To try it again, add `USE_YAHOO: "1"` to the `env` block in `update.yml`.
 - The trusted-outlet list and the keyword scoring live at the top of `scripts/update.mjs` (`TRUSTED`, `QUERIES`, `LEX`) — edit them to tune the model.

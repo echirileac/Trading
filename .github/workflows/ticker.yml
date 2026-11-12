@@ -1,10 +1,15 @@
 name: Refresh ticker
 
-# Starts "Update NATGAS forecast" every minute. GitHub's own schedule cannot go below
-# 5 minutes and is unreliable (often late or skipped), so this job keeps one runner
+# Starts "Update NATGAS forecast" every 5 minutes (repo variable TICK_SECONDS changes it).
+# GitHub's own schedule is unreliable (often late or skipped), so this job keeps one runner
 # ticking for ~5.5 hours, then hands over to a fresh ticker run. Only one ticker runs
-# at a time. A build takes ~30 s; if one runs long, GitHub keeps just the newest
+# at a time. A build takes ~30-60 s; if one runs long, GitHub keeps just the newest
 # waiting run, so builds never pile up.
+#
+# Why not every minute: on 12 Nov 2026 a 1-minute cadence ran fine for ~3.5 hours, then
+# GitHub Pages kept reporting "deployed" while the live site stayed frozen at the last
+# good deploy (the page showed "server has not refreshed for 58 minutes"). Every deploy is
+# a Pages deployment, and 5 minutes is the cadence that ran without trouble for days.
 
 on:
   workflow_dispatch:
@@ -28,13 +33,17 @@ jobs:
     timeout-minutes: 350
     env:
       GH_TOKEN: ${{ github.token }}
+      TICK_SECONDS: ${{ vars.TICK_SECONDS }}   # optional repo variable, default 300 (60 = every minute; see note above)
     steps:
-      - name: Start an update every minute
+      - name: Start an update every few minutes
         run: |
+          tick=${TICK_SECONDS:-300}
+          case "$tick" in ''|*[!0-9]*) tick=300 ;; esac
+          [ "$tick" -ge 60 ] || tick=60
           end=$(( $(date +%s) + 330 * 60 ))
           while [ "$(date +%s)" -lt "$end" ]; do
             gh workflow run update.yml --repo "$GITHUB_REPOSITORY" --ref main || echo "::warning::dispatch failed, retrying next tick"
-            sleep $(( 60 - $(date +%s) % 60 ))   # next whole minute
+            sleep $(( tick - $(date +%s) % tick ))   # next whole slot (:00, :05, :10 ... for 300 s)
           done
       - name: Hand over to the next ticker
         if: always()
