@@ -1451,14 +1451,14 @@
   function drawAlerts() {
     const A = DATA.alerts, list = $('al-list');
     list.replaceChildren();
-    const icon = { move: '📈', level: '🧱', flip: '🔄', analyst: '🧠', event: '🗓' };
+    const icon = { move: '📈', level: '🧱', flip: '🔄', analyst: '🧠', event: '🗓', step: '' };
     const items = (A && A.log) || [];
     for (const x of items) {
       const li = el('li');
-      li.append(el('span', { class: 'when' }, new Date(x.t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })), el('span', {}, `${icon[x.type] || '•'} ${x.text}`));
+      li.append(el('span', { class: 'when' }, new Date(x.t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })), el('span', {}, `${icon[x.type] ?? '•'} ${x.text}`.trim()));
       list.append(li);
     }
-    const how = 'Alerts cover unusual daily moves, breaks of the 50- and 200-day averages and the 20-session high or low, the model lean flipping between bullish and bearish, the AI analyst switching between bullish and bearish, and reminders before scheduled reports. Each fires once.';
+    const how = 'Alerts cover every 0.5% price move since the previous price alert (▲ / ▼), unusual daily moves, breaks of the 50- and 200-day averages and the 20-session high or low, the model lean flipping between bullish and bearish, the AI analyst switching between bullish and bearish, and reminders before scheduled reports. Each fires once.';
     $('al-note').textContent = !A ? 'Alerts start with the next refresh.'
       : (items.length ? '' : 'No alerts for this market in the last 7 days. ') + how + (A.telegram ? ' They are also sent to Telegram.' : ' They can also be sent to Telegram: see the README.');
   }
