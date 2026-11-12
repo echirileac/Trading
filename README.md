@@ -44,7 +44,7 @@ Every build compares the new data with the previous build and records alerts in 
 - **Unusual move:** today's change is beyond the range that holds on about 90% of days for that market (and a second, "very large" level at 3 standard deviations). One per day and direction.
 - **Key level break:** the price moves clearly through the 50- or 200-day average, or above the previous 20-session high / below the 20-session low. A level that moves past a still price does not count; the same level waits 6 hours before alerting again.
 - **Model lean flip:** the forecast lean changes between bullish and bearish (passing through Neutral is not a flip; at most one flip alert per 2 hours).
-- **AI analyst stance change** in a new note.
+- **AI analyst switch** between bullish and bearish in a new note (passing through neutral is not a switch; at most one per 4 hours).
 - **Scheduled reports:** EIA storage and oil reports, Fed decisions, US inflation (CPI) and jobs reports an hour before; earnings dates from the evening before. A report shared by several markets is one message.
 
 The first build after this was added only records the current state, so nothing old is sent.
