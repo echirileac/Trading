@@ -49,6 +49,8 @@ jobs:
           ALERT_QUIET_HOURS: ${{ vars.ALERT_QUIET_HOURS }}       # optional, e.g. 23-7: sent without sound (Bucharest time)
           ALERT_EVENT_LEAD_MIN: ${{ vars.ALERT_EVENT_LEAD_MIN }} # optional, default 60
           ALERT_TZ: ${{ vars.ALERT_TZ }}                         # optional, default Europe/Bucharest
+          ALERT_STEP_PCT: ${{ vars.ALERT_STEP_PCT }}             # optional, default 0.5 (% move between price alerts; 0 = off)
+          ALERT_STEP_MARKETS: ${{ vars.ALERT_STEP_MARKETS }}     # optional, e.g. NATGAS,BRENT (default all)
           # SITE_URL: "https://your-custom-domain.example/"   # only if you use a custom domain
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5

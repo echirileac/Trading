@@ -41,6 +41,7 @@ From then on it refreshes itself about every minute.
 
 Every build compares the new data with the previous build and records alerts in a **Recent alerts** card on each market page (last 7 days). Each alert fires once:
 
+- **Price steps (▲ / ▼):** every time a market has moved 0.5% from the price at its previous price alert, in either direction. A jump of several steps between two builds is one alert with the whole move. Prices are sampled about every 5 minutes, so a spike that reverses in between is not seen. Repository variables `ALERT_STEP_PCT` (default `0.5`, `0` = off) and `ALERT_STEP_MARKETS` (default all). The page keeps the last 10 of these besides the other alerts.
 - **Unusual move:** today's change is beyond the range that holds on about 90% of days for that market (and a second, "very large" level at 3 standard deviations). One per day and direction.
 - **Key level break:** the price moves clearly through the 50- or 200-day average, or above the previous 20-session high / below the 20-session low. A level that moves past a still price does not count; the same level waits 6 hours before alerting again.
 - **Model lean flip:** the forecast lean changes between bullish and bearish (passing through Neutral is not a flip; at most one flip alert per 2 hours).
@@ -57,7 +58,7 @@ The first build after this was added only records the current state, so nothing 
 5. Add a second secret: `TELEGRAM_CHAT_ID` = that number.
 6. Run **Telegram test** again: you get a "connected" message. If not, the run's log says what to fix (wrong token, chat not found, no Start pressed).
 
-Alerts then arrive within about a minute or two of happening, with a link to the market. Optional repository **variables**: `ALERT_TYPES` (default `move,level,flip,analyst,event`), `ALERT_MARKETS` (e.g. `NATGAS,BRENT`; default all), `ALERT_QUIET_HOURS` (e.g. `23-7`: sent without sound during those hours, Bucharest time), `ALERT_EVENT_LEAD_MIN` (default 60), `ALERT_TZ` (default `Europe/Bucharest`). The site only sends messages, so the same bot can also run the separate alert bot.
+Alerts then arrive within about a minute or two of happening, with a link to the market. Optional repository **variables**: `ALERT_TYPES` (default `move,step,level,flip,analyst,event`), `ALERT_MARKETS` (e.g. `NATGAS,BRENT`; default all), `ALERT_QUIET_HOURS` (e.g. `23-7`: sent without sound during those hours, Bucharest time), `ALERT_EVENT_LEAD_MIN` (default 60), `ALERT_TZ` (default `Europe/Bucharest`). The site only sends messages, so the same bot can also run the separate alert bot.
 
 ## Trading calendars (added November 2026)
 

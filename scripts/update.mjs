@@ -1171,11 +1171,15 @@ const ALERTS_VERSION = 1;
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TG_CHAT = process.env.TELEGRAM_CHAT_ID || '';
 const TG_API = process.env.TELEGRAM_API || 'https://api.telegram.org'; // overridable for local tests
-const ALERT_TYPES = (process.env.ALERT_TYPES || 'move,level,flip,analyst,event').split(',').map((x) => x.trim()).filter(Boolean);
+const ALERT_TYPES = (process.env.ALERT_TYPES || 'move,step,level,flip,analyst,event').split(',').map((x) => x.trim()).filter(Boolean);
 const ALERT_MARKETS = (process.env.ALERT_MARKETS || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean); // empty = all
 const ALERT_TZ = process.env.ALERT_TZ || 'Europe/Bucharest';
 const ALERT_QUIET = (process.env.ALERT_QUIET_HOURS || '').match(/^(\d{1,2})-(\d{1,2})$/); // e.g. 23-7: sent silently
 const ALERT_EVENT_LEAD_MIN = Number(process.env.ALERT_EVENT_LEAD_MIN) || 60;
+// price steps: an alert each time the price has moved this many % from the price at the market's previous step alert
+const ALERT_STEP_PCT = process.env.ALERT_STEP_PCT === undefined || process.env.ALERT_STEP_PCT === '' ? 0.5 : Number(process.env.ALERT_STEP_PCT) || 0; // 0 = off
+const ALERT_STEP_MARKETS = (process.env.ALERT_STEP_MARKETS || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean); // empty = all
+const ALERT_STEP_LOG_KEEP = 10; // the page keeps the last 10 step alerts besides the other alerts
 const ALERT_LEVEL_COOLDOWN_H = 6, ALERT_FLIP_COOLDOWN_H = 2, ALERT_ANALYST_COOLDOWN_H = 4, ALERT_LOG_KEEP = 25;
 const OUTBOX = [];             // alerts found in this build, sent at the end of main()
 const tzTime = (t, opts = {}) => new Intl.DateTimeFormat('en-GB', { timeZone: ALERT_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...opts }).format(new Date(t));
@@ -1209,6 +1213,22 @@ function alertsFor(m, out, prev, now) {
     if (lvl && !st.sent[`move:${session}:${Math.sign(z)}:${lvl}`]) {
       for (let k = 1; k < lvl; k++) st.sent[`move:${session}:${Math.sign(z)}:${k}`] ||= new Date(now).toISOString();
       fire('move', `move:${session}:${Math.sign(z)}:${lvl}`, `${pct > 0 ? 'Up' : 'Down'} ${Math.abs(pct).toFixed(1)}% today: ${lvl === 2 ? 'a very large' : 'an unusual'} move (90% of days stay within ±${band.toFixed(1)}%)`);
+    }
+  }
+
+  // 1b. Price steps: every ALERT_STEP_PCT move from the price at the previous step alert, in either direction.
+  //     A jump of several steps between two builds is one alert with the whole move. Prices are sampled about
+  //     every 5 minutes, so a spike that reverses between two samples is not seen.
+  if (ALERT_STEP_PCT > 0 && last > 0 && (!ALERT_STEP_MARKETS.length || ALERT_STEP_MARKETS.includes(String(m.id).toUpperCase()))) {
+    if (!(st.anchor > 0)) st.anchor = last;      // first sight: remember the price, no alert
+    else {
+      const mv = 100 * (last / st.anchor - 1);
+      if (Math.abs(mv) >= ALERT_STEP_PCT - 1e-9) {
+        const today = out.price.changePct;
+        const text = `${mv > 0 ? '▲ +' : '▼ '}${mv.toFixed(2)}% since the last price alert: ${f(st.anchor)} → ${f(last)}${today != null ? ` (today ${today > 0 ? '+' : ''}${today.toFixed(2)}%)` : ''}`;
+        if (!seed) found.push({ t: new Date(now).toISOString(), type: 'step', text });
+        st.anchor = last;
+      }
     }
   }
 
@@ -1278,7 +1298,9 @@ function alertsFor(m, out, prev, now) {
 
   // forget sent markers older than 3 days, except the ones that hold state
   for (const [k, t] of Object.entries(st.sent)) if (now - Date.parse(t) > 3 * 864e5 && !/^(lvl:|flip$|analyst$)/.test(k)) delete st.sent[k];
-  const log = [...found.slice().reverse(), ...(prevA?.log || [])].filter((x) => now - Date.parse(x.t) < 7 * 864e5).slice(0, ALERT_LOG_KEEP);
+  let nStep = 0, nOther = 0; // step alerts can be frequent: keep them from pushing the other alerts off the page
+  const log = [...found.slice().reverse(), ...(prevA?.log || [])].filter((x) => now - Date.parse(x.t) < 7 * 864e5)
+    .filter((x) => (x.type === 'step' ? nStep++ < ALERT_STEP_LOG_KEEP : nOther++ < ALERT_LOG_KEEP));
   if (found.length) OUTBOX.push({ id: m.id, name: m.name, last, changePct: out.price.changePct, dec, items: found });
   return { v: ALERTS_VERSION, state: st, log, telegram: !!(TG_TOKEN && TG_CHAT) };
 }
@@ -1297,9 +1319,9 @@ function alertMessages(base) {
   for (const b of boxes) {
     const items = b.items.filter((x) => x.type !== 'event');
     if (!items.length) continue;
-    const icon = { move: '📈', level: '🧱', flip: '🔄', analyst: '🧠' };
+    const icon = { move: '📈', level: '🧱', flip: '🔄', analyst: '🧠', step: '' };
     const chg = b.changePct != null ? ` (${b.changePct > 0 ? '+' : ''}${b.changePct.toFixed(2)}%)` : '';
-    parts.push(`<b>${esc(b.name)}</b> ${Number(b.last).toFixed(b.dec)}${chg}\n` + items.map((x) => `${icon[x.type] || '•'} ${esc(x.text)}`).join('\n') + (base ? `\n<a href="${esc(base)}#${encodeURIComponent(b.id)}/1d">Open ${esc(b.id)}</a>` : ''));
+    parts.push(`<b>${esc(b.name)}</b> ${Number(b.last).toFixed(b.dec)}${chg}\n` + items.map((x) => `${icon[x.type] ?? '•'} ${esc(x.text)}`.trim()).join('\n') + (base ? `\n<a href="${esc(base)}#${encodeURIComponent(b.id)}/1d">Open ${esc(b.id)}</a>` : ''));
   }
   for (const e of events.values()) parts.push(`🗓 <b>${esc(e.name)}</b> ${esc(e.when)}\nMarkets: ${esc(e.ids.join(', '))}`);
   if (!parts.length) return [];
