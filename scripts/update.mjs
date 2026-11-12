@@ -1176,7 +1176,7 @@ const ALERT_MARKETS = (process.env.ALERT_MARKETS || '').split(',').map((x) => x.
 const ALERT_TZ = process.env.ALERT_TZ || 'Europe/Bucharest';
 const ALERT_QUIET = (process.env.ALERT_QUIET_HOURS || '').match(/^(\d{1,2})-(\d{1,2})$/); // e.g. 23-7: sent silently
 const ALERT_EVENT_LEAD_MIN = Number(process.env.ALERT_EVENT_LEAD_MIN) || 60;
-const ALERT_LEVEL_COOLDOWN_H = 6, ALERT_FLIP_COOLDOWN_H = 2, ALERT_LOG_KEEP = 25;
+const ALERT_LEVEL_COOLDOWN_H = 6, ALERT_FLIP_COOLDOWN_H = 2, ALERT_ANALYST_COOLDOWN_H = 4, ALERT_LOG_KEEP = 25;
 const OUTBOX = [];             // alerts found in this build, sent at the end of main()
 const tzTime = (t, opts = {}) => new Intl.DateTimeFormat('en-GB', { timeZone: ALERT_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...opts }).format(new Date(t));
 const dirOf = (bias) => (/^Bullish/.test(bias || '') ? 1 : /^Bearish/.test(bias || '') ? -1 : 0);
@@ -1253,13 +1253,16 @@ function alertsFor(m, out, prev, now) {
     }
   }
 
-  // 4. AI analyst changes its stance in a new note
+  // 4. AI analyst switches between bullish and bearish in a new note. Hourly notes often wobble through
+  //    "neutral", so neutral is ignored (like the model lean) and there is at most one such alert per 4 hours.
   const ai = out.ai;
-  if (ai?.status === 'ok' && ai.stance) {
-    if (!st.stance) st.stance = ai.stance;
-    else if (ai.stance !== st.stance && ai.at !== prev?.ai?.at) {
-      fire('analyst', `ai:${ai.at}`, `AI analyst turned ${ai.stance} (was ${st.stance})${ai.headline ? `: ${ai.headline}` : ''}`);
-      st.stance = ai.stance;
+  const side = (x) => (/bull/i.test(x || '') ? 'bullish' : /bear/i.test(x || '') ? 'bearish' : null);
+  if (ai?.status === 'ok' && side(ai.stance)) {
+    if (!side(st.stance)) st.stance = side(ai.stance);
+    else if (side(ai.stance) !== st.stance && ai.at !== prev?.ai?.at && hoursSince('analyst') >= ALERT_ANALYST_COOLDOWN_H) {
+      delete st.sent.analyst;
+      fire('analyst', 'analyst', `AI analyst turned ${side(ai.stance)} (was ${st.stance})${ai.headline ? `: ${ai.headline}` : ''}`);
+      st.stance = side(ai.stance);
     }
   }
 
@@ -1274,7 +1277,7 @@ function alertsFor(m, out, prev, now) {
   }
 
   // forget sent markers older than 3 days, except the ones that hold state
-  for (const [k, t] of Object.entries(st.sent)) if (now - Date.parse(t) > 3 * 864e5 && !/^(lvl:|flip$)/.test(k)) delete st.sent[k];
+  for (const [k, t] of Object.entries(st.sent)) if (now - Date.parse(t) > 3 * 864e5 && !/^(lvl:|flip$|analyst$)/.test(k)) delete st.sent[k];
   const log = [...found.slice().reverse(), ...(prevA?.log || [])].filter((x) => now - Date.parse(x.t) < 7 * 864e5).slice(0, ALERT_LOG_KEEP);
   if (found.length) OUTBOX.push({ id: m.id, name: m.name, last, changePct: out.price.changePct, dec, items: found });
   return { v: ALERTS_VERSION, state: st, log, telegram: !!(TG_TOKEN && TG_CHAT) };
