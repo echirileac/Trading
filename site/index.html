@@ -159,6 +159,20 @@
   .btn.ghost { background: transparent; color: var(--muted); }
   .hint { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
   .top-actions { display: flex; gap: 8px; align-items: center; }
+  /* password lock */
+  .lock { display: none; min-height: 100vh; place-items: center; padding: 24px 16px; }
+  body.locked .lock { display: grid; }
+  body.locked .wrap { display: none; }
+  .lock form { width: min(360px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 24px; display: grid; gap: 14px; }
+  .lock h1 { margin: 0; font-size: 20px; }
+  .lock p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+  .lock label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+  .lock input[type=password] { background: var(--panel2); border: 1px solid var(--line); color: var(--fg); border-radius: 9px; padding: 11px 12px; font: 16px var(--font); }
+  .lock input[type=password]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .lock .chk { display: flex; gap: 8px; align-items: center; font-weight: 400; color: var(--muted); }
+  .lock .btn { padding: 11px 12px; font-size: 15px; background: var(--accent); border-color: var(--accent); color: #fff; }
+  .lock .btn[disabled] { opacity: .6; cursor: progress; }
+  .lock .err { color: var(--down); min-height: 1.2em; }
   .ai h3 { font-size: 18px; line-height: 1.35; margin: 10px 0 6px; }
   .ai p { font-size: 14px; line-height: 1.6; margin: 0 0 10px; }
   .ai .ai-outlook { background: var(--panel2); border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
@@ -256,6 +270,17 @@
 </style>
 </head>
 <body>
+<main class="lock" id="lock" aria-labelledby="lock-h">
+  <form id="lock-form" autocomplete="on">
+    <h1 id="lock-h">Market watch</h1>
+    <p>This site is private. Enter the password to see the markets.</p>
+    <input type="text" name="username" value="market-watch" autocomplete="username" hidden>
+    <label>Password<input type="password" id="lock-pw" name="password" autocomplete="current-password" required></label>
+    <label class="chk"><input type="checkbox" id="lock-keep" checked> Remember on this device</label>
+    <button class="btn" id="lock-go" type="submit">Unlock</button>
+    <p class="err" id="lock-err" role="alert"></p>
+  </form>
+</main>
 <div class="wrap" id="top" tabindex="-1">
   <nav class="wl" id="wl" aria-label="Watchlist"></nav>
 
@@ -282,7 +307,7 @@
 
   <header class="top">
     <div class="sym"><span class="dot" id="dot"></span><span id="m-name">Loading…</span> <span class="pill" id="m-pill"></span></div>
-    <div class="top-actions"><span class="status" id="status">Loading…</span><a class="btn ghost tg-btn" id="tg" href="#" target="_blank" rel="noopener" role="switch" aria-checked="false" hidden><span class="sw" aria-hidden="true"></span><span id="tg-lbl">Telegram</span></a><a class="btn ghost" id="remove" href="#" target="_blank" rel="noopener" hidden>Remove</a><button class="btn ghost theme-btn" id="theme" type="button" aria-label="Colour theme"></button></div>
+    <div class="top-actions"><span class="status" id="status">Loading…</span><a class="btn ghost tg-btn" id="tg" href="#" target="_blank" rel="noopener" role="switch" aria-checked="false" hidden><span class="sw" aria-hidden="true"></span><span id="tg-lbl">Telegram</span></a><a class="btn ghost" id="remove" href="#" target="_blank" rel="noopener" hidden>Remove</a><button class="btn ghost" id="lock-btn" type="button" title="Forget the password on this device" hidden>Lock</button><button class="btn ghost theme-btn" id="theme" type="button" aria-label="Colour theme"></button></div>
   </header>
   <div class="banner" id="banner"></div>
 
@@ -519,10 +544,82 @@
   function setHash() { history.replaceState(null, '', `#${CUR_ID}/${H}d`); }
   { const ph = parseHash(); if (ph.h) H = ph.h; CUR_ID = ph.id; }
 
+  // ---------- password lock ----------
+  // With SITE_PASSWORD set on GitHub, every data file arrives as { enc: 1, kdf, iv, ct }: gzip + AES-256-GCM with a key made
+  // from the password (PBKDF2-SHA256). The key, never the password, is kept on this device when "Remember" is ticked.
+  const LOCK = { raw: null, asking: null };
+  const LOCK_STORE = 'site-key';
+  const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const b64e = (u) => btoa(String.fromCharCode(...u));
+  const kdfId = (k) => `${k.alg}|${k.salt}|${k.iter}`;
+  function storedKey(kdf) {
+    for (const st of [sessionStorage, localStorage]) {
+      try { const v = JSON.parse(st.getItem(LOCK_STORE)); if (v && v.kdf === kdfId(kdf)) return b64d(v.k); } catch { /* none */ }
+    }
+    return null;
+  }
+  function forgetKey() { LOCK.raw = null; for (const st of [sessionStorage, localStorage]) { try { st.removeItem(LOCK_STORE); } catch { /* ignore */ } } }
+  async function deriveKey(pw, kdf) {
+    const enc = new TextEncoder();
+    const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+    return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(kdf.salt), iterations: kdf.iter }, base, 256));
+  }
+  async function openSealed(j, raw) {
+    const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+    const zipped = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64d(j.iv) }, key, b64d(j.ct));
+    return JSON.parse(await new Response(new Blob([zipped]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+  }
+  // Shows the password screen; resolves once the typed password opens the sample file j.
+  function askPassword(j) {
+    if (LOCK.asking) return LOCK.asking;
+    document.body.classList.add('locked');
+    const form = $('lock-form'), pw = $('lock-pw'), err = $('lock-err'), go = $('lock-go');
+    if (!window.crypto?.subtle || !window.DecompressionStream) err.textContent = 'This browser is too old to open the locked site. Try a current Chrome, Safari or Firefox.';
+    pw.focus();
+    LOCK.asking = new Promise((resolve) => {
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (!pw.value) return;
+        go.disabled = true; go.textContent = 'Checking…'; err.textContent = '';
+        try {
+          const raw = await deriveKey(pw.value, j.kdf);
+          await openSealed(j, raw); // throws on a wrong password
+          LOCK.raw = raw;
+          try { ($('lock-keep').checked ? localStorage : sessionStorage).setItem(LOCK_STORE, JSON.stringify({ kdf: kdfId(j.kdf), k: b64e(raw) })); } catch { /* private mode: this tab only */ }
+          pw.value = '';
+          document.body.classList.remove('locked');
+          LOCK.asking = null;
+          resolve();
+        } catch {
+          err.textContent = 'Wrong password, try again.';
+          pw.select();
+        } finally { go.disabled = false; go.textContent = 'Unlock'; }
+      };
+    });
+    return LOCK.asking;
+  }
+  // fetch + JSON + unlock: { ok, status, data }
+  async function getData(url) {
+    const r = await fetch(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return { ok: false, status: r.status };
+    const j = await r.json();
+    if (j?.enc !== 1) { $('lock-btn').hidden = true; return { ok: true, data: j }; }
+    for (;;) {
+      const raw = LOCK.raw || storedKey(j.kdf);
+      if (raw) {
+        try { const data = await openSealed(j, raw); LOCK.raw = raw; $('lock-btn').hidden = false; return { ok: true, data }; }
+        catch { forgetKey(); } // password changed since it was saved
+      }
+      await askPassword(j);
+    }
+  }
+  $('lock-btn').addEventListener('click', () => { forgetKey(); location.reload(); });
+
   async function load() {
+    if (LOCK.asking) return; // the password screen is open: nothing to refresh yet
     try {
-      const r = await fetch('data/index.json?t=' + Date.now(), { cache: 'no-store' });
-      if (r.ok) INDEX = await r.json();
+      const r = await getData('data/index.json');
+      if (r.ok) INDEX = r.data;
     } catch { /* older deployments have no index */ }
     if (!INDEX) INDEX = { markets: [{ id: 'NATGAS', name: 'Natural gas (Henry Hub)', symbol: 'NG front month' }] };
     if (!CUR_ID || !INDEX.markets.some((m) => m.id === CUR_ID)) CUR_ID = INDEX.markets[0]?.id || 'NATGAS';
@@ -531,10 +628,10 @@
   }
   async function loadMarket() {
     try {
-      let r = await fetch(`data/m/${CUR_ID}.json?t=` + Date.now(), { cache: 'no-store' });
-      if (!r.ok && CUR_ID === 'NATGAS') r = await fetch('data/latest.json?t=' + Date.now(), { cache: 'no-store' });
+      let r = await getData(`data/m/${CUR_ID}.json`);
+      if (!r.ok && CUR_ID === 'NATGAS') r = await getData('data/latest.json');
       if (!r.ok) throw new Error(r.status === 404 ? 'not built yet' : 'HTTP ' + r.status);
-      DATA = await r.json();
+      DATA = r.data;
       lastFetch = Date.now();
       render();
     } catch (e) {

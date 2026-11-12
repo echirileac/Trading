@@ -44,6 +44,8 @@ jobs:
           NEWS_AI_CATEGORIES: ${{ vars.NEWS_AI_CATEGORIES }}  # optional, default equity,etf (add energy,metal,index,fx,crypto to extend)
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}  # optional: alerts to Telegram (bot from @BotFather)
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}      # optional: your chat with the bot
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}            # optional: the page asks for this password; data is published encrypted
+          SITE_PASSWORD_OLD: ${{ secrets.SITE_PASSWORD_OLD }}    # only while changing or removing the password: the previous one
           ALERT_TYPES: ${{ vars.ALERT_TYPES }}                   # optional, default move,level,flip,analyst,event
           ALERT_MARKETS: ${{ vars.ALERT_MARKETS }}               # optional, e.g. NATGAS,BRENT (default all)
           ALERT_QUIET_HOURS: ${{ vars.ALERT_QUIET_HOURS }}       # optional, e.g. 23-7: sent without sound (Bucharest time)
@@ -63,14 +65,15 @@ jobs:
         # GitHub can report "Reported success!" for a deploy while the live site keeps serving an older
         # one (12 Nov 2026: frozen for an hour). Read the live data file and fail loudly if it is older
         # than what this run just built, so the problem shows up as a red run instead of silently.
+        # With the password lock on, index.json is encrypted and carries its build time as `at`.
         if: steps.deployment.outcome == 'success'
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
-          built=$(node -e "console.log(JSON.parse(require('fs').readFileSync('site/data/index.json','utf8')).generatedAt)")
+          built=$(node -e "const j=JSON.parse(require('fs').readFileSync('site/data/index.json','utf8')); console.log(j.generatedAt||j.at||'')")
           live=""
           for i in 1 2 3 4 5 6 7 8; do
-            live=$(curl -fsS --max-time 15 "${PAGE_URL}data/index.json?t=$(date +%s)" 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).generatedAt||'')}catch{console.log('')}})" || true)
+            live=$(curl -fsS --max-time 15 "${PAGE_URL}data/index.json?t=$(date +%s)" 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);console.log(j.generatedAt||j.at||'')}catch{console.log('')}})" || true)
             if [ -n "$live" ] && [[ ! "$live" < "$built" ]]; then echo "Live site is current (built $built, live $live)"; exit 0; fi
             sleep 10
           done
