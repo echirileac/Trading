@@ -227,11 +227,16 @@
   @media (max-width: 640px) { .hide-sm { display: none; } }
   .theme-btn { display: inline-flex; align-items: center; gap: 6px; }
   .theme-btn svg { width: 16px; height: 16px; }
+  .to-top { position: fixed; z-index: 20; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border-radius: 50%; color: var(--fg); box-shadow: 0 4px 14px rgba(0,0,0,.25); opacity: 0; visibility: hidden; transform: translateY(8px); transition: opacity .2s ease, transform .2s ease, visibility 0s linear .2s; }
+  .to-top.show { opacity: 1; visibility: visible; transform: none; transition: opacity .2s ease, transform .2s ease, visibility 0s; }
+  .to-top svg { width: 18px; height: 18px; }
+  .wrap:focus { outline: none; }
+  @media (prefers-reduced-motion: reduce) { .to-top, .to-top.show { transition: none; } }
   @media (max-width: 520px) { .price { font-size: 40px; } .fc-center { font-size: 30px; } }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap" id="top" tabindex="-1">
   <nav class="wl" id="wl" aria-label="Watchlist"></nav>
 
   <details class="card ov" id="ov">
@@ -426,6 +431,24 @@
   </details>
   <p class="disc">Not financial advice. CFDs are leveraged and can move fast against you. A broker's CFD quote can differ slightly from the market prices shown here, and futures-based CFDs roll to the next contract a few days before expiry.</p>
 </div>
+
+<button class="btn to-top" id="to-top" type="button" aria-label="Back to top" title="Back to top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+<script>
+(() => {
+  // Back to top: appears after scrolling about one screen down.
+  const btn = document.getElementById('to-top'), top = document.getElementById('top');
+  const calm = matchMedia('(prefers-reduced-motion: reduce)');
+  let queued = false;
+  const update = () => { queued = false; btn.classList.toggle('show', window.scrollY > Math.max(400, window.innerHeight * 0.8)); };
+  window.addEventListener('scroll', () => { if (!queued) { queued = true; requestAnimationFrame(update); } }, { passive: true });
+  window.addEventListener('resize', update, { passive: true });
+  btn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: calm.matches ? 'auto' : 'smooth' });
+    top.focus({ preventScroll: true }); // keyboard users continue from the top too
+  });
+  update();
+})();
+</script>
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script>
