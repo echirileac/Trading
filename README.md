@@ -84,6 +84,14 @@ The page can be locked with a password. Add the repo secret `SITE_PASSWORD` (Set
 - Use a long passphrase (four or more unrelated words): the encrypted files are public, so a short password could be guessed offline.
 - What stays public because the repo is public: the code, `watchlist.json` (which markets you follow), the Telegram on/off requests (GitHub issues) and the Actions log (which markets built; prices and the model lean are left out of it while the lock is on). The live TradingView chart shows public market data only.
 
+## Edison Growth interface (added November 2026)
+
+A second interface for the same site, at `edison.html`: four places (Markets, Market, Alerts, Track record), the forecast range first and the model's lean as a small line, a Plan a trade panel (the risk helper) that draws entry, stop and target on the chart, one alert feed for every market, and a phone layout with a bottom bar. Dark and Silver (light) themes.
+
+- **Same code, same data.** Both pages run `site/app.js` (the page code that used to sit inside `index.html`) and read the same data files, so markets, forecasts, alerts, the track record, the password and every saved setting are shared. `site/edison.js` only adds the Edison layout on top.
+- **Switching.** "Try Edison Growth" on Classic, "Classic" in Edison's top bar. It asks first, then checks that the other page loads, that this browser's saved key opens the data and that the market has a price; only then does it switch (`site/switch.js`). Otherwise you stay where you are and nothing changes. The choice is remembered per device; add `?ui=classic` to any address to get back to Classic.
+- When changing page code, edit `site/app.js` and raise the `?v=` number in both `index.html` and `edison.html` so browsers load the new file.
+
 ## Trading calendars (added November 2026)
 
 Forecast target dates and the track record count real trading sessions. Weekends are skipped, and so are exchange holidays: the NYSE calendar (including Good Friday and the Saturday/Sunday observance rules) for stocks, ETFs and natural gas, whose CME settlements follow the same days; ICE closures (New Year's Day, Good Friday, Christmas) for Brent; none for currencies, spot metals and crypto. Checked against NYSE's published 2026-2028 calendar. Half-days (the day after Thanksgiving, Christmas Eve) count as normal sessions.
