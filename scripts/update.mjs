@@ -708,11 +708,12 @@ function rsi(closes, n = 14) {
 const SIGMA_FLOOR = { fx: 0.0025, index: 0.005, etf: 0.005, metal: 0.005, equity: 0.008, energy: 0.012, crypto: 0.012 };
 
 const WEIGHT = { news: 0.45, trend: 0.2, momentum: 0.15, rsi: 0.2 };
-// The timeframe reading (15 min / 1 hour / 1 day, see scripts/mtf.mjs) is shown and scored like the other signals, but
-// counts for nothing in the lean until it has earned it: on the daily history of NATGAS and Brent (Nov 2026) its daily
-// part pointed the right way 47-56% of the time, no better than the other price signals. MTF_WEIGHT (a share, e.g.
-// 0.15) switches it on; the other signals then share what is left in their usual proportions.
-const MTF_WEIGHT = clamp(Number(process.env.MTF_WEIGHT) || 0, 0, 0.5);
+// The timeframe reading (15 min / 1 hour / 1 day, see scripts/mtf.mjs) is part of the forecast: it takes MTF_WEIGHT of the
+// lean and the other signals share what is left in their usual proportions. Default 15% (asked for 13 Nov 2026). It has not
+// earned more yet: on the daily history of NATGAS and Brent (Nov 2026) its daily part pointed the right way 47-56% of the
+// time, no better than the other price signals. The repo variable MTF_WEIGHT overrides it (0 = shown but not counted, max 0.5).
+const MTF_WEIGHT_DEFAULT = 0.15;
+const MTF_WEIGHT = (() => { const v = String(process.env.MTF_WEIGHT ?? '').trim(); const n = Number(v); return v === '' || !isFinite(n) ? MTF_WEIGHT_DEFAULT : clamp(n, 0, 0.5); })();
 const W = { ...Object.fromEntries(Object.entries(WEIGHT).map(([k, v]) => [k, round(v * (1 - MTF_WEIGHT), 4)])), mtf: MTF_WEIGHT };
 const DRIFT_K = 0.25; // drift per day = score x DRIFT_K x daily volatility. Backtest fit (Nov 2026, 5 markets, ~980 forecasts): 0.20 +/- 0.17, so 0.25 stays
 // Width of the wide (90%) range in volatility units. A normal curve says 1.645, but over the last year only 87-89% of closes
@@ -754,12 +755,15 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
   const newsRaw = wsum > 0 ? ssum / wsum : 0;
   const newsSig = Math.tanh(newsRaw * 0.9);
 
+  // the timeframe reading takes its share only once at least one timeframe has enough bars; until then the other
+  // signals keep their full weights (a reading of 0 would only water the lean down)
+  const Wf = opts.mtf?.ready ? W : { ...WEIGHT, mtf: 0 };
   const signals = [
-    { id: 'news', name: 'News sentiment', weight: W.news, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && ['full', 'partial'].includes(n.read.status)).length} read in full or in part, ${recent.filter((n) => n.read && n.read.status === 'summary').length} paywalled summaries${nAi ? `, ${nAi} scored by AI` : ''}${offTopic ? `; ${offTopic} set aside as not about this market` : ''}), recency-weighted score ${newsRaw.toFixed(2)}` },
-    { id: 'trend', name: 'Trend vs 20-day average', weight: W.trend, value: trendSig, detail: s20 ? `Price ${(100 * (last / s20 - 1)).toFixed(1)}% vs 20-day average $${s20.toFixed(3)}` : 'Not enough history' },
-    { id: 'momentum', name: '5-day momentum', weight: W.momentum, value: momSig, detail: `${(100 * (Math.exp(ret5) - 1)).toFixed(1)}% over 5 sessions` },
-    { id: 'rsi', name: 'Overbought / oversold (RSI 14)', weight: W.rsi, value: rsiSig, detail: r == null ? 'Not enough history' : `RSI ${r.toFixed(0)} (below 30 oversold, above 70 overbought)` },
-    ...(opts.mtf ? [{ id: 'mtf', name: 'Timeframes together (15 min, 1 hour, 1 day)', weight: W.mtf, value: opts.mtf.value, detail: opts.mtf.detail }] : [])
+    { id: 'news', name: 'News sentiment', weight: Wf.news, value: newsSig, detail: `${recent.length} trusted stories in the last 72h (${recent.filter((n) => n.read && ['full', 'partial'].includes(n.read.status)).length} read in full or in part, ${recent.filter((n) => n.read && n.read.status === 'summary').length} paywalled summaries${nAi ? `, ${nAi} scored by AI` : ''}${offTopic ? `; ${offTopic} set aside as not about this market` : ''}), recency-weighted score ${newsRaw.toFixed(2)}` },
+    { id: 'trend', name: 'Trend vs 20-day average', weight: Wf.trend, value: trendSig, detail: s20 ? `Price ${(100 * (last / s20 - 1)).toFixed(1)}% vs 20-day average $${s20.toFixed(3)}` : 'Not enough history' },
+    { id: 'momentum', name: '5-day momentum', weight: Wf.momentum, value: momSig, detail: `${(100 * (Math.exp(ret5) - 1)).toFixed(1)}% over 5 sessions` },
+    { id: 'rsi', name: 'Overbought / oversold (RSI 14)', weight: Wf.rsi, value: rsiSig, detail: r == null ? 'Not enough history' : `RSI ${r.toFixed(0)} (below 30 oversold, above 70 overbought)` },
+    ...(opts.mtf ? [{ id: 'mtf', name: 'Timeframes together (15 min, 1 hour, 1 day)', weight: Wf.mtf, value: opts.mtf.value, detail: opts.mtf.detail }] : [])
   ].map((s) => ({ ...s, value: round(s.value, 3), contribution: round(s.value * s.weight, 3) }));
   const score = clamp(signals.reduce((t, s) => t + s.value * s.weight, 0), -1, 1);
   const driftPerDay = score * DRIFT_K * sigma;
@@ -1020,7 +1024,7 @@ function thinIntraday(rows, now) {
   return out;
 }
 const pctOf = (w) => `${Math.round(w * 1000) / 10}%`;
-const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.75 (wider than the textbook 1.645, which covered only 87-89% of closes in the backtest). Signals: news sentiment from trusted outlets (' + pctOf(W.news) + '), trend vs 20-day average (' + pctOf(W.trend) + '), 5-day momentum (' + pctOf(W.momentum) + '), RSI mean reversion (' + pctOf(W.rsi) + ')' + (W.mtf ? ', the 15-minute, 1-hour and daily charts read together (' + pctOf(W.mtf) + ')' : '') + '. Each horizon targets the daily close that many sessions ahead (the first one is the next close at least 6 hours away). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.' + (W.mtf ? '' : ' The 15-minute, 1-hour and daily charts are also read together (trend, momentum, classic patterns); that reading is shown and scored like the other signals but does not move the forecast yet.');
+const METHOD = 'Ranges = live price x exp(drift x days +/- z x daily volatility x sqrt(days)); volatility blends 20- and 60-session realised volatility; drift = weighted signal score x 0.25 x daily volatility. 68% band z=1, 90% band z=1.75 (wider than the textbook 1.645, which covered only 87-89% of closes in the backtest). Signals: news sentiment from trusted outlets (' + pctOf(W.news) + '), trend vs 20-day average (' + pctOf(W.trend) + '), 5-day momentum (' + pctOf(W.momentum) + '), RSI mean reversion (' + pctOf(W.rsi) + ')' + (W.mtf ? ', the 15-minute, 1-hour and daily charts read together (' + pctOf(W.mtf) + ')' : '') + '. Each horizon targets the daily close that many sessions ahead (the first one is the next close at least 6 hours away). Volatility has a floor per asset class (0.25% a day for currencies up to 1.2% for energy and crypto). The higher/lower split is a model lean, not a calibrated probability: by construction it stays between 40% and 60% at 1 day and between 29% and 71% at 5 days.' + (W.mtf ? ' The timeframe share applies once the charts have enough bars; until then the other signals keep their full weights.' : ' The 15-minute, 1-hour and daily charts are also read together (trend, momentum, classic patterns); that reading is shown and scored like the other signals but does not move the forecast yet.');
 
 async function loadPrev(base, rel, now) {
   if (base && !OFFLINE) { try { const j = unseal(await get(`${base}data/${rel}?t=${now}`, { type: 'json', retries: 0 })); if (j?.price) return j; } catch { /* none */ } }
@@ -1069,8 +1073,8 @@ function mtfFor(m, px, prev, log, now, { formingDay = true } = {}) {
     const word = { up: 'up', down: 'down', side: 'sideways' };
     const detail = a.ready.length ? `${a.verdict.title}: ${MTF.TF_ORDER.filter((k) => a.tfs[k].ready).map((k) => `${MTF.TFS[k].label} ${word[a.tfs[k].label]}`).join(', ')}` : 'Not enough price history yet';
     return {
-      signal: { value: a.ready.length ? a.score : 0, detail },
-      out: { at: new Date(now).toISOString(), score: a.score, weight: W.mtf, verdict: a.verdict, tfs: a.tfs, rates, live, deep, source: c15 ? 'exchange 15-minute candles (Twelve Data), continued with the site\'s own price samples' : 'the site\'s own price samples' }
+      signal: { value: a.ready.length ? a.score : 0, ready: a.ready.length > 0, detail },
+      out: { at: new Date(now).toISOString(), score: a.score, weight: a.ready.length ? W.mtf : 0, verdict: a.verdict, tfs: a.tfs, rates, live, deep, source: c15 ? 'exchange 15-minute candles (Twelve Data), continued with the site\'s own price samples' : 'the site\'s own price samples' }
     };
   } catch (e) {
     console.log(`::warning title=${m.id} timeframes::${String(e?.message || e).slice(0, 200)}`);

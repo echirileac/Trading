@@ -245,6 +245,13 @@
   .tf-pats { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 12px; line-height: 1.5; color: var(--muted); }
   .tf-pats .chip { margin-right: 6px; white-space: nowrap; }
   .ov-table .tfa { letter-spacing: .12em; font-size: 12px; }
+  .fc-tf { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 6px; font-size: 13px; }
+  .fc-tf-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .fc-tf-top > span:first-child { color: var(--muted); }
+  .fc-tf-row { display: flex; gap: 14px; flex-wrap: wrap; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fc-tf-row small { color: var(--muted); font-weight: 400; margin-right: 4px; }
+  .fc-tf p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .fc-tf a { color: inherit; }
   details.tf-how { margin-top: 12px; }
   details.tf-how summary { cursor: pointer; font-size: 12px; color: var(--muted); }
   .ev-line { margin: 12px 0 0; font-size: 13px; line-height: 1.5; background: var(--banner-bg); border: 1px solid var(--banner-line); color: var(--banner-fg); border-radius: 10px; padding: 8px 12px; }
@@ -354,11 +361,12 @@
       <div><small>Likely range (68%)</small><b id="r68">—</b></div>
       <div><small>Wide range (90%)</small><b id="r90">—</b></div>
     </div>
+    <div class="fc-tf" id="fc-tf" hidden></div>
     <p class="ev-line" id="fc-events" hidden></p>
   </section>
 
   <section class="card needs-data" id="tf-card" aria-live="polite" hidden>
-    <div class="fc-head"><span>Timeframes</span><span class="bias" id="tf-verdict">—</span></div>
+    <div class="fc-head"><span>Timeframes in detail</span><span class="bias" id="tf-verdict">—</span></div>
     <p class="tf-text" id="tf-text"></p>
     <div class="tf-grid" id="tf-grid"></div>
     <details class="tf-how"><summary>How this is read and scored</summary><p class="note" id="tf-note" style="margin:8px 0 0"></p></details>
@@ -904,6 +912,7 @@
     $('p-up').textContent = `${Math.round(100 * h.pUp)}% higher`;
     $('r68').textContent = `${usd(h.lo68, 2)} – ${usd(h.hi68, 2)}`;
     $('r90').textContent = `${usd(h.lo90, 2)} – ${usd(h.hi90, 2)}`;
+    drawFcTimeframes(f);
     drawEvents(h);
 
     drawTimeframes(); drawAI(); setView(); tvUpdate(); pcUpdate(); drawTrack(); drawIntraday(); drawSignals(); drawLevels(); drawRisk(); drawNews(); drawAlerts(); drawSources();
@@ -1279,6 +1288,32 @@
   $('cal').addEventListener('toggle', () => { keep('cal-open', $('cal').open); calUpdate(); });
 
   // ---------- timeframes (15 minutes, 1 hour, 1 day) ----------
+  // the timeframe reading inside the forecast card: verdict, one arrow per timeframe and what it adds to the lean
+  function drawFcTimeframes(f) {
+    const t = DATA.mtf, box = $('fc-tf'), sig = (f.signals || []).find((s) => s.id === 'mtf');
+    box.hidden = !(t && t.verdict && t.tfs);
+    if (box.hidden) return;
+    box.replaceChildren();
+    const v = t.verdict, top = el('div', { class: 'fc-tf-top' });
+    top.append(el('span', {}, 'Timeframes'), el('span', { class: 'bias ' + cls(v.dir) }, v.title));
+    const row = el('div', { class: 'fc-tf-row' }), word = { up: '▲ up', down: '▼ down', side: '◆ sideways' }, dirOf = { up: 1, down: -1, side: 0 };
+    for (const [k, n] of [['15m', '15 min'], ['1h', '1 hour'], ['1d', '1 day']]) {
+      const s = t.tfs[k]; if (!s) continue;
+      const it = el('span', { class: s.ready ? cls(dirOf[s.label]) : 'flat' });
+      it.append(el('small', {}, n), document.createTextNode(s.ready ? word[s.label] : 'building'));
+      row.append(it);
+    }
+    const w = sig ? sig.weight : t.weight || 0, c = sig ? sig.contribution : 0;
+    const p = el('p');
+    p.append(document.createTextNode(w > 0
+      ? `Counts for ${Math.round(w * 100)}% of the lean: ${c > 0 ? '+' : ''}${c.toFixed(2)} of the combined score ${f.score > 0 ? '+' : ''}${f.score.toFixed(2)}. `
+      : (Object.values(t.tfs).some((s) => s && s.ready) ? 'Shown only, not counted in the lean. ' : 'Not counted until the charts have enough bars. ')));
+    const a = el('a', { href: '#tf-card' }, 'Patterns and hit rates');
+    a.addEventListener('click', (e) => { e.preventDefault(); $('tf-card').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    p.append(a);
+    box.append(top, row, p);
+  }
+
   function drawTimeframes() {
     const t = DATA.mtf, card = $('tf-card');
     card.hidden = !(t && t.verdict && t.tfs);
@@ -1468,7 +1503,7 @@
     for (const s of f.signals) {
       const row = el('div', { class: 'sig' });
       const top = el('div', { class: 'sig-top' });
-      top.append(el('span', {}, `${s.name} · ${s.id === 'mtf' && !s.weight ? 'not counted yet' : Math.round(s.weight * 100) + '%'}`), el('span', { class: cls(s.value) }, (s.value > 0 ? '+' : '') + s.value.toFixed(2)));
+      top.append(el('span', {}, `${s.name} · ${s.id === 'mtf' && !s.weight ? 'not counted' : Math.round(s.weight * 100) + '%'}`), el('span', { class: cls(s.value) }, (s.value > 0 ? '+' : '') + s.value.toFixed(2)));
       const bar = el('div', { class: 'dbar' });
       const w = Math.abs(s.value) * 50;
       const i = el('i'); i.style.width = w + '%'; i.style.left = s.value >= 0 ? '50%' : (50 - w) + '%'; i.style.background = s.value >= 0 ? 'var(--up)' : 'var(--down)';
