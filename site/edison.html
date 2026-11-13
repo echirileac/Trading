@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Edison Growth · markets</title>
+<meta name="description" content="Edison Growth: live market watchlist with forecast ranges, charts, an AI analyst note, alerts and a trade planner.">
+<meta name="theme-color" content="#0B0B12">
+<meta name="color-scheme" content="dark light">
+<meta name="ui-page" content="edison">
+<script>
+  // ?ui=classic always opens Classic (switch.js remembers the choice on this device)
+  (function () {
+    try {
+      if (new URLSearchParams(location.search).get('ui') === 'classic') { localStorage.setItem('ui', 'classic'); location.replace('./' + location.hash); }
+    } catch (e) {}
+    var t = 'auto'; try { t = localStorage.getItem('theme') || 'auto'; } catch (e) {}
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+<style>
+  /* Edison Growth. The variable names are the same as Classic's because the shared code (app.js) reads them for the charts. */
+  :root {
+    --bg: #0B0B12; --panel: #15151E; --panel2: #1D1D29; --line: #2A2A38; --fg: #F2F1F7; --muted: #A6A3BC;
+    --up: #4FD6A0; --down: #FF6B81; --neutral: #F5B544; --accent: #9D64F5; --accent-text: #B48CFF; --btn: #7D54CB;
+    --accent-soft: rgba(157,100,245,.16); --glow: rgba(157,100,245,.24); --warn-soft: rgba(245,181,68,.10);
+    --grid: #ffffff10; --track: #ffffff14; --track-strong: #ffffff30; --ref: #ffffffaa; --ref-soft: #ffffff55;
+    --tick-open: #ffffff80; --cursor: #ffffff40; --shade: #ffffff08; --tip-bg: #0d0d16ee; --halo: rgba(255,255,255,.05);
+    --banner-bg: rgba(245,181,68,.10); --banner-line: rgba(245,181,68,.40); --banner-fg: #F7D58F; --area-top: .28;
+    --c-ma20: #F5B544; --c-ma50: #7AA2FF; --c-ma200: #D2BAFF; --c-bb: #39C5CF; --c-signal: #F0883E;
+    --shadow: 0 24px 70px rgba(0,0,0,.45);
+    color-scheme: dark;
+    --r: 24px; --font: Inter, "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  :root[data-theme="light"] {
+    --bg: #EDEDF2; --panel: #FFFFFF; --panel2: #F0F0F5; --line: #DCDCE6; --fg: #14131C; --muted: #5B5873;
+    --up: #0A7350; --down: #B42A45; --neutral: #8A5700; --accent: #6B3FD6; --accent-text: #6B3FD6; --btn: #6B3FD6;
+    --accent-soft: rgba(107,63,214,.10); --glow: rgba(107,63,214,.13); --warn-soft: rgba(138,87,0,.08);
+    --grid: #0000000f; --track: #00000012; --track-strong: #00000026; --ref: #00000099; --ref-soft: #00000055;
+    --tick-open: #00000070; --cursor: #00000040; --shade: #00000006; --tip-bg: #fffffff5; --halo: rgba(0,0,0,.06);
+    --banner-bg: #FFF4D6; --banner-line: #E8C46B; --banner-fg: #6B4A00; --area-top: .18;
+    --c-ma20: #B7791F; --c-ma50: #2F62D8; --c-ma200: #8250DF; --c-bb: #0E8A96; --c-signal: #D4590B;
+    --shadow: 0 24px 60px rgba(20,19,28,.16);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #EDEDF2; --panel: #FFFFFF; --panel2: #F0F0F5; --line: #DCDCE6; --fg: #14131C; --muted: #5B5873;
+      --up: #0A7350; --down: #B42A45; --neutral: #8A5700; --accent: #6B3FD6; --accent-text: #6B3FD6; --btn: #6B3FD6;
+      --accent-soft: rgba(107,63,214,.10); --glow: rgba(107,63,214,.13); --warn-soft: rgba(138,87,0,.08);
+      --grid: #0000000f; --track: #00000012; --track-strong: #00000026; --ref: #00000099; --ref-soft: #00000055;
+      --tick-open: #00000070; --cursor: #00000040; --shade: #00000006; --tip-bg: #fffffff5; --halo: rgba(0,0,0,.06);
+      --banner-bg: #FFF4D6; --banner-line: #E8C46B; --banner-fg: #6B4A00; --area-top: .18;
+      --c-ma20: #B7791F; --c-ma50: #2F62D8; --c-ma200: #8250DF; --c-bb: #0E8A96; --c-signal: #D4590B;
+      --shadow: 0 24px 60px rgba(20,19,28,.16);
+      color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.45; -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+  a { color: var(--accent-text); }
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+  .note, .hint { font-size: 13px; color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 16px clamp(14px, 3vw, 40px) 64px; display: grid; gap: 18px; }
+  .wrap:focus { outline: none; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 22px; min-width: 0; }
+  .card h2, .eg-h2 { font-size: 16px; font-weight: 600; margin: 0 0 6px; letter-spacing: -.005em; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; background: transparent; border: 1px solid var(--line); color: var(--fg); border-radius: 999px; padding: 0 16px; font: 500 14px var(--font); cursor: pointer; white-space: nowrap; text-decoration: none; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.ghost { color: var(--fg); }
+  .btn.main { background: var(--btn); border-color: var(--btn); color: #fff; font-weight: 600; }
+  .btn.icon { width: 40px; padding: 0; }
+  .btn svg { width: 17px; height: 17px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chips button, .eg-filter button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; min-height: 34px; padding: 0 12px; font: 500 13px var(--font); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chips button[aria-pressed="true"], .eg-filter button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); background: var(--accent-soft); }
+  .chips i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+  .bias { font-size: 12px; font-weight: 500; border-radius: 999px; padding: 4px 10px; border: 1px solid currentColor; white-space: nowrap; }
+  .chip { font-size: 12px; font-weight: 500; border-radius: 999px; padding: 2px 9px; border: 1px solid currentColor; }
+
+  /* top bar */
+  .eg-bar { position: sticky; top: 10px; z-index: 30; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 10px 8px 14px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 999px; }
+  .eg-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; white-space: nowrap; padding-right: 4px; }
+  .eg-brand svg { width: 28px; height: 28px; flex: none; }
+  .eg-nav { display: flex; gap: 2px; }
+  .eg-nav button { appearance: none; border: 0; background: transparent; color: var(--muted); font: 500 14px var(--font); min-height: 40px; padding: 0 16px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+  .eg-nav button svg { width: 20px; height: 20px; display: none; }
+  .eg-nav button[aria-current="page"] { background: var(--panel2); color: var(--fg); }
+  .eg-nav button:hover { color: var(--fg); }
+  .eg-sp { flex: 1 1 10px; }
+  .eg-pulse { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .eg-pulse i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .eg-pulse.live i { background: var(--up); box-shadow: 0 0 0 4px color-mix(in srgb, var(--up) 20%, transparent); }
+  .eg-pulse.stale i { background: var(--neutral); }
+  .eg-ui { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--panel2); }
+  .eg-ui > * { appearance: none; border: 0; background: transparent; color: var(--muted); font: 500 13px var(--font); min-height: 34px; padding: 0 12px; border-radius: 999px; display: inline-flex; align-items: center; cursor: pointer; }
+  .eg-ui [aria-current="true"] { background: var(--btn); color: #fff; cursor: default; }
+  .theme-btn svg { width: 16px; height: 16px; }
+  .theme-btn span { font-size: 13px; }
+  .tg-btn { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+  .tg-btn .sw { position: relative; width: 28px; height: 16px; border-radius: 8px; background: var(--line); transition: background .15s; flex: 0 0 auto; }
+  .tg-btn .sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--fg); transition: transform .15s; }
+  .tg-btn[aria-checked="true"] .sw { background: var(--btn); }
+  .tg-btn[aria-checked="true"] .sw::after { transform: translateX(12px); background: #fff; }
+  .tg-btn.pending { opacity: .7; }
+  .tg-btn.pending .sw::after { left: 8px; transform: none; }
+
+  .banner { display: none; background: var(--banner-bg); border: 1px solid var(--banner-line); color: var(--banner-fg); border-radius: 16px; padding: 10px 16px; font-size: 14px; }
+  .banner.show { display: block; }
+
+  /* views */
+  .eg-view { display: none; gap: 18px; min-width: 0; }
+  body[data-view="markets"] .eg-view[data-view="markets"], body[data-view="market"] .eg-view[data-view="market"],
+  body[data-view="alerts"] .eg-view[data-view="alerts"], body[data-view="record"] .eg-view[data-view="record"] { display: grid; }
+  body[data-view="markets"] #wl, body[data-view="alerts"] #wl { display: none; }
+  .eg-pagehead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px; }
+  .eg-pagehead h1 { margin: 0; font-size: 32px; font-weight: 300; letter-spacing: -.02em; }
+  .eg-pagehead p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .eg-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  /* market chips (shared watchlist strip) */
+  .wl { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 4px; scrollbar-width: thin; }
+  .wl-card { flex: 0 0 auto; min-width: 140px; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 10px 16px; color: var(--fg); font: inherit; cursor: pointer; display: grid; gap: 1px; }
+  .wl-card[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .wl-card .n { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+  .wl-card .b, .wl-card .s, .wl-card .f { display: none; }
+  .wl-card .p { font-size: 14px; font-weight: 400; display: inline; }
+  .wl-card .c { font-size: 12px; }
+  .wl-add { flex: 0 0 auto; min-width: 120px; border: 1px dashed var(--line); background: transparent; color: var(--muted); border-radius: 18px; font: 500 13px var(--font); cursor: pointer; padding: 0 16px; }
+  .wl-add:hover, .wl-card:hover { border-color: var(--accent); }
+
+  /* search (opens over the page) */
+  .search { display: none; }
+  .search.open { display: grid; gap: 12px; position: fixed; z-index: 60; left: 50%; top: 84px; transform: translateX(-50%); width: min(680px, calc(100vw - 24px)); max-height: calc(100vh - 110px); overflow: auto; box-shadow: var(--shadow); }
+  .search .fc-head { display: flex; justify-content: space-between; align-items: center; }
+  .search input { width: 100%; background: var(--panel2); border: 1px solid var(--line); border-radius: 14px; color: var(--fg); font: 16px var(--font); padding: 12px 14px; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filters button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; min-height: 32px; padding: 0 12px; font: 13px var(--font); cursor: pointer; }
+  .filters button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); background: var(--accent-soft); }
+  .results { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; }
+  .results li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 2px; border-top: 1px solid var(--line); }
+  .results li:first-child { border-top: 0; }
+  .results .rn { font-size: 14px; } .results .rm { font-size: 12px; color: var(--muted); }
+
+  /* market hero */
+  .eg-hero { display: flex; flex-wrap: wrap; gap: 20px 32px; align-items: center; justify-content: space-between; }
+  .eg-hero-l { display: grid; gap: 4px; min-width: 0; flex: 1 1 380px; }
+  .sym { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.open { background: var(--up); box-shadow: 0 0 0 4px color-mix(in srgb, var(--up) 20%, transparent); }
+  .pill { font-size: 12px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+  .hero { display: flex; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; }
+  .price { font-size: 64px; font-weight: 300; letter-spacing: -.035em; line-height: 1.05; }
+  .price .dim { color: var(--muted); }
+  .chg { font-size: 17px; font-weight: 500; }
+  .asof, .status { font-size: 13px; color: var(--muted); }
+  .eg-hero-r { display: grid; gap: 10px; flex: 0 1 300px; min-width: 240px; }
+  .eg-event { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 16px; background: var(--warn-soft); border: 1px solid var(--line); font-size: 13px; }
+  .eg-event svg { width: 18px; height: 18px; flex: none; stroke: var(--neutral); }
+  .eg-event b { display: block; font-weight: 500; font-size: 13px; }
+  .eg-event span { color: var(--muted); }
+  .eg-actions { display: flex; gap: 8px; }
+  .eg-actions .btn.main { flex: 1 1 auto; min-height: 44px; }
+  .eg-more { position: relative; }
+  .eg-more summary { list-style: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; cursor: pointer; font-size: 18px; }
+  .eg-more summary::-webkit-details-marker { display: none; }
+  .eg-more[open] .eg-menu { display: grid; }
+  .eg-menu { display: none; position: absolute; right: 0; top: 50px; z-index: 20; min-width: 220px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 6px; box-shadow: var(--shadow); }
+  .eg-menu a, .eg-menu button { display: block; text-align: left; padding: 10px 12px; border-radius: 10px; color: var(--fg); text-decoration: none; font-size: 14px; background: none; border: 0; cursor: pointer; }
+  .eg-menu a:hover, .eg-menu button:hover { background: var(--panel2); }
+
+  .eg-grid { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+  .eg-main { flex: 999 1 620px; min-width: 0; display: grid; gap: 18px; }
+  .eg-side { flex: 1 1 340px; min-width: 0; display: grid; gap: 18px; }
+
+  /* forecast: range first, lean small */
+  .seg, .eg-seg { display: inline-grid; grid-auto-flow: column; background: var(--panel2); border-radius: 999px; padding: 4px; gap: 2px; }
+  .seg button, .eg-seg button { appearance: none; border: 0; background: transparent; color: var(--muted); font: 500 13px var(--font); min-height: 36px; padding: 0 16px; border-radius: 999px; cursor: pointer; }
+  .seg button[aria-selected="true"], .eg-seg button[aria-pressed="true"] { background: var(--btn); color: #fff; font-weight: 600; }
+  .eg-fc { position: relative; overflow: hidden; border-color: var(--accent); background: radial-gradient(120% 140% at 0% 0%, var(--glow), transparent 55%), var(--panel); display: grid; gap: 16px; }
+  .fc-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .fc-head h2 { margin: 0; font-size: 14px; font-weight: 500; color: var(--muted); }
+  .ranges { display: flex; flex-wrap: wrap; gap: 16px 40px; align-items: flex-end; }
+  .ranges > div { display: grid; gap: 2px; }
+  .ranges small { font-size: 13px; color: var(--muted); }
+  .ranges b { font-weight: 400; font-size: 22px; }
+  .ranges .r-likely b { font-size: 44px; font-weight: 300; letter-spacing: -.02em; line-height: 1.1; }
+  .fc-pct { font-size: 14px; }
+  .eg-ladder { position: relative; height: 54px; }
+  .eg-ladder .t { position: absolute; left: 0; right: 0; top: 18px; height: 4px; border-radius: 999px; background: var(--track); }
+  .eg-ladder .w { position: absolute; top: 13px; height: 14px; border-radius: 999px; background: var(--accent-soft); border: 1px solid var(--accent); }
+  .eg-ladder .l { position: absolute; top: 9px; height: 22px; border-radius: 999px; background: var(--accent); opacity: .55; }
+  .eg-ladder .c { position: absolute; top: 3px; width: 2px; height: 34px; background: var(--fg); }
+  .eg-ladder .n { position: absolute; top: 13px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--bg); border: 2px solid var(--fg); }
+  .eg-ladder .lb { position: absolute; top: 40px; font-size: 12px; color: var(--muted); white-space: nowrap; transform: translateX(-50%); }
+  .eg-ladder .lb.e0 { transform: none; } .eg-ladder .lb.e1 { transform: translateX(-100%); }
+  .ev-line { margin: 0; font-size: 13px; line-height: 1.5; background: var(--banner-bg); border: 1px solid var(--banner-line); color: var(--banner-fg); border-radius: 14px; padding: 10px 14px; }
+  .eg-lean { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 8px 12px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; }
+  .eg-lean .lbl { color: var(--muted); }
+  .eg-lean .bias { color: var(--muted) !important; border-color: var(--line); font-weight: 500; }
+  .eg-lean .prob { display: grid; gap: 4px; min-width: 160px; }
+  .prob-bar { display: flex; height: 4px; border-radius: 999px; overflow: hidden; background: var(--track); }
+  .prob-bar span { display: block; height: 100%; }
+  #pb-down { background: var(--track-strong); } #pb-up { background: color-mix(in srgb, var(--accent) 70%, transparent); }
+  .prob-lbl { display: flex; justify-content: space-between; font-size: 12px; }
+  .prob-lbl span { color: var(--muted) !important; }
+  .eg-lean .note { grid-column: 1 / -1; margin: 0; }
+  .eg-disagree { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; padding: 14px 18px; border-radius: 18px; background: var(--panel); border: 1px solid var(--line); font-size: 14px; }
+  .eg-disagree svg { width: 18px; height: 18px; flex: none; stroke: var(--neutral); }
+  .eg-disagree b { font-weight: 500; }
+  .eg-disagree span { color: var(--muted); }
+
+  /* chart */
+  .pc-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .pc-head h2 { margin: 0; }
+  #pc-view { padding: 4px; border-radius: 999px; background: var(--panel2); gap: 2px; }
+  #pc-view button { border: 0; min-height: 32px; }
+  #pc-view button[aria-pressed="true"] { background: var(--panel); border: 0; }
+  .pc-wrap { position: relative; border-radius: 16px; overflow: hidden; }
+  .pc-legend { position: absolute; z-index: 2; top: 8px; left: 10px; right: 70px; font-size: 12px; color: var(--muted); pointer-events: none; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .pc-legend b { color: var(--fg); font-weight: 500; }
+  .pc-main { height: 420px; }
+  .pc-sub { height: 120px; border-top: 1px solid var(--line); position: relative; }
+  .pc-sub .pc-tag { position: absolute; z-index: 2; top: 4px; left: 10px; font-size: 11px; color: var(--muted); pointer-events: none; }
+  .pc-credit { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  .view-live .pc-forecast, .view-forecast .pc-live { display: none; }
+  .tv-box { height: 560px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--panel2); }
+  .tv-box .tradingview-widget-container, .tv-box .tradingview-widget-container__widget { width: 100%; height: 100%; }
+  .tv-sym { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+  .tv-sym input { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; color: var(--fg); font: 13px var(--font); padding: 8px 10px; width: 200px; max-width: 100%; }
+  .tv-sym .btn { min-height: 34px; padding: 0 12px; font-size: 13px; }
+  .eg-chartnote { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+
+  /* detail tabs */
+  .eg-tablist { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; margin: -8px -4px 18px; scrollbar-width: none; }
+  .eg-tablist button { appearance: none; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font: 500 14px var(--font); padding: 14px 14px 12px; cursor: pointer; white-space: nowrap; }
+  .eg-tablist button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+  .eg-panel { min-width: 0; }
+  .eg-panel > .card { background: none; border: 0; padding: 0; border-radius: 0; }
+  .eg-filter { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 6px; }
+  .news { list-style: none; margin: 0; padding: 0; }
+  .news li { padding: 14px 0; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+  .news li:first-child { border-top: 0; }
+  .news a { text-decoration: none; font-size: 15px; line-height: 1.4; color: var(--fg); }
+  .news a:hover { text-decoration: underline; }
+  .news li.off a { color: var(--muted); }
+  .meta { font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .rd { font-size: 12px; color: var(--muted); } .rd-full { color: var(--accent-text); }
+  .kp { font-size: 13px; color: var(--muted); }
+  .aib { font-size: 11px; font-weight: 600; color: var(--accent-text); border: 1px solid currentColor; border-radius: 6px; padding: 0 5px; cursor: help; }
+  .meta .chip.flat { color: var(--muted); border-color: var(--line); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { padding: 10px 6px; border-top: 1px solid var(--line); }
+  tr:first-child td { border-top: 0; }
+  td.r { text-align: right; }
+  #levels td .k { font-size: 12px; border-radius: 999px; padding: 2px 9px; border: 1px solid var(--line); color: var(--muted); }
+  #levels td .k.down::before { content: "\25B2  "; font-size: 9px; }
+  #levels td .k.up::before { content: "\25BC  "; font-size: 9px; }
+  #levels tr.now td { color: var(--accent-text); font-weight: 600; }
+  .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 14px; color: var(--muted); }
+  .sources li::before { content: "\25CF"; margin-right: 8px; color: var(--up); }
+  .sources li.bad::before { color: var(--down); }
+  .ev-list { list-style: none; margin: 0 0 14px; padding: 0; font-size: 14px; }
+  .ev-list li { padding: 10px 0; border-top: 1px solid var(--line); display: flex; gap: 12px; flex-wrap: wrap; }
+  .ev-list li:first-child { border-top: 0; }
+  .ev-list .when { color: var(--muted); min-width: 150px; }
+  .ev-list .nt { color: var(--muted); font-size: 13px; width: 100%; }
+  details.cal summary, details.tf-how summary { cursor: pointer; font-size: 14px; color: var(--muted); }
+  .cal-box { height: 480px; margin-top: 12px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .cal-box .tradingview-widget-container, .cal-box .tradingview-widget-container__widget { width: 100%; height: 100%; }
+  .eg-method p, .eg-method li { font-size: 14px; color: var(--muted); line-height: 1.6; }
+  .eg-method summary { display: none; }
+
+  /* timeframes in detail */
+  .tf-text { font-size: 15px; line-height: 1.5; margin: 6px 0 14px; }
+  .tf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; }
+  .tf { background: var(--panel2); border-radius: 18px; padding: 14px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+  .tf-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 14px; }
+  .tf-top span { font-size: 13px; font-weight: 600; }
+  .tf-pats { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+  .tf-pats .chip { margin-right: 6px; white-space: nowrap; }
+  #tf-card .fc-head > span:first-child { font-size: 16px; font-weight: 600; color: var(--fg); }
+
+  /* side column */
+  .sig { display: grid; gap: 6px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .sig:first-of-type { border-top: 0; }
+  .sig-top { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+  .sig-top span:last-child { font-weight: 600; }
+  .sig-detail { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .dbar { position: relative; height: 6px; background: var(--track); border-radius: 999px; }
+  .dbar::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--muted); opacity: .6; }
+  .dbar i { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+  #signals .dbar i { background: var(--accent) !important; }
+  .fc-tf { display: grid; gap: 10px; font-size: 14px; }
+  .fc-tf-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .fc-tf-top > span:first-child { font-size: 16px; font-weight: 600; }
+  .fc-tf-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .fc-tf-row > span { display: grid; gap: 2px; background: var(--panel2); border-radius: 14px; padding: 10px 12px; font-size: 14px; font-weight: 500; }
+  .fc-tf-row small { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .fc-tf p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+  .fc-tf a { color: var(--accent-text); }
+  .spark { position: relative; width: 100%; }
+  .spark svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: var(--font); }
+  .tick { fill: var(--muted); font-size: 11px; }
+  .tip { position: absolute; pointer-events: none; background: var(--tip-bg); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; font-size: 12px; white-space: nowrap; z-index: 3; }
+  .tip .h { color: var(--muted); font-size: 11px; }
+  .ai h3 { font-size: 18px; font-weight: 500; line-height: 1.35; margin: 10px 0 6px; }
+  .ai p { font-size: 14px; line-height: 1.6; margin: 0 0 10px; color: var(--muted); }
+  .ai .ai-outlook { background: var(--panel2); border-radius: 14px; padding: 10px 12px; font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
+  .ai .cols { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .ai h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 4px 0 6px; font-weight: 600; }
+  .ai ul { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.55; }
+  .ai .lv { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ai .lv span { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; color: var(--muted) !important; }
+  .ai .foot { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  .ai .empty { font-size: 14px; color: var(--muted); line-height: 1.6; margin: 8px 0 0; }
+  .ai:not(.full) .cols { display: none; }
+  .ai .fc-head { color: var(--fg); }
+  .ai .fc-head > span:first-child { font-size: 16px; font-weight: 600; }
+  .ai .ev-line { margin-bottom: 10px; }
+  .eg-why { margin-top: 4px; }
+
+  /* plan a trade drawer */
+  .eg-drawer { position: fixed; z-index: 40; top: 84px; right: max(16px, calc((100vw - 1400px) / 2 + 16px)); bottom: 16px; width: min(480px, calc(100vw - 32px)); overflow: auto; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--r); box-shadow: var(--shadow); padding: 22px; display: grid; gap: 16px; align-content: start; }
+  .eg-drawer-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .eg-drawer-h h2 { margin: 0; font-size: 19px; }
+  .eg-drawer-h p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+  .eg-drawer #rk-card { border: 0; padding: 0; background: none; }
+  .eg-drawer #rk-card > h2 { display: none; }
+  .rk-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 4px 0 14px; }
+  .rk-form label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+  .rk-form .row { display: flex; gap: 6px; align-items: center; }
+  .rk-form input, .rk-form select { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; color: var(--fg); font: 15px var(--font); min-height: 44px; padding: 0 12px; min-width: 0; width: 100%; }
+  .rk-form select { width: 100%; }
+  .rk-form .row select[aria-label="Account currency"] { width: auto; flex: none; min-width: 84px; }
+  .rk-form .row > span { white-space: nowrap; flex: none; }
+  .rk-form .chips { margin: 0; padding: 4px; border-radius: 12px; background: var(--panel2); flex-wrap: nowrap; }
+  .rk-form .chips button { flex: 1 1 0; justify-content: center; border: 0; border-radius: 9px; min-height: 36px; }
+  .rk-form .chips button[aria-pressed="true"] { background: var(--btn); color: #fff; }
+  .rk-out { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .rk-out div { background: var(--panel2); border-radius: 16px; padding: 12px 14px; display: grid; gap: 2px; }
+  .rk-out small { font-size: 12px; color: var(--muted); }
+  .rk-out b { font-size: 16px; font-weight: 500; }
+  .rk-out b.big { font-size: 18px; }
+  #rk-loss { color: var(--down); } #rk-profit { color: var(--up); }
+  .rk-lines { list-style: none; margin: 14px 0 0; padding: 0; font-size: 13px; display: grid; gap: 8px; color: var(--muted); line-height: 1.5; }
+  .rk-lines li.warn { color: var(--fg); background: var(--warn-soft); border: 1px solid var(--banner-line); border-radius: 14px; padding: 8px 12px; }
+  .rk-lines li.bad { color: var(--fg); background: color-mix(in srgb, var(--down) 10%, transparent); border: 1px solid var(--down); border-radius: 14px; padding: 8px 12px; }
+  .rk-lines button { background: transparent; border: 1px solid var(--line); color: var(--fg); border-radius: 999px; padding: 2px 10px; font: 600 12px var(--font); cursor: pointer; margin-left: 6px; }
+  .eg-drawer .note { margin-bottom: 0; }
+
+  /* markets view */
+  .eg-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 18px; }
+  .eg-tile { display: grid; gap: 14px; text-align: left; padding: 22px; border-radius: var(--r); background: var(--panel); border: 1px solid var(--line); color: var(--fg); font: inherit; cursor: pointer; }
+  .eg-tile:hover { border-color: var(--accent); }
+  .eg-tile[aria-current="true"] { border-color: var(--accent); background: radial-gradient(120% 120% at 0% 0%, var(--glow), transparent 60%), var(--panel); }
+  .eg-tile .t1 { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .eg-tile .nm { font-size: 15px; font-weight: 600; }
+  .eg-tile .sb { font-size: 13px; color: var(--muted); }
+  .eg-tile .px { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .eg-tile .px b { font-size: 40px; font-weight: 300; letter-spacing: -.02em; line-height: 1; }
+  .eg-tile .px b .dim { color: var(--muted); }
+  .eg-tile .rg { display: grid; gap: 6px; font-size: 13px; }
+  .eg-tile .rg .r1 { display: flex; justify-content: space-between; gap: 8px; }
+  .eg-tile .bar { position: relative; height: 6px; border-radius: 999px; background: var(--accent-soft); }
+  .eg-tile .bar i { position: absolute; top: -3px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--fg); border: 2px solid var(--accent); }
+  .eg-tile .tf { background: none; padding: 0; display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+  .eg-tile .tfa { letter-spacing: 3px; }
+  .eg-tile .tags { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+  .eg-tile .ev { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 12px; border-radius: 12px; background: var(--warn-soft); }
+  .eg-tile .ev::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--neutral); flex: none; }
+  .eg-tile .ev.none { background: none; padding: 8px 0; color: var(--muted); }
+  .eg-tile .ev.none::before { display: none; }
+  .eg-tile .muted svg { width: 16px; height: 16px; stroke: var(--muted); }
+  .eg-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }
+  details.ov summary { display: none; }
+  .ov-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 6px 8px 10px; white-space: nowrap; }
+  .ov-table th button { appearance: none; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  .ov-table th button[aria-pressed="true"] { color: var(--fg); }
+  .ov-table td { padding: 12px 8px; font-size: 14px; white-space: nowrap; vertical-align: top; }
+  .ov-table tr.row { cursor: pointer; }
+  .ov-table tr.row:hover td { background: var(--shade); }
+  .ov-table tr.row[aria-current="true"] td { background: var(--accent-soft); }
+  .ov-table .sub { display: block; font-size: 12px; color: var(--muted); }
+  .ov-table .nm { appearance: none; background: none; border: 0; padding: 0; font: 600 14px var(--font); color: var(--fg); cursor: pointer; text-align: left; }
+  .ov-table .warn { color: var(--neutral); }
+  .ov-table .tfa { letter-spacing: .15em; }
+  .ov-table td:last-child { white-space: normal; min-width: 150px; }
+
+  /* alerts view */
+  .eg-tgl { display: flex; flex-wrap: wrap; gap: 8px; }
+  .eg-tgl > a { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; color: var(--fg); text-decoration: none; }
+  .eg-tgl > a .sw { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .eg-tgl > a.on .sw { background: var(--up); }
+  .eg-tgl > a.pending { opacity: .7; }
+  .eg-day { margin: 18px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .eg-day:first-child { margin-top: 0; }
+  .eg-feed { list-style: none; margin: 0; padding: 0; }
+  .eg-feed li { display: grid; grid-template-columns: 36px 1fr auto; gap: 12px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); }
+  .eg-feed li:first-child { border-top: 0; }
+  .eg-feed .ic { width: 36px; height: 36px; border-radius: 12px; background: var(--panel2); display: grid; place-items: center; font-size: 13px; }
+  .eg-feed .tx { display: grid; gap: 2px; min-width: 0; }
+  .eg-feed .mk { font-size: 14px; font-weight: 600; }
+  .eg-feed .tm { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .al-list { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  .al-list li { padding: 10px 0; border-top: 1px solid var(--line); display: flex; gap: 12px; flex-wrap: wrap; }
+  .al-list .when { color: var(--muted); min-width: 130px; }
+  body.eg-feed-ok #al-list { display: none; }
+
+  /* track record */
+  .tr-stats th, .tr-log th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 6px 6px 10px; white-space: nowrap; }
+  .tr-stats td, .tr-log td { font-size: 14px; white-space: nowrap; }
+  .tr-stats td:first-child { white-space: normal; }
+  .tr-stats td.ref { color: var(--muted); font-size: 13px; white-space: normal; min-width: 150px; }
+  .tr-log td.ref { color: var(--muted); font-size: 13px; }
+  .tr-stats b { font-size: 18px; font-weight: 400; }
+  .tr-stats b.small-n { font-size: 14px; color: var(--muted); font-weight: 400; }
+  .card h3.sub { font-size: 14px; font-weight: 600; margin: 18px 0 8px; }
+
+  /* lock screen */
+  .lock { display: none; min-height: 100vh; place-items: center; padding: 24px 16px; background: radial-gradient(60% 50% at 50% 30%, var(--glow), transparent 70%), var(--bg); }
+  body.locked .lock { display: grid; }
+  body.locked .wrap, body.locked .eg-drawer, body.locked .eg-tour { display: none !important; }
+  .lock form { width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 28px; display: grid; gap: 16px; box-shadow: var(--shadow); }
+  .lock h1 { margin: 0; font-size: 22px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .lock h1 svg { width: 30px; height: 30px; }
+  .lock p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .lock label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; }
+  .lock input[type=password] { background: var(--panel2); border: 1px solid var(--line); color: var(--fg); border-radius: 12px; min-height: 46px; padding: 0 14px; font: 16px var(--font); }
+  .lock .chk { display: flex; gap: 8px; align-items: center; font-weight: 400; color: var(--muted); }
+  .lock .btn { min-height: 46px; font-size: 15px; background: var(--btn); border-color: var(--btn); color: #fff; font-weight: 600; }
+  .lock .btn[disabled] { opacity: .6; cursor: progress; }
+  .lock .err { color: var(--down); min-height: 1.2em; }
+
+  .nodata .needs-data { display: none !important; }
+  .disc { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
+
+  /* first-visit tour */
+  .eg-tour { position: fixed; z-index: 70; right: 20px; bottom: 20px; width: min(360px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--accent); border-radius: 22px; box-shadow: var(--shadow); padding: 20px; display: grid; gap: 10px; }
+  .eg-tour h2 { margin: 0; font-size: 16px; }
+  .eg-tour p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5; }
+  .eg-tour .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .eg-tour .row span { font-size: 12px; color: var(--muted); }
+
+  @media (max-width: 760px) {
+    .wrap { padding-bottom: 104px; gap: 14px; }
+    .eg-bar { position: static; border-radius: 22px; padding: 8px 10px; gap: 8px; backdrop-filter: none; background: var(--panel); } /* a backdrop filter would trap the fixed bottom bar */
+    .eg-brand span { display: none; }
+    .eg-nav { position: fixed; z-index: 35; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px; border-radius: 28px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
+    .eg-nav button { flex: 1 1 0; flex-direction: column; gap: 2px; min-height: 52px; padding: 4px 0; font-size: 12px; border-radius: 22px; }
+    .eg-nav button svg { display: block; }
+    .eg-nav button[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); }
+    .theme-btn span, #tg-lbl { display: none; }
+    .eg-pulse span { display: none; }
+    .card { padding: 18px; border-radius: 20px; }
+    .price { font-size: 48px; }
+    .ranges .r-likely b { font-size: 32px; }
+    .ranges { gap: 12px 24px; }
+    .eg-hero-r { flex: 1 1 100%; }
+    .rk-form { grid-template-columns: 1fr; }
+    .eg-drawer { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: 88vh; border-radius: 24px 24px 0 0; padding-bottom: max(22px, env(safe-area-inset-bottom)); }
+    .pc-main { height: 300px; } .pc-sub { height: 100px; } .tv-box { height: 440px; }
+    .eg-pagehead h1 { font-size: 26px; }
+    .eg-tour { bottom: 96px; right: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body data-view="market">
+<main class="lock" id="lock" aria-labelledby="lock-h">
+  <form id="lock-form" autocomplete="on">
+    <h1 id="lock-h"><svg viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="9" fill="#7D54CB"/><path d="M8.5 19 13 13l3 3 4.5-7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Edison Growth</h1>
+    <p>This site is private. Enter the password to see the markets.</p>
+    <input type="text" name="username" value="market-watch" autocomplete="username" hidden>
+    <label>Password<input type="password" id="lock-pw" name="password" autocomplete="current-password" required></label>
+    <label class="chk"><input type="checkbox" id="lock-keep" checked> Remember on this device</label>
+    <button class="btn" id="lock-go" type="submit">Unlock</button>
+    <p class="err" id="lock-err" role="alert"></p>
+  </form>
+</main>
+<div class="wrap" id="top" tabindex="-1">
+  <header class="eg-bar">
+    <div class="eg-brand"><svg viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="9" fill="#7D54CB"/><path d="M8.5 19 13 13l3 3 4.5-7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Edison Growth</span></div>
+    <nav class="eg-nav" aria-label="Main">
+      <button type="button" data-go="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>Markets</button>
+      <button type="button" data-go="market"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19 9 12l4 4 7-9"/></svg>Market</button>
+      <button type="button" data-go="alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>Alerts</button>
+      <button type="button" data-go="record"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>Track record</button>
+    </nav>
+    <div class="eg-sp"></div>
+    <span class="eg-pulse" id="eg-pulse" title="How fresh the data is"><i></i><span id="eg-pulse-t">Loading…</span></span>
+    <a class="btn tg-btn" id="tg" href="#" target="_blank" rel="noopener" role="switch" aria-checked="false" hidden><span class="sw" aria-hidden="true"></span><span id="tg-lbl">Telegram</span></a>
+    <button class="btn theme-btn" id="theme" type="button" aria-label="Colour theme"></button>
+    <button class="btn icon" id="lock-btn" type="button" title="Forget the password on this device" aria-label="Lock the site" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
+    <div class="eg-ui" role="group" aria-label="Interface"><button type="button" data-ui-target="classic" title="Switch back to the Classic page: it asks first, then checks that it can open your data">Classic</button><span aria-current="true">Edison</span></div>
+  </header>
+
+  <nav class="wl" id="wl" aria-label="Watchlist"></nav>
+  <div class="banner" id="banner"></div>
+  <section class="card search" id="search" aria-label="Search markets">
+    <div class="fc-head"><b style="color:var(--fg);font-size:15px">Add a market</b><button class="btn ghost" id="search-close" type="button">Close</button></div>
+    <input id="q" type="search" placeholder="Search: gold, EUR/USD, Apple, bitcoin, DAX, oil…" autocomplete="off" aria-label="Search markets">
+    <div class="filters" id="filters">
+      <button type="button" data-f="" aria-pressed="true">All</button>
+      <button type="button" data-f="commodity" aria-pressed="false">Commodities</button>
+      <button type="button" data-f="fx" aria-pressed="false">Forex</button>
+      <button type="button" data-f="index" aria-pressed="false">Indices</button>
+      <button type="button" data-f="equity" aria-pressed="false">Stocks &amp; ETFs</button>
+      <button type="button" data-f="crypto" aria-pressed="false">Crypto</button>
+    </div>
+    <ul class="results" id="results"></ul>
+    <p class="hint" id="search-hint">Search results come from Twelve Data. "Add" opens a pre-filled request on GitHub: press <b>Create</b> there and the market appears here in about 2 minutes. Up to 8 markets on the free data plan. Listings marked "Paid data plan" (most non-US exchanges and some indices) are not in the free plan: pick the US listing instead.</p>
+  </section>
+
+  <!-- ===================== Markets ===================== -->
+  <section class="eg-view" data-view="markets" aria-labelledby="eg-mk-h">
+    <div class="eg-pagehead">
+      <div><h1 id="eg-mk-h">Markets</h1><p id="eg-mk-sum"></p></div>
+      <div class="eg-tools">
+        <nav class="seg" role="tablist" aria-label="Forecast horizon"><button role="tab" data-h="1">1 day</button><button role="tab" data-h="3">3 days</button><button role="tab" data-h="5">5 days</button></nav>
+        <div class="eg-seg" role="group" aria-label="Show markets as"><button type="button" data-mv="tiles">Tiles</button><button type="button" data-mv="table">Table</button></div>
+        <button class="btn main" type="button" id="eg-add">+ Add market</button>
+      </div>
+    </div>
+    <div class="eg-tiles" id="eg-tiles"></div>
+    <details class="card ov" id="ov">
+      <summary>All markets at a glance</summary>
+      <div class="tbl-wrap"><table class="ov-table" id="ov-table"></table></div>
+      <p class="note" style="margin:10px 0 0">Click a market to open it; click a column name to sort. The lean and range follow the horizon (1, 3 or 5 days). "Disagrees with model" marks markets where the AI analyst and the quant model point in opposite directions.</p>
+    </details>
+    <div class="eg-legend"><span>Arrows: 15 min · 1 hour · 1 day (◆ = sideways)</span><span>Dot: today's price inside the likely range</span><span>Crossed bell: Telegram off for that market</span></div>
+  </section>
+
+  <!-- ===================== Market ===================== -->
+  <section class="eg-view" data-view="market" aria-label="Market">
+    <section class="card eg-hero" aria-live="polite">
+      <div class="eg-hero-l">
+        <div class="sym"><span class="dot" id="dot"></span><span id="m-name">Loading…</span> <span class="pill" id="m-pill"></span></div>
+        <div class="hero needs-data">
+          <div class="price" id="price">—</div>
+          <div class="chg" id="chg"></div>
+        </div>
+        <div class="asof needs-data" id="asof"></div>
+        <div class="status" id="status">Loading…</div>
+      </div>
+      <div class="eg-hero-r">
+        <div class="eg-event needs-data" id="eg-event" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M4 10h16"/></svg><div><b id="eg-event-n"></b><span id="eg-event-w"></span></div></div>
+        <div class="eg-actions">
+          <button class="btn main needs-data" type="button" id="eg-plan" aria-controls="eg-drawer" aria-expanded="false">Plan a trade</button>
+          <details class="eg-more" id="eg-more"><summary aria-label="More actions">⋯</summary><div class="eg-menu"><a id="remove" href="#" target="_blank" rel="noopener" hidden>Remove from watchlist</a><button type="button" id="eg-retour">Show the tour again</button></div></details>
+        </div>
+      </div>
+    </section>
+
+    <div class="eg-grid">
+      <div class="eg-main">
+        <section class="card eg-fc needs-data" id="eg-fc" aria-live="polite">
+          <div class="fc-head"><h2 id="fc-title">Forecast</h2>
+            <nav class="seg" role="tablist" aria-label="Forecast horizon"><button role="tab" data-h="1">1 day</button><button role="tab" data-h="3">3 days</button><button role="tab" data-h="5">5 days</button></nav>
+          </div>
+          <div class="ranges">
+            <div class="r-likely"><small>Likely range · 68% of closes land here</small><b id="r68">—</b></div>
+            <div class="r-wide"><small>Wide range · 90%</small><b id="r90">—</b></div>
+            <div class="r-centre"><small>Centre</small><b><span id="fc-center">—</span> <span class="fc-pct" id="fc-pct"></span></b></div>
+          </div>
+          <div class="eg-ladder" id="eg-ladder" aria-hidden="true"></div>
+          <p class="ev-line" id="fc-events" hidden></p>
+          <div class="eg-lean">
+            <span class="lbl">Model lean</span><span class="bias" id="bias">—</span>
+            <div class="prob"><div class="prob-bar"><span id="pb-down"></span><span id="pb-up"></span></div><div class="prob-lbl"><span id="p-down"></span><span id="p-up"></span></div></div>
+            <p class="note" id="eg-edge"></p>
+          </div>
+        </section>
+
+        <div class="eg-disagree needs-data" id="eg-disagree" role="note" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></svg><b>Signals disagree</b><span id="eg-disagree-t"></span></div>
+
+        <section class="card view-live" id="pc-card">
+    <div class="pc-head">
+      <h2>Chart</h2>
+      <div class="chips" id="pc-view" role="group" aria-label="Chart view">
+        <button type="button" data-v="live" title="TradingView chart: real candles on every timeframe, volume, indicators, drawing tools">Live · TradingView</button><button type="button" data-v="forecast" class="needs-data" title="Daily candles with the model's forecast lines">Forecast view</button>
+      </div>
+    </div>
+    <div class="pc-live">
+      <div class="tv-box" id="tv-box"></div>
+      <form class="tv-sym" id="tv-form">
+        <label for="tv-input">TradingView symbol</label>
+        <input id="tv-input" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. NASDAQ:AAPL">
+        <button class="btn" type="submit">Apply</button>
+        <button class="btn ghost" type="button" id="tv-reset" hidden>Reset</button>
+      </form>
+      <p class="note" id="tv-note" style="margin:8px 0 0">Live chart from TradingView, free and with its own data: real candles from 1 minute to 1 month, volume, 100+ indicators and drawing tools. Forex and crypto are real-time; stocks are delayed. Commodities and indices show one broker's CFD price. Its level can sit several percent away from the futures price the forecast uses (brokers price different contract months or spot), while the moves are nearly the same. If TradingView carries your own broker, use its symbol. If the chart says the symbol is not available, type another TradingView symbol above and press Apply; it is remembered in this browser.</p>
+      <p class="pc-credit"><a href="https://www.tradingview.com/" target="_blank" rel="noopener nofollow">Track all markets on TradingView</a></p>
+    </div>
+    <div class="pc-forecast needs-data">
+    <div class="chips" id="pc-tf" role="group" aria-label="Timeframe" style="margin-bottom:8px">
+      <button type="button" data-tf="1D">1D</button><button type="button" data-tf="1W">1W</button><button type="button" data-tf="1M">1M</button><button type="button" data-tf="3M">3M</button><button type="button" data-tf="6M">6M</button><button type="button" data-tf="1Y">1Y</button>
+    </div>
+    <div class="chips" id="pc-tools" role="group" aria-label="Indicators" style="margin-bottom:10px">
+      <button type="button" data-k="ma20"><i style="background:var(--c-ma20)"></i>MA 20</button>
+      <button type="button" data-k="ma50"><i style="background:var(--c-ma50)"></i>MA 50</button>
+      <button type="button" data-k="ma200"><i style="background:var(--c-ma200)"></i>MA 200</button>
+      <button type="button" data-k="bb"><i style="background:var(--c-bb)"></i>Bollinger</button>
+      <button type="button" data-k="fc"><i style="background:var(--fg)"></i>Forecast</button>
+      <button type="button" data-k="rsi">RSI</button>
+      <button type="button" data-k="macd">MACD</button>
+    </div>
+    <p class="note" id="pc-note" hidden style="margin:-4px 0 8px"></p>
+    <div class="pc-wrap">
+      <div class="pc-legend" id="pc-legend"></div>
+      <div class="pc-main" id="pc-main"></div>
+      <div class="pc-sub" id="pc-rsi-box"><span class="pc-tag" id="pc-rsi-tag">RSI 14</span><div id="pc-rsi" style="height:100%"></div></div>
+      <div class="pc-sub" id="pc-macd-box"><span class="pc-tag" id="pc-macd-tag">MACD 12, 26, 9</span><div id="pc-macd" style="height:100%"></div></div>
+    </div>
+    <p class="note" style="margin:8px 0 0">1M–1Y: daily candles. 1D and 1W: 15-minute and 1-hour candles built from the server's own price samples (use the Live chart for true intraday candles). Drag to pan, scroll or pinch to zoom. Dashed lines (daily views): the model's centre forecast and 68% range for the selected horizon.</p>
+    <p class="pc-credit">Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>.</p>
+    </div>
+  </section>
+
+        <section class="card eg-tabs" aria-label="Market details">
+          <div class="eg-tablist" role="tablist" aria-label="Market details">
+            <button type="button" role="tab" id="t-news" data-tab="news" aria-controls="p-news">News</button>
+            <button type="button" role="tab" id="t-tf" data-tab="tf" aria-controls="p-tf">Timeframes</button>
+            <button type="button" role="tab" id="t-levels" data-tab="levels" aria-controls="p-levels">Key levels</button>
+            <button type="button" role="tab" id="t-events" data-tab="events" aria-controls="p-events">Events</button>
+            <button type="button" role="tab" id="t-sources" data-tab="sources" aria-controls="p-sources">Sources</button>
+            <button type="button" role="tab" id="t-method" data-tab="method" aria-controls="p-method">Method</button>
+          </div>
+          <div class="eg-panel needs-data" role="tabpanel" id="p-news" aria-labelledby="t-news" data-panel="news">
+            <p class="note" id="news-note"></p>
+            <div class="eg-filter" id="eg-news-f" role="group" aria-label="Filter stories"></div>
+            <ul class="news" id="news"></ul>
+          </div>
+          <div class="eg-panel" role="tabpanel" id="p-tf" aria-labelledby="t-tf" data-panel="tf">
+            <section class="card needs-data" id="tf-card" aria-live="polite" hidden>
+              <div class="fc-head"><span>Timeframes in detail</span><span class="bias" id="tf-verdict">—</span></div>
+              <p class="tf-text" id="tf-text"></p>
+              <div class="tf-grid" id="tf-grid"></div>
+              <details class="tf-how"><summary>How this is read and scored</summary><p class="note" id="tf-note" style="margin:8px 0 0"></p></details>
+            </section>
+          </div>
+          <div class="eg-panel needs-data" role="tabpanel" id="p-levels" aria-labelledby="t-levels" data-panel="levels">
+            <p class="note">Computed from recent prices; distance is from the live price. ▲ resistance above, ▼ support below. The nearest ones are drawn on the Forecast view of the chart.</p>
+            <table id="levels"></table>
+          </div>
+          <div class="eg-panel" role="tabpanel" id="p-events" aria-labelledby="t-events" data-panel="events">
+            <p class="note needs-data" id="ev-note"></p>
+            <ul class="ev-list needs-data" id="ev-list"></ul>
+            <details class="cal" id="cal">
+              <summary>Economic calendar (TradingView)</summary>
+              <p class="note" style="margin:10px 0 0">Medium and high importance; United States, euro area, United Kingdom, China, in your local time.</p>
+              <div class="cal-box" id="cal-box"></div>
+              <p class="pc-credit"><a href="https://www.tradingview.com/economic-calendar/" target="_blank" rel="noopener nofollow">Economic calendar by TradingView</a></p>
+            </details>
+          </div>
+          <div class="eg-panel needs-data" role="tabpanel" id="p-sources" aria-labelledby="t-sources" data-panel="sources">
+            <p class="note" id="src-note"></p>
+            <ul class="sources" id="sources"></ul>
+          </div>
+          <div class="eg-panel eg-method" role="tabpanel" id="p-method" aria-labelledby="t-method" data-panel="method">
+            <div class="method">
+    <h2 class="eg-h2">How the forecast works</h2>
+    <p id="method"></p>
+    <ul>
+      <li>Prices: NATGAS uses the NYMEX Henry Hub front-month futures quote from CNBC plus its own daily history; every other market comes from Twelve Data (daily history once a day, live quotes every 10–15 minutes to stay within the free plan).</li>
+      <li>News: stories from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence, Rigzone and others) found with a search built for each market, refreshed about every 15 minutes. The server opens each article and reads its full text where the publisher allows it; every relevant sentence is scored with a keyword list for that kind of market (natural gas: weather, storage, production, LNG; oil: OPEC, inventories; metals: dollar, rates, safe-haven demand; stocks and indices: earnings, guidance, rates; crypto: ETF flows, regulation; plus general market language). The article body counts for 70% of a story's score and the headline 30%; paywalled stories fall back to the headline. Stories are weighted by recency.</li>
+      <li>Stocks and ETFs: because keyword lists catch mostly generic words for a company, each new headline is also read once by a free AI model (gpt-oss on Groq). It says whether the story is really about the company and rates its likely effect on the share price over 1 to 5 sessions from -2 to +2, with a short reason shown under the story. That rating counts for 75% of the story's score and the keyword score of the article text for 25%; stories judged not to be about the company are left out. If the AI is unavailable, keyword scoring is used.</li>
+      <li>Charts: the Live chart is TradingView's free embedded chart with its own data feed (real-time for forex and crypto, delayed for stocks; CFD prices for commodities and indices). The Forecast view draws the model's lines on the daily prices the forecast itself uses.</li>
+      <li>Timeframes: on every refresh the 15-minute, 1-hour and daily charts are read with the same fixed textbook rules. Trend: price against its 20- and 50-bar averages and whether highs and lows are rising or falling (ADX says how strong the trend is). Momentum: RSI and MACD. Patterns: engulfing bars, hammers and shooting stars, morning and evening stars, double tops and bottoms, head and shoulders, breakouts from the last 20 bars, RSI divergences, pullbacks that end inside a trend, and average crossovers. A pattern counts only once its bar has closed. For natural gas and Brent the 15-minute bars are built from the site's own price samples (about one a minute, so very short spikes can be missed); for Twelve Data markets the exchange's 15-minute candles are fetched about every 15 minutes. Every pattern is scored on this market's own history (was the close 1 hour, 4 hours or 3 sessions later on its side?) and again from the day it went live.</li>
+      <li>Track record: every trading day at the close the site writes down its 1, 3 and 5-day forecasts and later scores each against the actual close. Target dates count trading sessions only: weekends and exchange holidays are skipped (NYSE holidays for stocks and natural gas, ICE closures for Brent; none for currencies, spot metals and crypto). The log is kept on the site (data/h/) and nothing in it is edited afterwards. The backtest replays only the price signals on past closes, so it says how well the ranges are sized, not how good the news reading is.</li>
+      <li>Events: weekly EIA reports follow their usual day and time (they move in US holiday weeks), Fed decision days come from the Fed's published calendar, US inflation (CPI) and jobs report days from the Bureau of Labor Statistics schedule (not for natural gas), and a stock's next earnings date is looked up once a day from Nasdaq and can be an estimate. Events are flagged on the forecast and given to the AI analyst; the ranges are not widened for them.</li>
+      <li>The page itself checks for new data every minute.</li>
+      <li>It is a mechanical keyword model, not a human reading. It can be wrong when an article is mixed, quotes opposing views, or is mainly about something else.</li>
+    </ul>
+  </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="eg-side" aria-label="Signals">
+        <section class="card needs-data">
+          <h2>Today's session</h2>
+          <p class="note" id="intra-note">Today's range, where price opened and where it is now versus the previous close.</p>
+          <div class="spark" id="intra"></div>
+        </section>
+        <section class="card needs-data"><div class="fc-tf" id="fc-tf" hidden></div></section>
+        <section class="card needs-data">
+          <h2>What the model sees</h2>
+          <p class="note" id="score-note"></p>
+          <div id="signals"></div>
+        </section>
+        <section class="card ai needs-data" id="ai-card" aria-live="polite">
+          <div class="fc-head"><span>AI analyst</span><span class="bias" id="ai-stance" hidden></span></div>
+          <div id="ai-body"></div>
+          <button class="btn eg-why" type="button" id="eg-why" aria-expanded="false" aria-controls="ai-body">Why? Read the full note</button>
+        </section>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== Alerts ===================== -->
+  <section class="eg-view" data-view="alerts" aria-labelledby="eg-al-h">
+    <div class="eg-pagehead"><div><h1 id="eg-al-h">Alerts</h1><p>Every market in one feed, newest first. The same alerts go to Telegram where it is switched on.</p></div></div>
+    <section class="card" id="eg-tg-card" hidden>
+      <h2>Telegram</h2>
+      <p class="note">Switch a market's Telegram alerts on or off. It opens a pre-filled request on GitHub: press Create there, and the switch updates about 2 minutes later.</p>
+      <div class="eg-tgl" id="eg-tgl"></div>
+    </section>
+    <section class="card">
+      <div class="eg-filter" id="eg-al-f" role="group" aria-label="Filter alerts"></div>
+      <div id="eg-feed"><p class="note">Loading alerts…</p></div>
+    </section>
+    <section class="card needs-data" id="al-card">
+      <h2>How alerts work</h2>
+      <p class="note" id="al-note"></p>
+      <ul class="ev-list al-list" id="al-list"></ul>
+    </section>
+  </section>
+
+  <!-- ===================== Track record ===================== -->
+  <section class="eg-view" data-view="record" aria-labelledby="eg-tr-h">
+    <div class="eg-pagehead"><div><h1 id="eg-tr-h">Track record</h1><p id="eg-tr-sub">How the forecasts for this market have done.</p></div>
+      <div class="eg-tools"><nav class="seg" role="tablist" aria-label="Forecast horizon"><button role="tab" data-h="1">1 day</button><button role="tab" data-h="3">3 days</button><button role="tab" data-h="5">5 days</button></nav></div>
+    </div>
+    <section class="card needs-data" id="track-card">
+      <h2 class="eg-h2">Published and backtested</h2>
+      <p class="note" id="track-note"></p>
+      <div class="tbl-wrap"><table class="tr-stats" id="track-stats"></table></div>
+      <p class="note" id="eg-tr-small" hidden style="margin:10px 0 0"></p>
+      <h3 class="sub" id="track-log-title">Logged forecasts</h3>
+      <div class="tbl-wrap"><table class="tr-log" id="track-log"></table></div>
+    </section>
+  </section>
+
+  <p class="disc">Not financial advice. CFDs are leveraged and can move fast against you. A broker's CFD quote can differ slightly from the market prices shown here, and futures-based CFDs roll to the next contract a few days before expiry.</p>
+</div>
+
+<aside class="eg-drawer" id="eg-drawer" aria-labelledby="eg-drawer-h" tabindex="-1" hidden>
+  <div class="eg-drawer-h"><div><h2 id="eg-drawer-h">Plan a trade</h2><p id="eg-drawer-sub">Inputs stay in this browser.</p></div><button class="btn icon" type="button" id="eg-drawer-x" aria-label="Close Plan a trade"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+  <section class="card needs-data" id="rk-card">
+    <h2>Risk helper</h2>
+    <p class="note">How big a position can be so that hitting the stop costs a fixed share of your account, and what it would make if the price reaches your target. The stop is based on the market's average daily range (ATR). Your inputs stay in this browser only.</p>
+    <div class="rk-form">
+      <label>Account balance<span class="row"><input id="rk-bal" type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 10000"><select id="rk-ccy" aria-label="Account currency"><option>RON</option><option>EUR</option><option>USD</option></select></span></label>
+      <label>Risk per trade (% of balance)<input id="rk-pct" type="number" min="0.05" max="20" step="0.05" inputmode="decimal"></label>
+      <label>Direction<span class="chips" id="rk-dir"><button type="button" data-d="1">Buy</button><button type="button" data-d="-1">Sell</button></span></label>
+      <label>Entry price<input id="rk-entry" type="number" step="any" inputmode="decimal"></label>
+      <label>Stop<span class="row"><select id="rk-stop" aria-label="Stop method"><option value="1.5">1.5 × ATR</option><option value="2">2 × ATR</option><option value="1">1 × ATR</option><option value="3">3 × ATR</option><option value="r90">Edge of 1-day 90% range</option><option value="custom">My own price</option></select><input id="rk-stop-px" type="number" step="any" inputmode="decimal" aria-label="Stop price" hidden></span></label>
+      <label>Profit target<span class="row"><select id="rk-tgt" aria-label="Target method"><option value="2">2 × the risk (2R)</option><option value="1">1 × the risk (1R)</option><option value="1.5">1.5 × the risk (1.5R)</option><option value="3">3 × the risk (3R)</option><option value="r68">Edge of 3-day likely range</option><option value="c3">Model's 3-day centre</option><option value="custom">My own price</option></select><input id="rk-tgt-px" type="number" step="any" inputmode="decimal" aria-label="Target price" hidden></span></label>
+      <label><span id="rk-lot-lbl">Units per lot (XTB)</span><input id="rk-lot" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label id="rk-fx-wrap">USD rate<span class="row"><span id="rk-fx-pre">1 USD =</span><input id="rk-fx" type="number" min="0" step="any" inputmode="decimal"><span id="rk-fx-ccy"></span></span></label>
+    </div>
+    <div class="ranges rk-out">
+      <div><small>Position size</small><b class="big" id="rk-size">—</b></div>
+      <div><small>Margin needed (XTB retail)</small><b id="rk-margin">—</b></div>
+      <div><small>Loss if the stop is hit</small><b id="rk-loss">—</b></div>
+      <div><small>Stop price</small><b id="rk-stop-out">—</b></div>
+      <div><small>Possible profit at target</small><b id="rk-profit">—</b></div>
+      <div><small>Target price</small><b id="rk-tgt-out">—</b></div>
+    </div>
+    <ul class="rk-lines" id="rk-lines"></ul>
+    <p class="note" style="margin:10px 0 0">Stops are not guaranteed: prices can jump past them over weekends or on reports. Spread and overnight costs are not included in the loss or the profit. This is arithmetic, not advice: check the numbers in xStation before trading.</p>
+  </section>
+  <p class="eg-chartnote" id="eg-drawer-chart"></p>
+</aside>
+
+<div class="eg-tour" id="eg-tour" role="dialog" aria-labelledby="eg-tour-h" hidden>
+  <h2 id="eg-tour-h"></h2>
+  <p id="eg-tour-p"></p>
+  <div class="row"><span id="eg-tour-n"></span><div style="display:flex;gap:8px"><button class="btn" type="button" id="eg-tour-skip">Skip</button><button class="btn main" type="button" id="eg-tour-next">Next</button></div></div>
+</div>
+
+<script src="vendor/lightweight-charts-4.2.3.js"></script>
+<script src="app.js?v=1"></script>
+<script src="switch.js?v=1"></script>
+<script src="edison.js?v=1"></script>
+</body>
+</html>
