@@ -158,7 +158,20 @@
   .btn:hover { border-color: var(--accent); }
   .btn.ghost { background: transparent; color: var(--muted); }
   .hint { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
-  .top-actions { display: flex; gap: 8px; align-items: center; }
+  .top-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .sym { min-width: 0; flex-wrap: wrap; }
+  .pill { white-space: nowrap; }
+  /* Layout: one column on phones and tablets; on wide screens a main column (price, forecast, chart, track record, news)
+     and a side column (session, signals, risk helper, levels, alerts). The order in the page is the phone reading order. */
+  .layout, .col-main, .col-side { display: grid; gap: 14px; align-content: start; min-width: 0; }
+  @media (min-width: 1180px) {
+    .layout { grid-template-columns: minmax(0, 1fr) clamp(360px, 31%, 440px); align-items: start; }
+  }
+  @media (max-width: 640px) {
+    .sym { font-size: 20px; }
+    .top-actions { width: 100%; }
+    .top-actions .status { flex: 1 1 100%; }
+  }
   /* password lock */
   .lock { display: none; min-height: 100vh; place-items: center; padding: 24px 16px; }
   body.locked .lock { display: grid; }
@@ -208,7 +221,13 @@
   .tv-sym input { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; color: var(--fg); font: 12px var(--font); padding: 6px 8px; width: 200px; max-width: 100%; }
   .tv-sym .btn { padding: 5px 10px; font-size: 12px; }
   @media (max-width: 520px) { .tv-box { height: 440px; } }
-  .tbl-wrap { overflow-x: auto; }
+  .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch;
+    /* soft edge shadows show there is more table to scroll to; they disappear at either end */
+    background: linear-gradient(to right, var(--panel) 30%, transparent) left / 24px 100% no-repeat local,
+                linear-gradient(to left, var(--panel) 30%, transparent) right / 24px 100% no-repeat local,
+                radial-gradient(farthest-side at 0 50%, var(--track-strong), transparent) left / 10px 100% no-repeat scroll,
+                radial-gradient(farthest-side at 100% 50%, var(--track-strong), transparent) right / 10px 100% no-repeat scroll; }
+  @media (max-width: 520px) { .tr-stats td:first-child { min-width: 112px; } .tr-stats td.ref { min-width: 130px; } }
   .tr-stats th, .tr-log th { text-align: left; font-size: 11px; font-weight: 600; color: var(--muted); padding: 4px 4px 8px; white-space: nowrap; }
   .tr-stats td, .tr-log td { font-size: 13px; white-space: nowrap; }
   .tr-stats td:first-child { white-space: normal; }
@@ -311,6 +330,8 @@
   </header>
   <div class="banner" id="banner"></div>
 
+  <div class="layout">
+  <div class="col-main">
   <section class="hero needs-data" aria-live="polite">
     <div class="price" id="price">—</div>
     <div class="chg" id="chg"></div>
@@ -398,6 +419,13 @@
     <div class="tbl-wrap"><table class="tr-log" id="track-log"></table></div>
   </section>
 
+  <section class="card needs-data">
+    <h2>Latest trusted news</h2>
+    <p class="note" id="news-note"></p>
+    <ul class="news" id="news"></ul>
+  </section>
+  </div>
+  <div class="col-side">
   <div class="grid2 needs-data">
     <section class="card">
       <h2>Latest session</h2>
@@ -449,17 +477,14 @@
     </section>
   </div>
 
-  <section class="card needs-data">
-    <h2>Latest trusted news</h2>
-    <p class="note" id="news-note"></p>
-    <ul class="news" id="news"></ul>
-  </section>
 
   <section class="card needs-data" id="al-card">
     <h2>Recent alerts</h2>
     <p class="note" id="al-note"></p>
     <ul class="ev-list al-list" id="al-list"></ul>
   </section>
+  </div>
+  </div>
 
   <details class="card cal" id="cal">
     <summary>Events and economic calendar</summary>
