@@ -140,6 +140,7 @@
   .wl-card .s { font-size: 11px; color: var(--muted); }
   .wl-card .p { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
   .wl-card .c { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .wl-card .f { font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 1px; }
   .wl-card .b { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
   .wl-add { flex: 0 0 auto; min-width: 120px; border: 1px dashed var(--line); background: transparent; color: var(--muted); border-radius: 12px; font: 600 14px var(--font); cursor: pointer; }
   .wl-add:hover, .wl-card:hover { border-color: var(--accent); }
@@ -702,7 +703,15 @@
       const dec = m.decimals ?? 3;
       b.append(name, el('div', { class: 's' }, m.id === 'NATGAS' ? 'Henry Hub' : m.symbol),
         el('div', { class: 'p' }, m.last != null ? fmtNum(m.last, dec) : (m.error ? 'No data' : '…')),
-        el('div', { class: 'c ' + cls(m.changePct) }, m.changePct != null ? sp(m.changePct) + (m.h?.[H] ? ` · ${H}d ${Math.round(100 * m.h[H].pUp)}% up` : '') : (m.error ? 'see details' : 'preparing')));
+        el('div', { class: 'c ' + cls(m.changePct) }, m.changePct != null ? sp(m.changePct) + ' today' : (m.error ? 'see details' : 'preparing')));
+      // Forecast on its own line, in its own colour: today's move and the model's lean for the next session are different things.
+      const fh = m.changePct != null && m.h?.[H];
+      if (fh && fh.pUp != null) {
+        const pu = Math.round(100 * fh.pUp), up = pu >= 50, pc = up ? pu : 100 - pu;
+        const lean = pc < 55 ? 'flat' : up ? 'up' : 'down';
+        b.append(el('div', { class: 'f ' + lean, title: `Model forecast, not today's move: ${pu}% chance the ${H}-day target close is higher than now${pc < 55 ? ' (close to a coin flip)' : ''}` },
+          `Next ${H}d: ${pc}% ${up ? 'higher' : 'lower'}`));
+      }
       b.addEventListener('click', () => select(m.id));
       nav.append(b);
     }
