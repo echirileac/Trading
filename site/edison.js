@@ -83,6 +83,7 @@
     let b = tabs.find((x) => x.dataset.tab === t && !x.hidden) || tabs.find((x) => !x.hidden);
     tabs.forEach((x) => { const on = x === b; x.setAttribute('aria-selected', String(on)); x.tabIndex = on ? 0 : -1; $(x.getAttribute('aria-controls')).hidden = !on; });
     put('eg-tab', b.dataset.tab);
+    if (b.dataset.tab === 'levels' && S.DATA) drawLevelViz(S.DATA, S.H); // measured only once the tab is visible
     if (focus) b.focus();
   }
   tabs.forEach((b, i) => {
@@ -182,6 +183,76 @@
     const key = ((D.meta && D.meta.id) || S.CUR_ID) + '|' + H;
     if (key !== LADDER_KEY) { LADDER_KEY = key; replay(box, 'eg-grow'); }
   }
+  // ---------- key levels on a price scale ----------
+  // Levels as ticks on a vertical price scale (red resistance, green support), the live price as a dashed line with
+  // a pill, and the forecast range for the chosen horizon as a shaded bar: dark = likely (68%), light = possible
+  // (90%). A level's dot says whether the range reaches it. Labels are spread out so close levels stay readable.
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const sv = (tag, attrs = {}, text) => { const n = document.createElementNS(SVGNS, tag); for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v); if (text != null) n.textContent = text; return n; };
+  let LVZ_KEY = '';
+  function lvzHighlight(i) {
+    document.querySelectorAll('#eg-lvz .lvz-l').forEach((g) => g.classList.toggle('hl', g.dataset.i === String(i)));
+    [...$('levels').rows].forEach((tr, k) => tr.classList.toggle('hl', k === i));
+  }
+  $('levels').addEventListener('mouseover', (e) => { const tr = e.target.closest('tr'); if (tr) lvzHighlight(tr.rowIndex); });
+  $('levels').addEventListener('mouseleave', () => lvzHighlight(-1));
+  function drawLevelViz(D, H) {
+    const fig = $('eg-lvz-fig'), box = $('eg-lvz');
+    const lv = (D && D.forecast && D.forecast.levels) || [], last = D && D.price && D.price.last;
+    fig.hidden = !lv.length || last == null;
+    if (fig.hidden) return;
+    const W = Math.round(box.clientWidth);
+    if (!W) return; // tab not visible yet: drawn when it opens
+    const h = D.forecast.horizons && D.forecast.horizons[H];
+    const rows = [...lv, { label: 'Live price', price: last, kind: 'now' }].sort((a, b) => b.price - a.price); // same order as the table
+    const vals = rows.map((r) => r.price).concat(h ? [h.lo90, h.hi90] : []).filter(Number.isFinite);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = (hi - lo) * 0.05 || last * 0.01; lo -= pad; hi += pad;
+    const Hh = Math.max(240, rows.length * 30 + 24), top = 12, bot = Hh - 12;
+    const y = (v) => top + (hi - v) / (hi - lo) * (bot - top);
+    const nowW = 68, bandX = nowW + 14, bandW = 16, tickEnd = bandX + bandW + 18, labelX = tickEnd + 20;
+    const svg = sv('svg', { viewBox: `0 0 ${W} ${Hh}`, width: W, height: Hh, class: 'lvz', 'aria-hidden': 'true' });
+    svg.append(sv('line', { x1: bandX + bandW / 2, x2: bandX + bandW / 2, y1: top, y2: bot, class: 'lvz-axis' }));
+    if (h && h.lo90 != null) svg.append(
+      sv('rect', { x: bandX, y: y(h.hi90), width: bandW, height: y(h.lo90) - y(h.hi90), class: 'lvz-b90' }),
+      sv('rect', { x: bandX, y: y(h.hi68), width: bandW, height: y(h.lo68) - y(h.hi68), class: 'lvz-b68' }),
+      sv('line', { x1: bandX - 3, x2: bandX + bandW + 3, y1: y(h.center), y2: y(h.center), class: 'lvz-c' }));
+    const yn = y(last);
+    svg.append(sv('line', { x1: nowW, x2: tickEnd + 6, y1: yn, y2: yn, class: 'lvz-now' })); // stops before the labels
+    // spread labels: at least 22 px apart, kept inside the drawing
+    const items = rows.map((r, i) => ({ r, i, yt: y(r.price) })).filter((it) => it.r.kind !== 'now');
+    let prev = -Infinity;
+    for (const it of items) { it.yl = Math.max(it.yt, prev + 22, top + 4); prev = it.yl; }
+    for (let k = items.length - 1; k >= 0; k--) items[k].yl = Math.min(items[k].yl, k === items.length - 1 ? bot - 2 : items[k + 1].yl - 22);
+    items.forEach((it, k) => {
+      const r = it.r, res = r.kind !== 'support';
+      const in68 = h && r.price >= h.lo68 && r.price <= h.hi68, in90 = h && r.price >= h.lo90 && r.price <= h.hi90;
+      const g = sv('g', { class: `lvz-l ${res ? 'lvz-res' : 'lvz-sup'}${h && !in90 ? ' lvz-far' : ''}`, 'data-i': it.i });
+      g.style.setProperty('--i', k);
+      const pct = 100 * (r.price / last - 1);
+      const t = sv('text', { x: labelX, y: it.yl + 4, class: 'lvz-t' });
+      t.append(sv('tspan', { class: 'lvz-arrow' }, res ? '▲ ' : '▼ '), sv('tspan', {}, r.label + ' '), sv('tspan', { class: 'lvz-p' }, MW.usd(r.price)), sv('tspan', { class: 'lvz-d', dx: 6 }, `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`));
+      g.append(sv('line', { x1: bandX - 4, x2: tickEnd, y1: it.yt, y2: it.yt, class: 'lvz-tick' }),
+        sv('path', { d: `M${tickEnd} ${it.yt} L${labelX - 6} ${it.yl}`, class: 'lvz-lead' }),
+        sv('circle', { cx: tickEnd, cy: it.yt, r: 3.5, class: in68 ? 'lvz-dot' : in90 ? 'lvz-ring' : 'lvz-mute' }), t);
+      g.addEventListener('mouseenter', () => lvzHighlight(it.i));
+      g.addEventListener('mouseleave', () => lvzHighlight(-1));
+      svg.append(g);
+    });
+    const pill = sv('g', { class: 'lvz-nowp' }), round = window.matchMedia('(max-width: 760px)').matches ? 11 : 4;
+    pill.append(sv('rect', { x: 0, y: yn - 11, width: nowW, height: 22, rx: round }), sv('text', { x: nowW / 2, y: yn + 4, 'text-anchor': 'middle' }, MW.usd(last)));
+    svg.append(pill);
+    const key = ((D.meta && D.meta.id) || S.CUR_ID) + '|' + H;
+    if (key !== LVZ_KEY && !calm.matches) svg.classList.add('lvz-in');
+    LVZ_KEY = key;
+    box.replaceChildren(svg);
+    // drop the distance from a label that would run past the edge
+    svg.querySelectorAll('.lvz-t').forEach((t) => { if (t.getBBox().x + t.getBBox().width > W) t.lastChild.remove(); });
+    const up = items.filter((it) => it.r.price > last).pop(), dn = items.find((it) => it.r.price < last);
+    const near = [up && `nearest resistance ${up.r.label} at ${MW.usd(up.r.price)}`, dn && `nearest support ${dn.r.label} at ${MW.usd(dn.r.price)}`].filter(Boolean).join(', ');
+    $('eg-lvz-cap').textContent = `${near ? near.charAt(0).toUpperCase() + near.slice(1) + '. ' : ''}${h ? `Bar: where the ${H}-day close is likely (dark, 68%) or possible (light, 90%). ● inside the likely range · ○ inside the wider range · faded: beyond it.` : ''}`;
+  }
+
   function drawEdge(D, H) {
     const bt = D.track && D.track.backtest && D.track.backtest[H], lv = D.track && D.track.live && D.track.live[H];
     const p = $('eg-edge');
@@ -667,7 +738,7 @@
     if (D && D.price) {
       if (tickPrice(D)) { replay(document.querySelector('.eg-hero'), 'eg-swap'); enter($('news')); }
       markNewNews(D, true);
-      drawEvent(D); drawLadder(D, H); drawEdge(D, H); drawDisagree(D); drawNewsFilter(); drawTrackSmall(D, H);
+      drawEvent(D); drawLadder(D, H); drawLevelViz(D, H); drawEdge(D, H); drawDisagree(D); drawNewsFilter(); drawTrackSmall(D, H);
       if (!drawer.hidden) syncDrawer();
     } else { $('eg-event').hidden = true; $('eg-disagree').hidden = true; }
     drawLines(true);
