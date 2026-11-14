@@ -311,6 +311,8 @@
   .fc-tf-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .fc-tf-row > span { display: grid; gap: 2px; background: var(--panel2); border-radius: 0; padding: 10px 12px; font-size: 14px; font-weight: 500; }
   .fc-tf-row small { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .fc-tf-row > span { container-type: inline-size; } /* the reading scales with its box so all three stay on one line */
+  .fc-tf-v { white-space: nowrap; font-weight: 500; font-size: clamp(11px, 19cqi, 14px); }
   .fc-tf p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
   .fc-tf a { color: var(--accent-text); }
   .spark { position: relative; width: 100%; }
@@ -1021,7 +1023,7 @@
 </div>
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 <script src="switch.js?v=1"></script>
 <script src="edison.js?v=10"></script>
 </body>

@@ -771,7 +771,7 @@
     for (const [k, n] of [['15m', '15 min'], ['1h', '1 hour'], ['1d', '1 day']]) {
       const s = t.tfs[k]; if (!s) continue;
       const it = el('span', { class: s.ready ? cls(dirOf[s.label]) : 'flat' });
-      it.append(el('small', {}, n), document.createTextNode(s.ready ? word[s.label] : 'building'));
+      it.append(el('small', {}, n), el('b', { class: 'fc-tf-v' }, s.ready ? word[s.label] : 'building')); // icon and word stay on one line
       row.append(it);
     }
     const w = sig ? sig.weight : t.weight || 0, c = sig ? sig.contribution : 0;
