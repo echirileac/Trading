@@ -1,7 +1,6 @@
 {
   "note": "Markets shown on the site. NATGAS is built in. Add or remove others from the site's search (it opens a GitHub issue) or by editing this file. Free Twelve Data plan: up to 8 markets. telegramOff lists markets whose Telegram alerts are switched off (the Telegram switch on each market's page).",
   "telegramOff": [
-    "BRENT",
     "INTC-NASDAQ",
     "MRNA-NASDAQ",
     "TTWO-NASDAQ"
