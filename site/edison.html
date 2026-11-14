@@ -538,6 +538,39 @@
   @keyframes eg-sheet { from { translate: 0 100%; } }
   /* square corners: also the interface-switch dialog that switch.js styles for both pages */
   body .uis-dlg, body .uis-btns button { border-radius: 0; }
+
+  .eg-msel { border-radius: 0; }
+
+  /* ---------- phones: iOS 26 corner radii (desktop stays square) ----------
+     Controls are capsules (radius = half the height); containers 26px; a shape inside a container is concentric
+     (parent radius minus the padding), never below 12px; the planner is a floating inset sheet whose corners
+     follow the screen's; the tab bar is a floating capsule. */
+  @media (max-width: 760px) {
+    :root { --r: 26px; --r-in: 14px; }
+    /* capsules */
+    .btn, .chips button, .eg-filter button, .bias, .chip, .pill, .filters button, .eg-ui, .eg-ui > *,
+    .seg, .eg-seg, .seg button, .eg-seg button, #pc-view, #pc-view button, .eg-nav, .eg-nav button,
+    .tg-btn .sw, .eg-tgl > a, .rk-lines button, .rk-form .chips, .rk-form .chips button, .aib, #levels td .k, .ai .lv span,
+    .eg-ladder .t, .eg-ladder .w, .eg-ladder .l, .prob-bar, .dbar, .dbar i, .eg-tile .bar, .eg-msel { border-radius: 999px; }
+    .eg-more summary, .tg-btn .sw::after { border-radius: 50%; }
+    /* containers */
+    .card, .eg-bar, .eg-tile, .lock form, .search.open, .eg-tour { border-radius: var(--r); }
+    .eg-panel > .card { border-radius: 0; }
+    .banner, .wl-card, .wl-add { border-radius: 20px; }
+    .eg-menu { border-radius: 22px; }
+    .eg-menu a, .eg-menu button { border-radius: 16px; } /* 22 - 6 padding */
+    /* inside a card: concentric, minimum 12-14px */
+    .eg-event, .eg-disagree, .ev-line, .pc-wrap, .tv-box, .cal-box, .tf, .fc-tf-row > span, .ai .ai-outlook,
+    .rk-out div, .rk-lines li.warn, .rk-lines li.bad, .search input, .tv-sym input, .rk-form input, .rk-form select,
+    .lock input[type=password] { border-radius: var(--r-in); }
+    .eg-tile .ev, .eg-feed .ic, .tip { border-radius: 12px; }
+    /* Plan a trade: a floating sheet inset from the screen edges */
+    .eg-drawer { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto; max-height: calc(100vh - 24px); border-radius: 36px; border: 1px solid var(--line); box-shadow: var(--float); padding: 26px 20px 24px; }
+    /* switch dialog and app-icon style logo */
+    body .uis-dlg { border-radius: 34px; }
+    body .uis-btns button { border-radius: 999px; }
+    .eg-brand svg, .lock h1 svg { border-radius: 7px; }
+  }
 </style>
 </head>
 <body data-view="market">
@@ -847,6 +880,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=3"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=6"></script>
+<script src="edison.js?v=7"></script>
 </body>
 </html>
