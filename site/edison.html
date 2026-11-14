@@ -183,6 +183,8 @@
   .seg, .eg-seg { display: inline-grid; grid-auto-flow: column; background: var(--panel2); border-radius: 0; padding: 4px; gap: 2px; }
   .seg button, .eg-seg button { appearance: none; border: 0; background: transparent; color: var(--muted); font: 500 13px var(--font); min-height: 36px; padding: 0 16px; border-radius: 0; cursor: pointer; }
   .seg button[aria-selected="true"], .eg-seg button[aria-pressed="true"] { background: var(--btn); color: #fff; font-weight: 600; }
+  .eg-seg button { width: 44px; padding: 0; display: inline-grid; place-items: center; }
+  .eg-seg svg { width: 18px; height: 18px; display: block; }
   .eg-fc { position: relative; overflow: hidden; border-color: var(--accent); background: radial-gradient(120% 140% at 0% 0%, var(--glow), transparent 55%), var(--panel); display: grid; gap: 16px; }
   .fc-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
   .fc-head h2 { margin: 0; font-size: 14px; font-weight: 500; color: var(--muted); }
@@ -633,7 +635,7 @@
       <div><h1 id="eg-mk-h">Markets</h1><p id="eg-mk-sum"></p></div>
       <div class="eg-tools">
         <nav class="seg" role="tablist" aria-label="Forecast horizon"><button role="tab" data-h="1">1 day</button><button role="tab" data-h="3">3 days</button><button role="tab" data-h="5">5 days</button></nav>
-        <div class="eg-seg" role="group" aria-label="Show markets as"><button type="button" data-mv="tiles">Tiles</button><button type="button" data-mv="table">Table</button></div>
+        <div class="eg-seg" role="group" aria-label="Show markets as"><button type="button" data-mv="tiles" aria-label="Tiles" title="Tiles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></svg></button><button type="button" data-mv="table" aria-label="Table" title="Table"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button></div>
         <button class="btn main" type="button" id="eg-add">+ Add market</button>
       </div>
     </div>
