@@ -250,12 +250,12 @@
   .card h3.sub { font-size: 13px; font-weight: 600; margin: 16px 0 6px; }
   .tf-text { font-size: 14px; line-height: 1.5; margin: 10px 0 12px; }
   .tf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 10px; }
-  .tf { background: var(--panel2); border-radius: 10px; padding: 10px 12px; display: grid; gap: 7px; align-content: start; min-width: 0; }
+  .tf { background: var(--panel2); border-radius: 10px; padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; align-content: start; min-width: 0; }
   .tf-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 14px; }
   .tf-top span { font-size: 13px; font-weight: 600; }
   .tf .dbar { background: var(--track); }
   .tf-pats { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 12px; line-height: 1.5; color: var(--muted); }
-  .tf-pats .chip { margin-right: 6px; white-space: nowrap; }
+  .tf-pats .chip { margin-right: 6px; display: inline-block; max-width: 100%; white-space: normal; overflow-wrap: anywhere; } /* a long pattern name wraps inside its tag */
   .ov-table .tfa { letter-spacing: .12em; font-size: 12px; }
   .fc-tf { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 6px; font-size: 13px; }
   .fc-tf-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
