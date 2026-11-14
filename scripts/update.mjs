@@ -1698,7 +1698,9 @@ function summary(out, m, error) {
   return { id: m.id, name: m.name, symbol: m.symbol, category: m.category, exchange: m.exchange || '', tv: m.tv || undefined, last: out.price.last, changePct: out.price.changePct, decimals: out.meta.decimals,
     market: out.market, ai: out.ai?.status === 'ok' ? { stance: out.ai.stance, headline: out.ai.headline } : null, bias: out.forecast.bias, score: out.forecast.score, h: Object.fromEntries(Object.entries(h).map(([k, v]) => [k, { center: v.center, changePct: v.changePct, pUp: v.pUp, lo68: v.lo68, hi68: v.hi68, events: v.events && v.events.length ? v.events : undefined }])),
     tf: out.mtf?.verdict ? { id: out.mtf.verdict.id, dir: out.mtf.verdict.dir, title: out.mtf.verdict.title, l: MTF.TF_ORDER.map((k) => (out.mtf.tfs[k]?.ready ? out.mtf.tfs[k].label[0] : '-')).join('') } : undefined,
-    rsi: out.forecast.rsi, next: out.events && out.events[0] ? { id: out.events[0].id, name: out.events[0].name, date: out.events[0].date, at: out.events[0].at, allDay: out.events[0].allDay || undefined } : null, asOf: out.price.asOf, tgOff: TG_OFF.has(String(m.id).toUpperCase()) || undefined, error };
+    rsi: out.forecast.rsi, next: out.events && out.events[0] ? { id: out.events[0].id, name: out.events[0].name, date: out.events[0].date, at: out.events[0].at, allDay: out.events[0].allDay || undefined } : null, asOf: out.price.asOf, tgOff: TG_OFF.has(String(m.id).toUpperCase()) || undefined,
+    alT: out.alerts && out.alerts.log && out.alerts.log.length ? out.alerts.log.map((x) => Math.round(Date.parse(x.t) / 1000)).filter(Number.isFinite) : undefined, // alert times (unix s) for the page's unread badge
+    error };
 }
 
 // The Actions log of a public repo is public: while the site is locked it only says which markets built.

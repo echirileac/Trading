@@ -26,10 +26,12 @@
   function setView(v, opts = {}) {
     if (!VIEWS.includes(v)) v = 'market';
     const was = document.body.dataset.view;
+    if (v === 'alerts' && was !== 'alerts') UNREAD_SINCE = AL_SEEN; // before the badge marks them seen: these rows get a dot
     if (was && was !== v) document.body.dataset.dir = VIEWS.indexOf(v) > VIEWS.indexOf(was) ? 'fwd' : 'back'; // slide in from that side
     document.body.dataset.view = v; put('eg-view', v);
     document.querySelectorAll('.eg-nav button').forEach((b) => { if (b.dataset.go === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     movePill(!was);
+    drawBadge();
     if (v === 'alerts') loadFeed();
     if (v === 'markets') syncMarketsView();
     if (v !== 'market') closeDrawer(false);
@@ -516,6 +518,7 @@
       }
       const li = el('li');
       if (FEED_SEEN.ready && !FEED_SEEN.keys.has(alKey(r))) li.classList.add('eg-new'); // arrived since the last look: drops in
+      if (UNREAD_SINCE && Date.parse(r.t) > UNREAD_SINCE) { li.classList.add('eg-unread'); li.setAttribute('aria-label', 'New: ' + r.name + ', ' + (r.text || '')); }
       const txt = String(r.text || '');
       const ic = r.type === 'step' ? (txt.trim().startsWith('▼') ? '▼' : '▲') : AL_ICON[r.type] || '•';
       const icCls = r.type === 'step' ? (ic === '▼' ? 'down' : 'up') : '';
@@ -531,6 +534,7 @@
     }
     for (const r of all) FEED_SEEN.keys.add(alKey(r));
     FEED_SEEN.ready = true;
+    if (document.body.dataset.view === 'alerts' && !document.hidden) { markSeen(all.map((r) => Date.parse(r.t))); drawBadge(); }
   }
   const tgPend = () => { try { return JSON.parse(localStorage.getItem('tg-pending')) || {}; } catch { return {}; } };
   function drawTgList() {
@@ -578,6 +582,41 @@
   $('eg-tour-skip').addEventListener('click', () => showTour(TOUR.length));
   $('eg-retour').addEventListener('click', () => { $('eg-more').open = false; showTour(0); $('eg-tour-next').focus(); });
 
+  // ---------- unread alerts: badge on the Alerts tab and in the browser tab title ----------
+  // "Seen" is the newest alert time the user has had on screen (not the clock), so an alert that is published a few
+  // minutes after it fired still counts as new. The first visit treats everything already there as seen.
+  let AL_SEEN = Number(get('eg-al-seen', 0)) || 0, BADGE_N = 0, UNREAD_SINCE = 0;
+  const BASE_TITLE = () => document.title.replace(/^\(\d+\+?\) /, '');
+  function alertTimes() {
+    const I = S.INDEX;
+    if (!I || !I.markets || !I.markets.some((m) => Array.isArray(m.alT))) return null; // older build: no badge yet
+    return I.markets.flatMap((m) => (m.alT || []).map((x) => x * 1000));
+  }
+  function markSeen(times) {
+    const newest = Math.max(AL_SEEN, ...times.filter(Number.isFinite));
+    if (newest > AL_SEEN) { AL_SEEN = newest; put('eg-al-seen', String(newest)); }
+  }
+  function drawBadge() {
+    const ts = alertTimes();
+    if (!ts) return;
+    if (!AL_SEEN) markSeen(ts.length ? ts : [Date.now()]);
+    if (document.body.dataset.view === 'alerts' && !document.hidden) markSeen(ts);
+    const n = ts.filter((t) => t > AL_SEEN).length;
+    const btn = document.querySelector('.eg-nav button[data-go="alerts"]');
+    if (btn) {
+      let b = btn.querySelector('.eg-badge');
+      if (!b) { b = el('span', { class: 'eg-badge', 'aria-hidden': 'true' }); btn.append(b); }
+      b.hidden = !n;
+      b.textContent = n > 99 ? '99+' : String(n);
+      if (n) btn.setAttribute('aria-label', `Alerts, ${n} new`); else btn.removeAttribute('aria-label');
+      if (n > BADGE_N) replay(b, 'eg-badge-pop');
+    }
+    BADGE_N = n;
+    const t = BASE_TITLE();
+    document.title = n ? `(${n > 99 ? '99+' : n}) ${t}` : t;
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) drawBadge(); });
+
   // ---------- touch ripple ----------
   const RIPPLE = '.btn, .eg-tile, .wl-card, .eg-nav button, .eg-filter button, .seg button, .eg-seg button, .eg-ui > *, .eg-tablist button, .eg-tgl a, .eg-menu a, .eg-menu button';
   document.addEventListener('pointerdown', (e) => {
@@ -623,11 +662,13 @@
       if (!drawer.hidden) syncDrawer();
     } else { $('eg-event').hidden = true; $('eg-disagree').hidden = true; }
     drawLines(true);
+    if (BADGE_N && !/^\(\d/.test(document.title)) document.title = `(${BADGE_N > 99 ? '99+' : BADGE_N}) ${document.title}`;
     if (firstRender && D && D.price && get('eg-tour', '') !== 'done' && !document.body.classList.contains('locked')) { firstRender = false; showTour(0); }
   });
   document.addEventListener('mw:news', () => { drawNewsFilter(); markNewNews(S.DATA, false); enter($('news')); });
   document.addEventListener('mw:index', (e) => {
     S = e.detail;
+    drawBadge();
     drawTiles();
     if (document.body.dataset.view === 'alerts' && (!FEED.rows || Date.now() - FEED.at > 60000)) loadFeed(true); // first load too, when the page opens on Alerts
   });
