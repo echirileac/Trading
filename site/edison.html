@@ -92,6 +92,12 @@
   .eg-bar { position: sticky; top: 10px; z-index: 30; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 10px 8px 14px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 0; }
   .eg-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; white-space: nowrap; padding-right: 4px; }
   .eg-brand svg { width: 28px; height: 28px; flex: none; }
+  button.eg-brand { appearance: none; background: none; border: 0; color: inherit; font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; padding: 4px 4px 4px 0; }
+  button.eg-brand svg { transition: scale .2s var(--ease-spring, ease); }
+  @media (hover: hover) { button.eg-brand:hover svg { scale: 1.08; } }
+  button.eg-brand:active svg { scale: .9; }
+  button.eg-brand.eg-reloading svg { animation: eg-logo-spin .45s cubic-bezier(.4, 0, .2, 1); }
+  @keyframes eg-logo-spin { to { rotate: 360deg; } }
   .eg-nav { display: flex; gap: 2px; position: relative; }
   .eg-nav button { appearance: none; border: 0; background: transparent; color: var(--muted); font: 500 14px var(--font); min-height: 40px; padding: 0 16px; border-radius: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
   .eg-nav button svg { width: 20px; height: 20px; display: none; }
@@ -732,7 +738,7 @@
 </main>
 <div class="wrap" id="top" tabindex="-1">
   <header class="eg-bar">
-    <div class="eg-brand"><svg viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" fill="#7D54CB"/><path d="M8.5 19 13 13l3 3 4.5-7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Edison Growth</span></div>
+    <button type="button" class="eg-brand" id="eg-brand" title="Refresh" aria-label="Edison Growth: refresh the page"><svg viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" fill="#7D54CB"/><path d="M8.5 19 13 13l3 3 4.5-7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Edison Growth</span></button>
     <nav class="eg-nav" aria-label="Main">
       <button type="button" data-go="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>Markets</button>
       <button type="button" data-go="market"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19 9 12l4 4 7-9"/></svg>Market</button>
@@ -1027,6 +1033,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=4"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=10"></script>
+<script src="edison.js?v=11"></script>
 </body>
 </html>
