@@ -551,7 +551,7 @@
 
   .eg-msel { border-radius: 0; }
 
-  /* ---------- phones: iOS 26 corner radii (desktop stays square) ----------
+  /* ---------- phones: iOS 26 corner radii (wider screens: the small radii below) ----------
      Controls are capsules (radius = half the height); containers 26px; a shape inside a container is concentric
      (parent radius minus the padding), never below 12px; the planner is a floating inset sheet whose corners
      follow the screen's; the tab bar is a floating capsule. */
@@ -581,6 +581,29 @@
     body .uis-btns button { border-radius: 999px; }
     .eg-brand svg, .lock h1 svg { border-radius: 7px; }
   }
+
+  /* ---------- tablets and computers: small corner radii ----------
+     Containers 8px, controls 6px, shapes nested in a 4px-padded control 4px; the docked Plan a trade panel stays
+     square where it meets the screen edge. */
+  @media (min-width: 761px) {
+    :root { --r: 8px; }
+    .card, .eg-bar, .eg-tile, .lock form, .search.open, .eg-tour, .eg-menu, .banner, .wl-card, .wl-add { border-radius: 8px; }
+    .eg-panel > .card { border-radius: 0; }
+    .btn, .chips button, .eg-filter button, .bias, .chip, .pill, .filters button, .rk-lines button, .eg-tgl > a, .eg-msel,
+    .seg, .eg-seg, #pc-view, .eg-ui, .rk-form .chips, .eg-more summary,
+    .eg-event, .eg-disagree, .ev-line, .pc-wrap, .tv-box, .cal-box, .tf, .fc-tf-row > span, .ai .ai-outlook,
+    .rk-out div, .rk-lines li.warn, .rk-lines li.bad, .search input, .tv-sym input, .rk-form input, .rk-form select,
+    .lock input[type=password], .eg-tile .ev, .eg-feed .ic, .tip { border-radius: 6px; }
+    .seg button, .eg-seg button, #pc-view button, .eg-ui > *, .rk-form .chips button, .eg-menu a, .eg-menu button,
+    .eg-nav button, .aib, #levels td .k, .ai .lv span { border-radius: 4px; }
+    .tg-btn .sw, .eg-ladder .t, .eg-ladder .w, .eg-ladder .l, .prob-bar, .dbar, .dbar i, .eg-tile .bar { border-radius: 999px; }
+    .tg-btn .sw::after { border-radius: 50%; }
+    .eg-drawer { border-radius: 8px; }
+    body .uis-dlg { border-radius: 10px; }
+    body .uis-btns button { border-radius: 6px; }
+    .eg-brand svg, .lock h1 svg { border-radius: 6px; }
+  }
+  @media (min-width: 1024px) { .eg-drawer { border-radius: 0; } }
 </style>
 </head>
 <body data-view="market">
