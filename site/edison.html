@@ -685,6 +685,33 @@
   @keyframes eg-badge-pop { 0% { scale: .3; } 60% { scale: 1.2; } }
   @media (max-width: 760px) { .eg-nav button .eg-badge { position: absolute; top: 4px; left: calc(50% + 4px); margin: 0; box-shadow: 0 0 0 2px var(--panel); } }
   .eg-feed li.eg-unread .tm::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--btn); vertical-align: 1px; }
+
+  /* ---------- dropdowns follow the theme (Chrome/Edge 135+ "customizable select"; other browsers keep their native list) ---------- */
+  @supports (appearance: base-select) {
+    select, ::picker(select) { appearance: base-select; }
+    select { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; }
+    select:hover { border-color: var(--accent); }
+    select:open { border-color: var(--accent); }
+    select::picker-icon { color: var(--muted); transition: rotate .25s var(--ease-spring); }
+    select:open::picker-icon { rotate: 180deg; }
+    ::picker(select) {
+      background: var(--panel); color: var(--fg); border: 1px solid var(--line); box-shadow: var(--shadow);
+      padding: 6px; margin-block: 6px; min-width: anchor-size(width); max-height: min(360px, 60vh); overflow-y: auto;
+      font: 14px var(--font); transform-origin: top center;
+      opacity: 0; scale: .96; translate: 0 -4px;
+      transition: opacity .16s ease, scale .2s var(--ease), translate .2s var(--ease), display .2s allow-discrete, overlay .2s allow-discrete;
+    }
+    ::picker(select):popover-open { opacity: 1; scale: 1; translate: 0 0; }
+    @starting-style { ::picker(select):popover-open { opacity: 0; scale: .96; translate: 0 -4px; } }
+    option { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 12px; color: var(--fg); background: transparent; white-space: nowrap; cursor: pointer; }
+    option:hover, option:focus-visible { background: var(--panel2); outline: none; }
+    option:checked { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+    option::checkmark { order: 1; margin-left: auto; color: var(--accent-text); }
+    /* radii: small on wider screens, iOS-style on phones */
+    @media (min-width: 761px) { ::picker(select) { border-radius: 8px; } option { border-radius: 4px; } }
+    @media (max-width: 760px) { ::picker(select) { border-radius: 20px; } option { border-radius: 14px; min-height: 44px; } }
+  }
+  @media (prefers-reduced-motion: reduce) { ::picker(select), select::picker-icon { transition: none !important; } }
 </style>
 </head>
 <body data-view="market">
