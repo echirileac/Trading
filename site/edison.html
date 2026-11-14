@@ -673,6 +673,14 @@
 
   /* theme change spreads out in a circle from the theme button (where the browser supports view transitions) */
   ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+
+  /* unread alerts badge (Alerts tab) and unread rows on the Alerts page */
+  .eg-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--btn); color: #fff; font: 600 11px/1 var(--font); font-variant-numeric: tabular-nums; }
+  .eg-badge[hidden] { display: none; }
+  .eg-badge.eg-badge-pop { animation: eg-badge-pop .5s var(--ease-spring); }
+  @keyframes eg-badge-pop { 0% { scale: .3; } 60% { scale: 1.2; } }
+  @media (max-width: 760px) { .eg-nav button .eg-badge { position: absolute; top: 4px; left: calc(50% + 4px); margin: 0; box-shadow: 0 0 0 2px var(--panel); } }
+  .eg-feed li.eg-unread .tm::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--btn); vertical-align: 1px; }
 </style>
 </head>
 <body data-view="market">
@@ -984,6 +992,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=3"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=8"></script>
+<script src="edison.js?v=9"></script>
 </body>
 </html>
