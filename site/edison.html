@@ -473,6 +473,10 @@
     .eg-tour { bottom: 96px; right: 16px; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  .more-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .more-row .note { margin: 0; }
+  .more-row[hidden], .more-row .note[hidden] { display: none; }
+  body.eg-feed-ok #al-list-more { display: none; }
 </style>
 </head>
 <body data-view="market">
@@ -780,8 +784,8 @@
 </div>
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=1"></script>
+<script src="edison.js?v=2"></script>
 </body>
 </html>
