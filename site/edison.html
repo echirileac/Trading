@@ -336,9 +336,9 @@
     :root { --plan-w: min(460px, 38vw); }
     body { transition: padding-right .22s ease; }
     body.eg-plan-open { padding-right: var(--plan-w); }
-    .eg-drawer { top: 0; right: 0; bottom: 0; width: var(--plan-w); border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: -12px 0 40px rgba(0,0,0,.12); padding: 24px 22px 32px; animation: eg-slide .22s ease; }
+    .eg-drawer { top: 0; right: 0; bottom: 0; width: var(--plan-w); border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: -12px 0 40px rgba(0,0,0,.12); padding: 24px 22px 32px; animation: eg-slide .26s var(--ease, ease); }
   }
-  @keyframes eg-slide { from { transform: translateX(100%); } }
+  @keyframes eg-slide { from { translate: 100% 0; } }
   .eg-drawer-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .eg-drawer-h h2 { margin: 0; font-size: 19px; }
   .eg-drawer-h p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
@@ -479,11 +479,62 @@
     .eg-pagehead h1 { font-size: 26px; }
     .eg-tour { bottom: 96px; right: 16px; }
   }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
   .more-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
   .more-row .note { margin: 0; }
   .more-row[hidden], .more-row .note[hidden] { display: none; }
   body.eg-feed-ok #al-list-more { display: none; }
+
+  /* ---------- micro-animations (all switched off by prefers-reduced-motion above) ---------- */
+  :root { --ease: cubic-bezier(.2, .8, .2, 1); --ease-spring: cubic-bezier(.34, 1.4, .64, 1); }
+  .card, .eg-bar, .eg-tile, .wl-card, .eg-tour, .eg-drawer, .eg-menu { transition: background-color .25s ease, border-color .2s ease, box-shadow .2s ease, translate .2s var(--ease); }
+  .btn, .chips button, .eg-filter button, .seg button, .eg-seg button, .eg-ui > *, .eg-nav button, .eg-tablist button, .eg-more summary, .eg-tgl a, .tg-btn {
+    transition: background-color .18s ease, color .18s ease, border-color .18s ease, box-shadow .18s ease, scale .12s var(--ease);
+  }
+  :is(.btn, .chips button, .eg-filter button, .seg button, .eg-seg button, .eg-ui > *, .eg-nav button, .eg-more summary, .eg-tgl a):active { scale: .96; }
+  .eg-tile:active, .wl-card:active { scale: .985; }
+  @media (hover: hover) {
+    .eg-tile:hover, .wl-card:hover { translate: 0 -2px; box-shadow: 0 10px 28px rgba(20,19,28,.10); }
+    .btn.main:hover { box-shadow: 0 6px 18px color-mix(in srgb, var(--btn) 35%, transparent); }
+  }
+  .tg-btn .sw, .tg-btn .sw::after { transition-timing-function: var(--ease-spring); transition-duration: .22s; }
+
+  /* views, tabs and pop-overs ease in */
+  body[data-view] .eg-view { animation: eg-in .32s var(--ease) both; }
+  .eg-panel:not([hidden]) { animation: eg-fade .22s ease both; }
+  .search.open, .eg-more[open] .eg-menu, .eg-tour:not([hidden]) { animation: eg-pop .2s var(--ease) both; transform-origin: top right; }
+  .eg-tour:not([hidden]) { transform-origin: bottom right; }
+  #eg-event:not([hidden]), #eg-disagree:not([hidden]) { animation: eg-fade .3s ease both; }
+  @keyframes eg-in { from { opacity: 0; translate: 0 8px; } }
+  @keyframes eg-fade { from { opacity: 0; } }
+  @keyframes eg-pop { from { opacity: 0; scale: .96; } }
+
+  /* live dot breathes */
+  .eg-pulse i { position: relative; }
+  .eg-pulse.live i::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--up); animation: eg-ping 2s ease-out infinite; }
+  @keyframes eg-ping { from { opacity: .6; scale: 1; } to { opacity: 0; scale: 3; } }
+
+  /* price ticks: a short colour flash in the direction of the change */
+  .price.eg-tick-up { animation: eg-tick-up 1.2s ease-out; }
+  .price.eg-tick-down { animation: eg-tick-down 1.2s ease-out; }
+  @keyframes eg-tick-up { 0%, 25% { color: var(--up); } }
+  @keyframes eg-tick-down { 0%, 25% { color: var(--down); } }
+
+  /* forecast range grows from its centre when the market or horizon changes */
+  .eg-ladder.eg-grow .w, .eg-ladder.eg-grow .l { animation: eg-grow .55s var(--ease) both; }
+  .eg-ladder.eg-grow .l { animation-delay: .08s; }
+  .eg-ladder.eg-grow .n, .eg-ladder.eg-grow .c { animation: eg-pop .3s var(--ease-spring) .25s both; }
+  .eg-ladder.eg-grow .lb { animation: eg-fade .3s ease .3s both; }
+  @keyframes eg-grow { from { scale: 0 1; opacity: 0; } }
+
+  /* lists the user just changed (filters, Show older, another market) come in one after another */
+  .eg-enter { animation: eg-in .3s var(--ease) both; animation-delay: calc(var(--i, 0) * 28ms); }
+  .eg-swap { animation: eg-fade .3s ease both; }
+
+  /* narrow screens: the planner slides up as a sheet or pops in */
+  @media (max-width: 760px) { .eg-drawer:not([hidden]) { animation: eg-sheet .28s var(--ease) both; } }
+  @media (min-width: 761px) and (max-width: 1023px) { .eg-drawer:not([hidden]) { animation: eg-pop .2s var(--ease) both; transform-origin: top right; } }
+  @keyframes eg-sheet { from { translate: 0 100%; } }
 </style>
 </head>
 <body data-view="market">
@@ -791,8 +842,8 @@
 </div>
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
-<script src="app.js?v=2"></script>
+<script src="app.js?v=3"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=3"></script>
+<script src="edison.js?v=4"></script>
 </body>
 </html>

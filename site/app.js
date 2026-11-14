@@ -158,6 +158,7 @@
   const catName = (c) => ({ energy: 'Energy', metal: 'Metal', fx: 'Forex', crypto: 'Crypto', equity: 'Stock', etf: 'ETF', index: 'Index' }[c] || '');
 
   function drawWatchlist() {
+    if (!INDEX || !INDEX.markets) return; // the market list has not loaded yet (e.g. the hash changed during the first load)
     const nav = $('wl'); nav.replaceChildren();
     for (const m of INDEX.markets) {
       const b = el('button', { class: 'wl-card', type: 'button', 'aria-current': String(m.id === CUR_ID) });

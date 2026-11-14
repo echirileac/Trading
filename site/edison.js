@@ -64,6 +64,33 @@
     if (node.querySelector('.dim') || !/\.\d{2,}$/.test(t)) return;
     node.replaceChildren(document.createTextNode(t.slice(0, -2)), el('span', { class: 'dim' }, t.slice(-2)));
   }
+  // ---------- micro-animations: only for changes, never on every refresh ----------
+  const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function enter(box, sel = ':scope > *') {
+    if (calm.matches || !box) return;
+    [...box.querySelectorAll(sel)].filter((n) => !n.hidden).slice(0, 14).forEach((n, i) => {
+      n.classList.remove('eg-enter'); n.style.setProperty('--i', i); void n.offsetWidth; n.classList.add('eg-enter');
+      n.addEventListener('animationend', () => n.classList.remove('eg-enter'), { once: true });
+    });
+  }
+  function replay(node, cls) {
+    if (calm.matches || !node) return;
+    node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls);
+    node.addEventListener('animationend', () => node.classList.remove(cls), { once: true });
+  }
+  let LAST_PX = { id: null, v: null };
+  function tickPrice(D) {
+    const id = (D.meta && D.meta.id) || S.CUR_ID, v = D.price && D.price.last, node = $('price');
+    if (LAST_PX.id === id && LAST_PX.v != null && v != null && v !== LAST_PX.v) {
+      node.classList.remove('eg-tick-up', 'eg-tick-down');
+      replay(node, v > LAST_PX.v ? 'eg-tick-up' : 'eg-tick-down');
+    }
+    const swapped = LAST_PX.id && LAST_PX.id !== id;
+    LAST_PX = { id, v };
+    return swapped;
+  }
+  let LADDER_KEY = '';
+
   const whenOf = (e) => {
     const t = e.at ? Date.parse(e.at) : Date.parse(e.date + 'T12:00:00Z');
     const day = e.allDay || !e.at ? MW.dayName(e.date) : new Date(t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -97,6 +124,8 @@
     box.append(el('div', { class: 't' }), bar('w', lo, hi), bar('l', h.lo68, h.hi68), at('c', h.center), at('n', last),
       lb(lo, MW.usd(lo), 'e0'), lb(hi, MW.usd(hi), 'e1'), lb((lo + hi) / 2, `now ${MW.usd(last)} · centre ${MW.usd(h.center)}`));
     box.querySelector('.lb.e0').style.left = '8%'; box.querySelector('.lb.e1').style.left = '92%';
+    const key = ((D.meta && D.meta.id) || S.CUR_ID) + '|' + H;
+    if (key !== LADDER_KEY) { LADDER_KEY = key; replay(box, 'eg-grow'); }
   }
   function drawEdge(D, H) {
     const bt = D.track && D.track.backtest && D.track.backtest[H], lv = D.track && D.track.live && D.track.live[H];
@@ -153,7 +182,7 @@
     for (const [k, label] of opts) {
       if (k !== 'all' && !n[k]) continue;
       const b = el('button', { type: 'button', 'aria-pressed': String(k === NEWS_F) }, `${label} ${n[k]}`);
-      b.addEventListener('click', () => { NEWS_F = k; put('eg-newsf', k); drawNewsFilter(); });
+      b.addEventListener('click', () => { NEWS_F = k; put('eg-newsf', k); drawNewsFilter(); enter($('news')); });
       box.append(b);
     }
     lis.forEach((li) => { li.hidden = NEWS_F !== 'all' && kind(li) !== NEWS_F; });
@@ -340,7 +369,7 @@
       const n = k === 'all' ? rows.length : rows.filter((r) => r.type === k).length;
       if (k !== 'all' && !n && k !== AL_F) continue;
       const b = el('button', { type: 'button', 'aria-pressed': String(k === AL_F) }, `${label} ${n}`);
-      b.addEventListener('click', () => { AL_F = k; put('eg-alf', k); drawFeed(); });
+      b.addEventListener('click', () => { AL_F = k; put('eg-alf', k); drawFeed(); enter($('eg-feed'), '.eg-feed li, .eg-day'); });
       fbox.append(b);
     }
     const sel = el('select', { 'aria-label': 'Market', class: 'eg-msel' });
@@ -348,7 +377,7 @@
     for (const r of FEED.markets) sel.append(el('option', { value: r.m.id }, nameOf(r.m)));
     sel.value = FEED.markets.some((r) => r.m.id === AL_M) ? AL_M : 'all';
     sel.style.cssText = 'margin-left:auto;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:999px;min-height:34px;padding:0 12px;font:13px var(--font)';
-    sel.addEventListener('change', () => { AL_M = sel.value; put('eg-alm', AL_M); drawFeed(); });
+    sel.addEventListener('change', () => { AL_M = sel.value; put('eg-alm', AL_M); drawFeed(); enter($('eg-feed'), '.eg-feed li, .eg-day'); });
     fbox.append(sel);
     const box = $('eg-feed'); box.replaceChildren();
     if (!FEED.rows) { box.append(el('p', { class: 'note' }, 'Loading alerts…')); return; }
@@ -377,7 +406,7 @@
     }
     if (nOld) {
       const b = el('button', { class: 'btn ghost', type: 'button', 'aria-expanded': String(FEED_MORE) }, FEED_MORE ? 'Show the last 24 hours only' : `Show ${nOld} older`);
-      b.addEventListener('click', () => { FEED_MORE = !FEED_MORE; drawFeed(); const nb = $('eg-feed').querySelector('.more-row .btn'); if (nb) nb.focus(); });
+      b.addEventListener('click', () => { FEED_MORE = !FEED_MORE; drawFeed(); enter($('eg-feed'), '.eg-feed li, .eg-day'); const nb = $('eg-feed').querySelector('.more-row .btn'); if (nb) nb.focus(); });
       const row = el('div', { class: 'more-row' }); row.append(b); box.append(row);
     }
   }
@@ -438,6 +467,7 @@
     setTab(get('eg-tab', 'news'));
     $('eg-why').hidden = !(D && D.ai && D.ai.status && !['off', 'pending', 'error'].includes(D.ai.status));
     if (D && D.price) {
+      if (tickPrice(D)) { replay(document.querySelector('.eg-hero'), 'eg-swap'); enter($('news')); }
       dimPrice($('price'));
       drawEvent(D); drawLadder(D, H); drawEdge(D, H); drawDisagree(D); drawNewsFilter(); drawTrackSmall(D, H);
       if (!drawer.hidden) syncDrawer();
@@ -445,7 +475,7 @@
     drawLines(true);
     if (firstRender && D && D.price && get('eg-tour', '') !== 'done' && !document.body.classList.contains('locked')) { firstRender = false; showTour(0); }
   });
-  document.addEventListener('mw:news', drawNewsFilter);
+  document.addEventListener('mw:news', () => { drawNewsFilter(); enter($('news')); });
   document.addEventListener('mw:index', (e) => {
     S = e.detail;
     drawTiles();
