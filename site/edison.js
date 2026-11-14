@@ -492,7 +492,7 @@
     sel.append(el('option', { value: 'all' }, 'All markets'));
     for (const r of FEED.markets) sel.append(el('option', { value: r.m.id }, nameOf(r.m)));
     sel.value = FEED.markets.some((r) => r.m.id === AL_M) ? AL_M : 'all';
-    sel.style.cssText = 'margin-left:auto;background:var(--panel2);color:var(--fg);border:1px solid var(--line);min-height:34px;padding:0 12px;font:13px var(--font)';
+    sel.style.cssText = 'margin-left:auto;background:var(--panel2);color:var(--fg);border:1px solid var(--ctl);min-height:34px;padding:0 12px;font:13px var(--font)';
     sel.addEventListener('change', () => { AL_M = sel.value; put('eg-alm', AL_M); drawFeed(); enter($('eg-feed'), '.eg-feed li, .eg-day'); });
     fbox.append(sel);
     const box = $('eg-feed'); box.replaceChildren();
