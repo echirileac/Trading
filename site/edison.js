@@ -323,12 +323,16 @@
     drawFeed(); drawTgList();
   }
   setInterval(() => { if (document.body.dataset.view === 'alerts' && !document.hidden) loadFeed(true); }, 120000);
+  // Last 24 hours by default; "Show older" brings back the rest of the 7 days for this visit.
+  let FEED_MORE = false;
   function drawFeed() {
     const fbox = $('eg-al-f'); fbox.replaceChildren();
-    const rows = FEED.rows || [];
+    const all = FEED.rows || [];
+    const recent = all.filter((r) => Date.now() - Date.parse(r.t) <= 864e5);
+    const rows = FEED_MORE ? all : recent;
     for (const [k, label] of AL_TYPES) {
       const n = k === 'all' ? rows.length : rows.filter((r) => r.type === k).length;
-      if (k !== 'all' && !n) continue;
+      if (k !== 'all' && !n && k !== AL_F) continue;
       const b = el('button', { type: 'button', 'aria-pressed': String(k === AL_F) }, `${label} ${n}`);
       b.addEventListener('click', () => { AL_F = k; put('eg-alf', k); drawFeed(); });
       fbox.append(b);
@@ -342,8 +346,10 @@
     fbox.append(sel);
     const box = $('eg-feed'); box.replaceChildren();
     if (!FEED.rows) { box.append(el('p', { class: 'note' }, 'Loading alerts…')); return; }
-    const list = rows.filter((r) => (AL_F === 'all' || r.type === AL_F) && (sel.value === 'all' || r.id === sel.value));
-    if (!list.length) { box.append(el('p', { class: 'note' }, rows.length ? 'No alerts match this filter in the last 7 days.' : 'No alerts in the last 7 days.')); }
+    const match = (r) => (AL_F === 'all' || r.type === AL_F) && (sel.value === 'all' || r.id === sel.value);
+    const list = rows.filter(match), nOld = all.filter(match).length - recent.filter(match).length;
+    const span = FEED_MORE ? 'the last 7 days' : 'the last 24 hours';
+    if (!list.length) { box.append(el('p', { class: 'note' }, rows.length ? `No alerts match this filter in ${span}.` : `No alerts in ${span}.`)); }
     const today = new Date().toDateString(), yest = new Date(Date.now() - 864e5).toDateString();
     let day = '', ul = null;
     for (const r of list.slice(0, 200)) {
@@ -362,6 +368,11 @@
       tx.append(el('span', { class: 'mk' }, r.name), el('span', {}, r.type === 'step' ? txt.replace(/^[▲▼]\s*/, '') : txt));
       li.append(el('span', { class: 'ic ' + icCls, 'aria-hidden': 'true' }, ic), tx, el('span', { class: 'tm' }, d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })));
       ul.append(li);
+    }
+    if (nOld) {
+      const b = el('button', { class: 'btn ghost', type: 'button', 'aria-expanded': String(FEED_MORE) }, FEED_MORE ? 'Show the last 24 hours only' : `Show ${nOld} older`);
+      b.addEventListener('click', () => { FEED_MORE = !FEED_MORE; drawFeed(); const nb = $('eg-feed').querySelector('.more-row .btn'); if (nb) nb.focus(); });
+      const row = el('div', { class: 'more-row' }); row.append(b); box.append(row);
     }
   }
   const tgPend = () => { try { return JSON.parse(localStorage.getItem('tg-pending')) || {}; } catch { return {}; } };
@@ -428,10 +439,11 @@
     drawLines(true);
     if (firstRender && D && D.price && get('eg-tour', '') !== 'done' && !document.body.classList.contains('locked')) { firstRender = false; showTour(0); }
   });
+  document.addEventListener('mw:news', drawNewsFilter);
   document.addEventListener('mw:index', (e) => {
     S = e.detail;
     drawTiles();
-    if (document.body.dataset.view === 'alerts' && FEED.rows && Date.now() - FEED.at > 60000) loadFeed(true);
+    if (document.body.dataset.view === 'alerts' && (!FEED.rows || Date.now() - FEED.at > 60000)) loadFeed(true); // first load too, when the page opens on Alerts
   });
 
   setView(get('eg-view', 'market'), { keepScroll: true });

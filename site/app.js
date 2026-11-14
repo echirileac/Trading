@@ -1228,12 +1228,42 @@
     a.onclick = () => { const q = tgPend(); q[id] = { on: want, t: Date.now() }; tgPendSet(q); setTimeout(drawTg, 0); };
   }
 
+  // ---------- last 24 hours first ----------
+  // News and alerts show the last 24 hours; a button under each list shows the older items (alerts go back 7 days).
+  // The choice lasts until another market is opened, so the regular refresh does not fold the list back.
+  const RECENT_MS = 864e5;
+  const isRecent = (t) => { const ms = Date.parse(t); return !Number.isFinite(ms) || Date.now() - ms <= RECENT_MS; };
+  const MORE = { id: null, news: false, alerts: false };
+  function moreState(key) {
+    const id = DATA?.meta?.id || CUR_ID;
+    if (MORE.id !== id) { MORE.id = id; MORE.news = false; MORE.alerts = false; }
+    return MORE[key];
+  }
+  function moreRow(list, key, nRecent, nOld, emptyText, redraw) {
+    let row = $(list.id + '-more');
+    if (!row) {
+      row = el('div', { class: 'more-row', id: list.id + '-more' });
+      row.append(el('span', { class: 'note' }), el('button', { class: 'btn ghost', type: 'button', 'aria-controls': list.id }));
+      list.after(row);
+    }
+    const [txt, btn] = row.children, open = MORE[key];
+    row.hidden = !nOld;
+    txt.textContent = !open && !nRecent ? emptyText : '';
+    txt.hidden = !txt.textContent;
+    btn.textContent = open ? 'Show the last 24 hours only' : `Show ${nOld} older`;
+    btn.setAttribute('aria-expanded', String(open));
+    btn.onclick = () => { MORE[key] = !MORE[key]; redraw(); btn.focus(); };
+  }
+
   function drawAlerts() {
     drawTg();
     const A = DATA.alerts, list = $('al-list');
     list.replaceChildren();
     const icon = { move: '📈', level: '🧱', flip: '🔄', analyst: '🧠', event: '🗓', step: '' };
-    const items = (A && A.log) || [];
+    const all = (A && A.log) || [], open = moreState('alerts');
+    const recent = all.filter((x) => isRecent(x.t));
+    const items = open ? all : recent;
+    moreRow(list, 'alerts', recent.length, all.length - recent.length, 'No alerts in the last 24 hours.', drawAlerts);
     for (const x of items) {
       const li = el('li');
       li.append(el('span', { class: 'when' }, new Date(x.t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })), el('span', {}, `${icon[x.type] ?? '•'} ${x.text}`.trim()));
@@ -1241,11 +1271,13 @@
     }
     const how = 'Alerts cover every 0.5% price move since the previous price alert (▲ / ▼), unusual daily moves, breaks of the 50- and 200-day averages and the 20-session high or low, the model lean flipping between bullish and bearish, the AI analyst switching between bullish and bearish, and reminders before scheduled reports. Each fires once.';
     $('al-note').textContent = !A ? 'Alerts start with the next refresh.'
-      : (items.length ? '' : 'No alerts for this market in the last 7 days. ') + how + (!A.telegram ? ' They can also be sent to Telegram: see the README.' : A.muted ? ' Telegram is switched off for this market (the switch at the top of the page), so they show here only.' : ' They are also sent to Telegram; switch that off for this market at the top of the page.');
+      : (all.length ? '' : 'No alerts for this market in the last 7 days. ') + how + (!A.telegram ? ' They can also be sent to Telegram: see the README.' : A.muted ? ' Telegram is switched off for this market (the switch at the top of the page), so they show here only.' : ' They are also sent to Telegram; switch that off for this market at the top of the page.');
   }
 
   function drawNews() {
     const items = DATA.news.items || [];
+    const recent = items.filter((n) => isRecent(n.publishedAt)), open = moreState('news');
+    const shown = (open ? items : recent).slice(0, 30);
     const nFull = items.filter((n) => n.read && n.read.status === 'full').length;
     const nPart = items.filter((n) => n.read && n.read.status === 'partial').length;
     const nSum = items.filter((n) => n.read && n.read.status === 'summary').length;
@@ -1255,10 +1287,11 @@
       ? ` ${nAi} stories were scored by an AI model (${(sc && sc.model) || 'gpt-oss on Groq'}) reading the headline, with the keyword score of the article text as a smaller input${nOff ? `; ${nOff === 1 ? '1 story' : nOff + ' stories'} judged not to be about this market ${nOff === 1 ? 'is' : 'are'} greyed out and left out of the forecast` : ''}${nAi < items.length ? '. The rest are scored with keywords until the AI catches up' : ''}.`
       : sc && sc.kind ? ' AI scoring is not available right now, so stories are scored with keywords.' : '';
     $('news-note').textContent = items.length
-      ? `${items.length} stories from trusted outlets, fetched ${ago(DATA.news.fetchedAt)}. ${nFull} read in full, ${nPart} partly, ${nSum} paywalled (publisher summary read), the rest blocked to automated readers and scored on the headline only.${how} Tags show how each story was scored for price direction.`
+      ? `${items.length} stories from trusted outlets, fetched ${ago(DATA.news.fetchedAt)}. ${nFull} read in full, ${nPart} partly, ${nSum} paywalled (publisher summary read), the rest blocked to automated readers and scored on the headline only.${how} Tags show how each story was scored for price direction.${open || !recent.length || recent.length === items.length ? '' : ` Showing the ${recent.length === 1 ? 'story' : recent.length + ' stories'} from the last 24 hours.`}`
       : 'No trusted headlines on the last refresh.';
     const ul = $('news'); ul.replaceChildren();
-    for (const n of items.slice(0, 30)) {
+    moreRow(ul, 'news', recent.length, Math.min(items.length, 30) - Math.min(recent.length, 30), 'No stories in the last 24 hours.', () => { drawNews(); document.dispatchEvent(new CustomEvent('mw:news')); });
+    for (const n of shown) {
       const li = el('li');
       const href = (n.read && n.read.url) || n.link;
       const a = el('a', { href, target: '_blank', rel: 'noopener noreferrer' }, n.title);

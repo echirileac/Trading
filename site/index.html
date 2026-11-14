@@ -303,6 +303,9 @@
   .wrap:focus { outline: none; }
   @media (prefers-reduced-motion: reduce) { .to-top, .to-top.show { transition: none; } }
   @media (max-width: 520px) { .price { font-size: 40px; } .fc-center { font-size: 30px; } }
+  .more-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .more-row .note { margin: 0; }
+  .more-row[hidden], .more-row .note[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -550,7 +553,7 @@
 </script>
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 <script src="switch.js?v=1"></script>
 </body>
 </html>
