@@ -31,7 +31,7 @@
     --tick-open: #ffffff80; --cursor: #ffffff40; --shade: #ffffff08; --tip-bg: #0d0d16ee; --halo: rgba(255,255,255,.05);
     --banner-bg: rgba(245,181,68,.10); --banner-line: rgba(245,181,68,.40); --banner-fg: #F7D58F; --area-top: .28;
     --c-ma20: #F5B544; --c-ma50: #7AA2FF; --c-ma200: #D2BAFF; --c-bb: #39C5CF; --c-signal: #F0883E;
-    --shadow: 0 24px 70px rgba(0,0,0,.45);
+    --shadow: 0 24px 70px rgba(0,0,0,.45); --float: 0 2px 6px rgba(0,0,0,.35), 0 8px 28px rgba(0,0,0,.45);
     color-scheme: dark;
     --r: 0; --font: Inter, "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   }
@@ -43,7 +43,7 @@
     --tick-open: #00000070; --cursor: #00000040; --shade: #00000006; --tip-bg: #fffffff5; --halo: rgba(0,0,0,.06);
     --banner-bg: #FFF4D6; --banner-line: #E8C46B; --banner-fg: #6B4A00; --area-top: .18;
     --c-ma20: #B7791F; --c-ma50: #2F62D8; --c-ma200: #8250DF; --c-bb: #0E8A96; --c-signal: #D4590B;
-    --shadow: 0 24px 60px rgba(20,19,28,.16);
+    --shadow: 0 24px 60px rgba(20,19,28,.16); --float: 0 1px 4px rgba(20,19,28,.08), 0 6px 24px rgba(20,19,28,.14);
     color-scheme: light;
   }
   @media (prefers-color-scheme: light) {
@@ -55,7 +55,7 @@
       --tick-open: #00000070; --cursor: #00000040; --shade: #00000006; --tip-bg: #fffffff5; --halo: rgba(0,0,0,.06);
       --banner-bg: #FFF4D6; --banner-line: #E8C46B; --banner-fg: #6B4A00; --area-top: .18;
       --c-ma20: #B7791F; --c-ma50: #2F62D8; --c-ma200: #8250DF; --c-bb: #0E8A96; --c-signal: #D4590B;
-      --shadow: 0 24px 60px rgba(20,19,28,.16);
+      --shadow: 0 24px 60px rgba(20,19,28,.16); --float: 0 1px 4px rgba(20,19,28,.08), 0 6px 24px rgba(20,19,28,.14);
       color-scheme: light;
     }
   }
@@ -462,7 +462,8 @@
   @media (max-width: 760px) {
     .wrap { padding-bottom: 104px; gap: 14px; }
     .eg-bar { position: static; border-radius: 0; padding: 8px 10px; gap: 8px; backdrop-filter: none; background: var(--panel); } /* a backdrop filter would trap the fixed bottom bar */
-    .eg-nav { position: fixed; z-index: 35; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px; border-radius: 0; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
+    .eg-nav { position: fixed; z-index: 35; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px; border-radius: 0; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--float); transition: translate .28s var(--ease, ease), opacity .2s ease; }
+    body.eg-nav-hide .eg-nav:not(:focus-within) { translate: 0 calc(100% + 32px); opacity: 0; pointer-events: none; }
     .eg-nav button { flex: 1 1 0; flex-direction: column; gap: 2px; min-height: 52px; padding: 4px 0; font-size: 12px; border-radius: 0; }
     .eg-nav button svg { display: block; }
     .eg-nav button[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); }
@@ -846,6 +847,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=3"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=5"></script>
+<script src="edison.js?v=6"></script>
 </body>
 </html>

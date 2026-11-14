@@ -38,6 +38,24 @@
   }
   document.querySelectorAll('.eg-nav button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.go, { focus: true })));
 
+  // ---------- phones: the bottom tab bar hides while scrolling down and comes back on scrolling up ----------
+  {
+    const narrow = window.matchMedia('(max-width: 760px)');
+    let lastY = window.scrollY, ticking = false;
+    const update = () => {
+      ticking = false;
+      const y = window.scrollY, dy = y - lastY;
+      const atEnd = window.innerHeight + y >= document.documentElement.scrollHeight - 4;
+      if (!narrow.matches || y < 80 || atEnd) document.body.classList.remove('eg-nav-hide');
+      else if (dy > 8) document.body.classList.add('eg-nav-hide');
+      else if (dy < -8) document.body.classList.remove('eg-nav-hide');
+      else return; // small jitter: keep the reference point
+      lastY = y;
+    };
+    window.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+    narrow.addEventListener('change', update);
+  }
+
   // ---------- detail tabs (News, Timeframes, Key levels, Events, Sources, Method) ----------
   const tabs = [...document.querySelectorAll('.eg-tablist [role="tab"]')];
   function setTab(t, focus) {
