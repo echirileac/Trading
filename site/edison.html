@@ -272,7 +272,7 @@
   td { padding: 10px 6px; border-top: 1px solid var(--line); }
   tr:first-child td { border-top: 0; }
   td.r { text-align: right; }
-  #levels td .k { font-size: 12px; border-radius: 0; padding: 2px 9px; border: 1px solid var(--line); color: var(--muted); }
+  #levels td .k { white-space: nowrap; font-size: 12px; border-radius: 0; padding: 2px 9px; border: 1px solid var(--line); color: var(--muted); }
   #levels td .k.down::before { content: "\25B2  "; font-size: 9px; }
   #levels td .k.up::before { content: "\25BC  "; font-size: 9px; }
   #levels tr.now td { color: var(--accent-text); font-weight: 600; }
@@ -722,6 +722,32 @@
     @media (max-width: 760px) { ::picker(select) { border-radius: 20px; } option { border-radius: 14px; min-height: 44px; } }
   }
   @media (prefers-reduced-motion: reduce) { ::picker(select), select::picker-icon { transition: none !important; } }
+
+  /* ---------- key levels drawn on a price scale (beside the table; above it on narrow screens) ---------- */
+  .lv-wrap { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 24px; align-items: start; }
+  @media (max-width: 1100px) { .lv-wrap { grid-template-columns: minmax(0, 1fr); } }
+  .lv-viz { margin: 0; min-width: 0; max-width: 560px; }
+  .lv-viz figcaption { margin: 8px 0 0; }
+  .lvz { display: block; overflow: visible; font: 12.5px var(--font); font-variant-numeric: tabular-nums; }
+  .lvz-axis { stroke: var(--line); stroke-width: 1; }
+  .lvz-b90 { fill: var(--accent-soft); }
+  .lvz-b68 { fill: var(--accent); opacity: .38; }
+  .lvz-c { stroke: var(--accent-text); stroke-width: 2; }
+  .lvz-res { color: var(--down); } .lvz-sup { color: var(--up); }
+  .lvz-tick { stroke: currentColor; stroke-width: 2; }
+  .lvz-lead { fill: none; stroke: var(--line); stroke-width: 1; }
+  .lvz-dot { fill: currentColor; } .lvz-ring { fill: var(--panel); stroke: currentColor; stroke-width: 1.5; } .lvz-mute { fill: var(--muted); }
+  .lvz-t { fill: var(--fg); paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
+  .lvz-arrow { fill: currentColor; font-size: 9px; } .lvz-p { font-weight: 600; } .lvz-d { fill: var(--muted); }
+  .lvz-far { opacity: .55; }
+  .lvz-now { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .lvz-nowp rect { fill: var(--btn); } .lvz-nowp text { fill: #fff; font-weight: 600; }
+  .lvz-l { cursor: default; transition: opacity .15s ease; }
+  .lvz-l.hl { opacity: 1; } .lvz-l.hl .lvz-tick { stroke-width: 3.5; } .lvz-l.hl .lvz-t { font-weight: 700; }
+  #levels tr.hl td { background: var(--accent-soft); }
+  .lvz-in .lvz-l, .lvz-in .lvz-nowp { animation: eg-in .4s var(--ease) both; animation-delay: calc(var(--i, 0) * 40ms); }
+  .lvz-in .lvz-b90, .lvz-in .lvz-b68 { transform-box: fill-box; transform-origin: center; animation: eg-grow-y .5s var(--ease) both; }
+  @keyframes eg-grow-y { from { scale: 1 0; opacity: 0; } }
 </style>
 </head>
 <body data-view="market">
@@ -899,7 +925,10 @@
           </div>
           <div class="eg-panel needs-data" role="tabpanel" id="p-levels" aria-labelledby="t-levels" data-panel="levels">
             <p class="note">Computed from recent prices; distance is from the live price. ▲ resistance above, ▼ support below. The nearest ones are drawn on the Forecast view of the chart.</p>
-            <table id="levels"></table>
+            <div class="lv-wrap">
+              <figure class="lv-viz" id="eg-lvz-fig" hidden><div id="eg-lvz"></div><figcaption class="note" id="eg-lvz-cap"></figcaption></figure>
+              <div class="tbl-wrap"><table id="levels"></table></div>
+            </div>
           </div>
           <div class="eg-panel" role="tabpanel" id="p-events" aria-labelledby="t-events" data-panel="events">
             <p class="note needs-data" id="ev-note"></p>
@@ -1033,6 +1062,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=4"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=11"></script>
+<script src="edison.js?v=12"></script>
 </body>
 </html>
