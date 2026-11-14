@@ -88,7 +88,7 @@
   .eg-bar { position: sticky; top: 10px; z-index: 30; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 10px 8px 14px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 0; }
   .eg-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; white-space: nowrap; padding-right: 4px; }
   .eg-brand svg { width: 28px; height: 28px; flex: none; }
-  .eg-nav { display: flex; gap: 2px; }
+  .eg-nav { display: flex; gap: 2px; position: relative; }
   .eg-nav button { appearance: none; border: 0; background: transparent; color: var(--muted); font: 500 14px var(--font); min-height: 40px; padding: 0 16px; border-radius: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
   .eg-nav button svg { width: 20px; height: 20px; display: none; }
   .eg-nav button[aria-current="page"] { background: var(--panel2); color: var(--fg); }
@@ -604,6 +604,75 @@
     .eg-brand svg, .lock h1 svg { border-radius: 6px; }
   }
   @media (min-width: 1024px) { .eg-drawer { border-radius: 0; } }
+
+  /* ---------- Telegram-style motion ---------- */
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  body { overflow-x: clip; } /* pages slide in from the side without a sideways scrollbar */
+
+  /* pages slide in from the side of the tab you came from */
+  body[data-dir="fwd"] .eg-view { animation: eg-push-fwd .38s var(--ease) both; }
+  body[data-dir="back"] .eg-view { animation: eg-push-back .38s var(--ease) both; }
+  @keyframes eg-push-fwd { from { opacity: 0; translate: 56px 0; } }
+  @keyframes eg-push-back { from { opacity: 0; translate: -56px 0; } }
+
+  /* tab bar: a selection pill glides to the tapped tab, the icon bounces */
+  .eg-nav-pill { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; background: var(--panel2); border-radius: 0;
+    transition: translate .5s cubic-bezier(.34, 1.3, .5, 1), width .5s cubic-bezier(.34, 1.3, .5, 1), height .3s ease; }
+  .eg-nav-pill.instant { transition: none; }
+  .eg-nav button { z-index: 1; }
+  .eg-nav.has-pill button[aria-current="page"] { background: transparent; }
+  @media (max-width: 760px) { .eg-nav-pill { background: var(--accent-soft); border-radius: 999px; } }
+  @media (min-width: 761px) { .eg-nav-pill { border-radius: 4px; } }
+  .eg-nav button.eg-bounce svg { animation: eg-bounce .5s var(--ease-spring); }
+  @keyframes eg-bounce { 30% { scale: .78; } 65% { scale: 1.14; } }
+
+  /* touch ripple */
+  :is(.btn, .eg-tile, .wl-card, .eg-nav button, .eg-filter button, .seg button, .eg-seg button, .eg-ui > *, .eg-tablist button, .eg-tgl a, .eg-menu a, .eg-menu button) { position: relative; overflow: hidden; }
+  .eg-ripple { position: absolute; border-radius: 50%; background: currentColor; opacity: .16; pointer-events: none; scale: 0; animation: eg-ripple .55s ease-out forwards; }
+  @keyframes eg-ripple { to { scale: 1; opacity: 0; } }
+
+  /* rolling digits when a price changes */
+  .eg-rd { display: inline-block; overflow: hidden; vertical-align: bottom; }
+  .eg-ri { display: inline-block; animation: eg-roll-up .45s var(--ease-spring) both; }
+  .eg-ri.eg-ri-down { animation-name: eg-roll-down; }
+  @keyframes eg-roll-up { from { translate: 0 75%; opacity: 0; } }
+  @keyframes eg-roll-down { from { translate: 0 -75%; opacity: 0; } }
+
+  /* new alerts and stories drop in at the top with a short highlight */
+  .eg-new { animation: eg-new .5s var(--ease-spring) both, eg-new-bg 2.4s ease .1s both; }
+  @keyframes eg-new { from { opacity: 0; translate: 0 -14px; } }
+  @keyframes eg-new-bg { from { background-color: var(--accent-soft); } }
+
+  /* loading skeleton */
+  .eg-skel li > * { background: linear-gradient(90deg, var(--panel2) 25%, var(--line) 50%, var(--panel2) 75%); background-size: 200% 100%; animation: eg-shimmer 1.3s linear infinite; }
+  .eg-skel .tx { height: 36px; } .eg-skel .tm { width: 48px; height: 14px; }
+  @keyframes eg-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+  /* ⋯ menu springs open */
+  .eg-more[open] .eg-menu { animation: eg-menu-pop .34s var(--ease-spring) both; transform-origin: top right; }
+  @keyframes eg-menu-pop { from { opacity: 0; scale: .8; } }
+
+  /* Plan a trade: dimmed page behind it, animated close, drag the sheet down on phones */
+  .eg-scrim { position: fixed; inset: 0; z-index: 39; background: rgba(10, 10, 16, .38); animation: eg-fade .25s ease both; }
+  .eg-scrim.out { animation: eg-fade-out .25s ease both; }
+  @media (min-width: 1024px) { .eg-scrim { display: none; } }
+  .eg-grab { display: none; }
+  @keyframes eg-fade-out { to { opacity: 0; } }
+  @media (max-width: 760px) {
+    .eg-grab { display: block; justify-self: center; width: 40px; height: 5px; margin: -14px 0 -4px; border-radius: 999px; background: var(--line); }
+    .eg-grab, .eg-drawer-h { touch-action: none; cursor: grab; }
+    .eg-drawer:not([hidden]) { animation: eg-sheet .46s cubic-bezier(.32, 1.25, .5, 1) both; transition: translate .4s cubic-bezier(.34, 1.3, .5, 1); }
+    .eg-drawer.dragging { transition: none; }
+    .eg-drawer.out { animation: eg-sheet-out .26s cubic-bezier(.5, 0, .9, .6) both; }
+  }
+  @media (min-width: 761px) and (max-width: 1023px) { .eg-drawer.out { animation: eg-pop-out .18s ease-in both; } }
+  @media (min-width: 1024px) { .eg-drawer.out { animation: eg-slide-out .24s cubic-bezier(.5, 0, .9, .6) both; } }
+  @keyframes eg-sheet-out { to { translate: 0 110%; } }
+  @keyframes eg-pop-out { to { opacity: 0; scale: .96; } }
+  @keyframes eg-slide-out { to { translate: 100% 0; } }
+
+  /* theme change spreads out in a circle from the theme button (where the browser supports view transitions) */
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 </style>
 </head>
 <body data-view="market">
@@ -875,7 +944,9 @@
   <p class="disc">Not financial advice. CFDs are leveraged and can move fast against you. A broker's CFD quote can differ slightly from the market prices shown here, and futures-based CFDs roll to the next contract a few days before expiry.</p>
 </div>
 
+<div class="eg-scrim" id="eg-scrim" hidden></div>
 <aside class="eg-drawer" id="eg-drawer" aria-labelledby="eg-drawer-h" tabindex="-1" hidden>
+  <div class="eg-grab" aria-hidden="true"></div>
   <div class="eg-drawer-h"><div><h2 id="eg-drawer-h">Plan a trade</h2><p id="eg-drawer-sub">Inputs stay in this browser.</p></div><button class="btn icon" type="button" id="eg-drawer-x" aria-label="Close Plan a trade"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
   <section class="card needs-data" id="rk-card">
     <h2>Risk helper</h2>
@@ -913,6 +984,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=3"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=7"></script>
+<script src="edison.js?v=8"></script>
 </body>
 </html>

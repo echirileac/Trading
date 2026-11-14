@@ -19,14 +19,17 @@
   let S = MW.state();
   const nameOf = (m) => (!m ? '' : m.id === 'NATGAS' ? 'NATGAS' : m.name || m.id);
   const dirOf = (x) => (x > 0.15 ? 1 : x < -0.15 ? -1 : 0);
+  const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   // ---------- views ----------
   const VIEWS = ['markets', 'market', 'alerts', 'record'];
   function setView(v, opts = {}) {
     if (!VIEWS.includes(v)) v = 'market';
     const was = document.body.dataset.view;
+    if (was && was !== v) document.body.dataset.dir = VIEWS.indexOf(v) > VIEWS.indexOf(was) ? 'fwd' : 'back'; // slide in from that side
     document.body.dataset.view = v; put('eg-view', v);
     document.querySelectorAll('.eg-nav button').forEach((b) => { if (b.dataset.go === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    movePill(!was);
     if (v === 'alerts') loadFeed();
     if (v === 'markets') syncMarketsView();
     if (v !== 'market') closeDrawer(false);
@@ -36,7 +39,23 @@
       if (opts.focus) { const h = document.querySelector(`.eg-view[data-view="${v}"] h1`) || document.querySelector(`.eg-view[data-view="${v}"] h2, .eg-view[data-view="${v}"] .sym`); if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); } }
     }
   }
-  document.querySelectorAll('.eg-nav button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.go, { focus: true })));
+  document.querySelectorAll('.eg-nav button').forEach((b) => b.addEventListener('click', () => { replay(b, 'eg-bounce'); setView(b.dataset.go, { focus: true }); }));
+
+  // ---------- tab bar selection pill (glides between tabs) ----------
+  function movePill(instant) {
+    const nav = document.querySelector('.eg-nav'), b = nav && nav.querySelector('button[aria-current="page"]');
+    if (!nav) return;
+    let pill = nav.querySelector('.eg-nav-pill');
+    if (!pill) { pill = document.createElement('span'); pill.className = 'eg-nav-pill'; pill.setAttribute('aria-hidden', 'true'); nav.prepend(pill); nav.classList.add('has-pill'); instant = true; }
+    if (!b || !b.offsetWidth) { pill.hidden = true; return; }
+    pill.hidden = false;
+    if (instant || calm.matches) pill.classList.add('instant');
+    pill.style.width = b.offsetWidth + 'px'; pill.style.height = b.offsetHeight + 'px';
+    pill.style.translate = `${b.offsetLeft}px ${b.offsetTop}px`;
+    if (instant || calm.matches) { void pill.offsetWidth; pill.classList.remove('instant'); }
+  }
+  { let t; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => movePill(true), 80); }); }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => movePill(true));
 
   // ---------- phones: the bottom tab bar hides while scrolling down and comes back on scrolling up ----------
   {
@@ -77,36 +96,52 @@
   document.addEventListener('click', (e) => { if (e.target.closest('a[href="#tf-card"]')) { setView('market', { keepScroll: true }); setTab('tf'); } }, true);
 
   // ---------- small helpers for the market view ----------
-  function dimPrice(node) {
-    const t = node.textContent;
-    if (node.querySelector('.dim') || !/\.\d{2,}$/.test(t)) return;
-    node.replaceChildren(document.createTextNode(t.slice(0, -2)), el('span', { class: 'dim' }, t.slice(-2)));
-  }
   // ---------- micro-animations: only for changes, never on every refresh ----------
-  const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
   function enter(box, sel = ':scope > *') {
     if (calm.matches || !box) return;
     [...box.querySelectorAll(sel)].filter((n) => !n.hidden).slice(0, 14).forEach((n, i) => {
       n.classList.remove('eg-enter'); n.style.setProperty('--i', i); void n.offsetWidth; n.classList.add('eg-enter');
-      n.addEventListener('animationend', () => n.classList.remove('eg-enter'), { once: true });
+      const done = (e) => { if (e.target !== n) return; n.classList.remove('eg-enter'); n.removeEventListener('animationend', done); };
+      n.addEventListener('animationend', done);
     });
   }
   function replay(node, cls) {
     if (calm.matches || !node) return;
     node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls);
-    node.addEventListener('animationend', () => node.classList.remove(cls), { once: true });
+    const done = (e) => { if (e.target !== node) return; node.classList.remove(cls); node.removeEventListener('animationend', done); }; // ignore children's animations
+    node.addEventListener('animationend', done);
   }
-  let LAST_PX = { id: null, v: null };
+  // Telegram-style rolling digits: the characters that changed slide in from below (up) or above (down);
+  // the last two decimals stay dimmed. Without a direction it only lays the text out.
+  function rollDigits(node, text, prev, dir) {
+    const dimN = /\.\d{2,}$/.test(text) ? 2 : 0, off = text.length - (prev ? prev.length : 0);
+    const frag = document.createDocumentFragment();
+    let dim = null;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i], was = prev ? prev[i - off] : ch;
+      let n = document.createTextNode(ch);
+      if (dir && was !== ch && /\d/.test(ch)) {
+        const box = el('span', { class: 'eg-rd' }), inner = el('span', { class: 'eg-ri' + (dir < 0 ? ' eg-ri-down' : '') }, ch);
+        inner.style.animationDelay = (text.length - 1 - i) * 22 + 'ms';
+        box.append(inner); n = box;
+      }
+      if (dimN && i === text.length - dimN) { dim = el('span', { class: 'dim' }); frag.append(dim); }
+      (dim || frag).append(n);
+    }
+    node.replaceChildren(frag);
+  }
+  let LAST_PX = { id: null, v: null, txt: '' };
   function tickPrice(D) {
     const id = (D.meta && D.meta.id) || S.CUR_ID, v = D.price && D.price.last, node = $('price');
-    if (LAST_PX.id === id && LAST_PX.v != null && v != null && v !== LAST_PX.v) {
-      node.classList.remove('eg-tick-up', 'eg-tick-down');
-      replay(node, v > LAST_PX.v ? 'eg-tick-up' : 'eg-tick-down');
-    }
-    const swapped = LAST_PX.id && LAST_PX.id !== id;
-    LAST_PX = { id, v };
+    const same = LAST_PX.id === id, dir = same && LAST_PX.v != null && v != null && v !== LAST_PX.v && !calm.matches ? Math.sign(v - LAST_PX.v) : 0;
+    const txt = node.textContent;
+    rollDigits(node, txt, same ? LAST_PX.txt : null, dir);
+    if (dir) { node.classList.remove('eg-tick-up', 'eg-tick-down'); replay(node, dir > 0 ? 'eg-tick-up' : 'eg-tick-down'); }
+    const swapped = LAST_PX.id && !same;
+    LAST_PX = { id, v, txt };
     return swapped;
   }
+  const TILE_PX = {};
   let LADDER_KEY = '';
 
   const whenOf = (e) => {
@@ -207,6 +242,18 @@
     box.hidden = lis.length < 2;
   }
 
+  // ---------- news: stories that arrived since the last refresh of the same market drop in ----------
+  let NEWS_SEEN = { id: null, keys: null };
+  function markNewNews(D, mark) {
+    const id = (D && D.meta && D.meta.id) || S.CUR_ID, lis = [...$('news').children];
+    const keyOf = (li) => { const a = li.querySelector('a'); return a ? a.getAttribute('href') + '|' + a.textContent : null; };
+    const same = NEWS_SEEN.id === id && NEWS_SEEN.keys;
+    if (mark && same && !calm.matches) lis.forEach((li) => { const k = keyOf(li); if (k && !NEWS_SEEN.keys.has(k)) li.classList.add('eg-new'); });
+    const keys = same ? NEWS_SEEN.keys : new Set();
+    lis.forEach((li) => { const k = keyOf(li); if (k) keys.add(k); });
+    NEWS_SEEN = { id, keys };
+  }
+
   // ---------- track record: counts instead of percentages while the published sample is small ----------
   function drawTrackSmall(D, H) {
     const L = D.track && D.track.live && D.track.live[H], note = $('eg-tr-small');
@@ -227,20 +274,65 @@
   // redrawn for the new width once the slide has finished. Narrower screens keep the floating panel / bottom sheet.
   let relayT;
   const relayout = () => { clearTimeout(relayT); relayT = setTimeout(() => window.dispatchEvent(new Event('resize')), 260); };
+  const scrim = $('eg-scrim');
+  let closeT = null, onCloseEnd = null;
+  function stopClosing() {
+    clearTimeout(closeT); closeT = null;
+    if (onCloseEnd) drawer.removeEventListener('animationend', onCloseEnd);
+    onCloseEnd = null;
+    drawer.classList.remove('out'); scrim.classList.remove('out');
+  }
   function openDrawer() {
-    drawer.hidden = false; planBtn.setAttribute('aria-expanded', 'true');
+    stopClosing();
+    drawer.style.translate = ''; scrim.style.opacity = '';
+    drawer.hidden = false; scrim.hidden = false; planBtn.setAttribute('aria-expanded', 'true');
     document.body.classList.add('eg-plan-open'); relayout();
     drawer.focus({ preventScroll: true });
     syncDrawer(); drawLines();
   }
   function closeDrawer(focusBack = true) {
-    if (drawer.hidden) return;
-    drawer.hidden = true; planBtn.setAttribute('aria-expanded', 'false');
-    document.body.classList.remove('eg-plan-open'); relayout();
-    drawLines();
+    if (drawer.hidden || drawer.classList.contains('out')) return;
+    planBtn.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('eg-plan-open'); relayout(); // the page slides back while the panel leaves
+    const finish = () => { stopClosing(); drawer.hidden = true; scrim.hidden = true; drawer.style.translate = ''; scrim.style.opacity = ''; drawLines(); };
+    if (calm.matches) finish();
+    else {
+      drawer.classList.add('out'); scrim.classList.add('out');
+      onCloseEnd = (e) => { if (e.target === drawer) finish(); };
+      drawer.addEventListener('animationend', onCloseEnd);
+      closeT = setTimeout(finish, 500);
+    }
     if (focusBack) planBtn.focus({ preventScroll: true });
   }
-  planBtn.addEventListener('click', () => (drawer.hidden ? openDrawer() : closeDrawer()));
+  planBtn.addEventListener('click', () => (drawer.hidden || drawer.classList.contains('out') ? openDrawer() : closeDrawer()));
+  scrim.addEventListener('click', () => closeDrawer());
+  // phones: drag the sheet down by its grabber or header to close it; let go early and it springs back
+  {
+    const sheet = window.matchMedia('(max-width: 760px)');
+    let drag = null;
+    const start = (e) => {
+      if (!sheet.matches || drawer.hidden || drawer.classList.contains('out') || e.target.closest('button, a, input, select')) return;
+      drag = { y: e.clientY, t: e.timeStamp, dy: 0, v: 0, id: e.pointerId };
+      drawer.setPointerCapture(e.pointerId); drawer.classList.add('dragging');
+    };
+    drawer.querySelectorAll('.eg-grab, .eg-drawer-h').forEach((n) => n.addEventListener('pointerdown', start));
+    drawer.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dy = Math.max(0, e.clientY - drag.y), dt = e.timeStamp - drag.t;
+      if (dt > 0) drag.v = (dy - drag.dy) / dt;
+      drag.dy = dy; drag.t = e.timeStamp;
+      drawer.style.translate = `0 ${dy}px`;
+      scrim.style.opacity = String(1 - Math.min(1, dy / Math.max(1, drawer.offsetHeight)));
+    });
+    const end = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const { dy, v } = drag; drag = null;
+      drawer.classList.remove('dragging');
+      if (dy > Math.min(140, drawer.offsetHeight * 0.25) || v > 0.6) closeDrawer(false);
+      else { drawer.style.translate = ''; scrim.style.opacity = ''; }
+    };
+    drawer.addEventListener('pointerup', end); drawer.addEventListener('pointercancel', end);
+  }
   $('eg-drawer-x').addEventListener('click', () => closeDrawer());
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
@@ -318,7 +410,9 @@
         b.addEventListener('click', () => { MW.select(m.id); setView('market', { focus: true }); });
         box.append(b); continue;
       }
-      const px = el('div', { class: 'px' }), pb = el('b', {}, MW.fmt(m.last, dec)); dimPrice(pb);
+      const px = el('div', { class: 'px' }), pb = el('b'), ptxt = MW.fmt(m.last, dec), pv = TILE_PX[m.id];
+      rollDigits(pb, ptxt, pv && pv.txt, pv && pv.v != null && m.last !== pv.v && !calm.matches ? Math.sign(m.last - pv.v) : 0);
+      TILE_PX[m.id] = { v: m.last, txt: ptxt };
       const ch = m.changePct;
       px.append(pb, el('span', { class: ch > 0 ? 'up' : ch < 0 ? 'down' : 'flat' }, ch == null ? '' : `${ch > 0 ? '▲' : ch < 0 ? '▼' : ''} ${Math.abs(ch).toFixed(2)}%`));
       b.append(px);
@@ -376,6 +470,8 @@
     drawFeed(); drawTgList();
   }
   setInterval(() => { if (document.body.dataset.view === 'alerts' && !document.hidden) loadFeed(true); }, 120000);
+  const FEED_SEEN = { ready: false, keys: new Set() };
+  const alKey = (r) => `${r.id}|${r.t}|${r.type}|${r.text}`;
   // Last 24 hours by default; "Show older" brings back the rest of the 7 days for this visit.
   let FEED_MORE = false;
   function drawFeed() {
@@ -398,7 +494,12 @@
     sel.addEventListener('change', () => { AL_M = sel.value; put('eg-alm', AL_M); drawFeed(); enter($('eg-feed'), '.eg-feed li, .eg-day'); });
     fbox.append(sel);
     const box = $('eg-feed'); box.replaceChildren();
-    if (!FEED.rows) { box.append(el('p', { class: 'note' }, 'Loading alerts…')); return; }
+    if (!FEED.rows) {
+      const sk = el('ul', { class: 'eg-feed eg-skel', 'aria-hidden': 'true' });
+      for (let i = 0; i < 4; i++) { const li = el('li'); li.append(el('span', { class: 'ic' }), el('div', { class: 'tx' }), el('span', { class: 'tm' })); sk.append(li); }
+      box.append(el('p', { class: 'sr', role: 'status' }, 'Loading alerts…'), sk);
+      return;
+    }
     const match = (r) => (AL_F === 'all' || r.type === AL_F) && (sel.value === 'all' || r.id === sel.value);
     const list = rows.filter(match), nOld = all.filter(match).length - recent.filter(match).length;
     const span = FEED_MORE ? 'the last 7 days' : 'the last 24 hours';
@@ -414,6 +515,7 @@
         ul = el('ul', { class: 'eg-feed' }); box.append(ul);
       }
       const li = el('li');
+      if (FEED_SEEN.ready && !FEED_SEEN.keys.has(alKey(r))) li.classList.add('eg-new'); // arrived since the last look: drops in
       const txt = String(r.text || '');
       const ic = r.type === 'step' ? (txt.trim().startsWith('▼') ? '▼' : '▲') : AL_ICON[r.type] || '•';
       const icCls = r.type === 'step' ? (ic === '▼' ? 'down' : 'up') : '';
@@ -427,6 +529,8 @@
       b.addEventListener('click', () => { FEED_MORE = !FEED_MORE; drawFeed(); enter($('eg-feed'), '.eg-feed li, .eg-day'); const nb = $('eg-feed').querySelector('.more-row .btn'); if (nb) nb.focus(); });
       const row = el('div', { class: 'more-row' }); row.append(b); box.append(row);
     }
+    for (const r of all) FEED_SEEN.keys.add(alKey(r));
+    FEED_SEEN.ready = true;
   }
   const tgPend = () => { try { return JSON.parse(localStorage.getItem('tg-pending')) || {}; } catch { return {}; } };
   function drawTgList() {
@@ -474,6 +578,34 @@
   $('eg-tour-skip').addEventListener('click', () => showTour(TOUR.length));
   $('eg-retour').addEventListener('click', () => { $('eg-more').open = false; showTour(0); $('eg-tour-next').focus(); });
 
+  // ---------- touch ripple ----------
+  const RIPPLE = '.btn, .eg-tile, .wl-card, .eg-nav button, .eg-filter button, .seg button, .eg-seg button, .eg-ui > *, .eg-tablist button, .eg-tgl a, .eg-menu a, .eg-menu button';
+  document.addEventListener('pointerdown', (e) => {
+    if (calm.matches || e.button > 0) return;
+    const t = e.target.closest(RIPPLE);
+    if (!t || t.disabled) return;
+    const r = t.getBoundingClientRect(), d = Math.max(r.width, r.height) * 2.2;
+    const s = el('span', { class: 'eg-ripple', 'aria-hidden': 'true' });
+    s.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
+    t.append(s);
+    s.addEventListener('animationend', () => s.remove(), { once: true });
+    setTimeout(() => s.remove(), 900);
+  }, { passive: true });
+
+  // ---------- theme change: a circle spreading from the theme button (browsers with view transitions) ----------
+  let VT_PASS = false;
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#theme');
+    if (!btn || VT_PASS || calm.matches || !document.startViewTransition) return;
+    e.stopImmediatePropagation();
+    const r = btn.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const R = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    const vt = document.startViewTransition(() => { VT_PASS = true; try { btn.click(); } finally { VT_PASS = false; } });
+    vt.ready.then(() => document.documentElement.animate(
+      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${R}px at ${x}px ${y}px)`] },
+      { duration: 520, easing: 'cubic-bezier(.4, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' })).catch(() => {});
+  }, true);
+
   // ---------- react to the shared code ----------
   let firstRender = true;
   document.addEventListener('mw:render', (e) => {
@@ -486,14 +618,14 @@
     $('eg-why').hidden = !(D && D.ai && D.ai.status && !['off', 'pending', 'error'].includes(D.ai.status));
     if (D && D.price) {
       if (tickPrice(D)) { replay(document.querySelector('.eg-hero'), 'eg-swap'); enter($('news')); }
-      dimPrice($('price'));
+      markNewNews(D, true);
       drawEvent(D); drawLadder(D, H); drawEdge(D, H); drawDisagree(D); drawNewsFilter(); drawTrackSmall(D, H);
       if (!drawer.hidden) syncDrawer();
     } else { $('eg-event').hidden = true; $('eg-disagree').hidden = true; }
     drawLines(true);
     if (firstRender && D && D.price && get('eg-tour', '') !== 'done' && !document.body.classList.contains('locked')) { firstRender = false; showTour(0); }
   });
-  document.addEventListener('mw:news', () => { drawNewsFilter(); enter($('news')); });
+  document.addEventListener('mw:news', () => { drawNewsFilter(); markNewNews(S.DATA, false); enter($('news')); });
   document.addEventListener('mw:index', (e) => {
     S = e.detail;
     drawTiles();
