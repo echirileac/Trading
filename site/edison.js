@@ -617,6 +617,15 @@
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) drawBadge(); });
 
+  // ---------- logo: refresh the site (same page and market; the hash is kept) ----------
+  $('eg-brand').addEventListener('click', () => {
+    const b = $('eg-brand');
+    if (b.classList.contains('eg-reloading')) return;
+    if (calm.matches) { location.reload(); return; }
+    b.classList.add('eg-reloading');
+    setTimeout(() => location.reload(), 380); // let the spin show before the page goes
+  });
+
   // ---------- touch ripple ----------
   const RIPPLE = '.btn, .eg-tile, .wl-card, .eg-nav button, .eg-filter button, .seg button, .eg-seg button, .eg-ui > *, .eg-tablist button, .eg-tgl a, .eg-menu a, .eg-menu button';
   document.addEventListener('pointerdown', (e) => {
