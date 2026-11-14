@@ -176,16 +176,22 @@
 
   // ---------- Plan a trade drawer ----------
   const drawer = $('eg-drawer'), planBtn = $('eg-plan');
+  // On wide screens the panel sits beside the page (body.eg-plan-open makes room on the right); the charts are
+  // redrawn for the new width once the slide has finished. Narrower screens keep the floating panel / bottom sheet.
+  let relayT;
+  const relayout = () => { clearTimeout(relayT); relayT = setTimeout(() => window.dispatchEvent(new Event('resize')), 260); };
   function openDrawer() {
     drawer.hidden = false; planBtn.setAttribute('aria-expanded', 'true');
-    drawer.focus();
+    document.body.classList.add('eg-plan-open'); relayout();
+    drawer.focus({ preventScroll: true });
     syncDrawer(); drawLines();
   }
   function closeDrawer(focusBack = true) {
     if (drawer.hidden) return;
     drawer.hidden = true; planBtn.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('eg-plan-open'); relayout();
     drawLines();
-    if (focusBack) planBtn.focus();
+    if (focusBack) planBtn.focus({ preventScroll: true });
   }
   planBtn.addEventListener('click', () => (drawer.hidden ? openDrawer() : closeDrawer()));
   $('eg-drawer-x').addEventListener('click', () => closeDrawer());

@@ -331,6 +331,14 @@
 
   /* plan a trade drawer */
   .eg-drawer { position: fixed; z-index: 40; top: 84px; right: max(16px, calc((100vw - 1400px) / 2 + 16px)); bottom: 16px; width: min(480px, calc(100vw - 32px)); overflow: auto; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--r); box-shadow: var(--shadow); padding: 22px; display: grid; gap: 16px; align-content: start; }
+  /* wide screens: the planner is a full-height side panel and the page moves left to make room */
+  @media (min-width: 1024px) {
+    :root { --plan-w: min(460px, 38vw); }
+    body { transition: padding-right .22s ease; }
+    body.eg-plan-open { padding-right: var(--plan-w); }
+    .eg-drawer { top: 0; right: 0; bottom: 0; width: var(--plan-w); border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: -12px 0 40px rgba(0,0,0,.12); padding: 24px 22px 32px; animation: eg-slide .22s ease; }
+  }
+  @keyframes eg-slide { from { transform: translateX(100%); } }
   .eg-drawer-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .eg-drawer-h h2 { margin: 0; font-size: 19px; }
   .eg-drawer-h p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
@@ -786,6 +794,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=2"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=2"></script>
+<script src="edison.js?v=3"></script>
 </body>
 </html>
