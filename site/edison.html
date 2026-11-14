@@ -462,8 +462,12 @@
   @media (max-width: 760px) {
     .wrap { padding-bottom: 104px; gap: 14px; }
     .eg-bar { position: static; border-radius: 0; padding: 8px 10px; gap: 8px; backdrop-filter: none; background: var(--panel); } /* a backdrop filter would trap the fixed bottom bar */
-    .eg-nav { position: fixed; z-index: 35; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px; border-radius: 0; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--float); transition: translate .28s var(--ease, ease), opacity .2s ease; }
-    body.eg-nav-hide .eg-nav:not(:focus-within) { translate: 0 calc(100% + 32px); opacity: 0; pointer-events: none; }
+    .eg-nav { position: fixed; z-index: 35; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px; border-radius: 0; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--float); transform-origin: 50% 100%;
+      /* coming back: a spring with a small overshoot */
+      transition: translate .5s cubic-bezier(.34, 1.45, .55, 1), scale .5s cubic-bezier(.34, 1.45, .55, 1), opacity .22s ease, filter .3s ease; }
+    /* going away: quick ease-in, slightly smaller and softer as it drops */
+    body.eg-nav-hide .eg-nav:not(:focus-within) { translate: 0 calc(100% + 32px); scale: .92; opacity: 0; filter: blur(2px); pointer-events: none;
+      transition: translate .26s cubic-bezier(.5, 0, .9, .6), scale .26s ease-in, opacity .2s ease .06s, filter .2s ease; }
     .eg-nav button { flex: 1 1 0; flex-direction: column; gap: 2px; min-height: 52px; padding: 4px 0; font-size: 12px; border-radius: 0; }
     .eg-nav button svg { display: block; }
     .eg-nav button[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); }
@@ -481,6 +485,10 @@
     .eg-tour { bottom: 96px; right: 16px; }
   }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+  @media (prefers-reduced-motion: reduce) and (max-width: 760px) {
+    .eg-nav { transition: opacity .2s ease !important; }
+    body.eg-nav-hide .eg-nav:not(:focus-within) { translate: none; scale: none; filter: none; }
+  }
   .more-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
   .more-row .note { margin: 0; }
   .more-row[hidden], .more-row .note[hidden] { display: none; }
