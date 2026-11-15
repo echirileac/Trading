@@ -527,6 +527,7 @@
   }
   planBtn.addEventListener('click', () => (drawer.hidden || drawer.classList.contains('out') ? openDrawer() : closeDrawer()));
   scrim.addEventListener('click', () => closeDrawer());
+  { const top = drawer.querySelector('.eg-drawer-top'); drawer.addEventListener('scroll', () => top.classList.toggle('stuck', drawer.scrollTop > 2), { passive: true }); } // hairline under the header once the form scrolls under it
   // phones: drag the sheet down by its grabber or header to close it; let go early and it springs back
   {
     const sheet = window.matchMedia('(max-width: 760px)');
