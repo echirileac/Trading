@@ -215,7 +215,7 @@
   .ev-line { margin: 0; font-size: 13px; line-height: 1.5; background: var(--banner-bg); border: 1px solid var(--banner-line); color: var(--banner-fg); border-radius: 0; padding: 10px 14px; }
   .eg-lean { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 8px 12px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; }
   .eg-lean .lbl { color: var(--muted); }
-  .eg-lean .bias { color: var(--muted) !important; border-color: var(--line); font-weight: 500; }
+  .eg-lean .bias { font-weight: 500; }
   .eg-lean .prob { display: grid; gap: 4px; min-width: 160px; }
   .prob-bar { display: flex; height: 4px; border-radius: 0; overflow: hidden; background: var(--track); }
   .prob-bar span { display: block; height: 100%; }
@@ -848,6 +848,12 @@
   #eg-fc { grid-template-columns: minmax(0, 1fr); } /* the forecast card's column is the card's width, not its widest line */
   #eg-fc .ranges { flex-wrap: wrap; }
   @media (max-width: 420px) { .eg-lean { grid-template-columns: auto minmax(0, 1fr); } .eg-lean .prob { grid-column: 1 / -1; min-width: 0; } } /* lean bar on its own line on narrow phones */
+
+  /* ---------- status tags in their colour: up / bullish green, down / bearish red, mixed / sideways amber ----------
+     (timeframe verdicts, the model lean, the analyst stance, pattern tags); a light tint of the same colour behind. */
+  .bias, .chip { background: color-mix(in srgb, currentColor 12%, transparent); border-color: color-mix(in srgb, currentColor 45%, transparent); }
+  .bias.flat { color: var(--neutral); }
+  .meta .chip.flat { background: none; } /* a neutral news story stays grey */
 </style>
 </head>
 <body data-view="market">
