@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 6
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -56,19 +56,38 @@ jobs:
           MTF_WEIGHT: ${{ vars.MTF_WEIGHT }}                     # optional, default 0.15: share of the lean given to the timeframe reading (0 = shown, not counted; max 0.5)
           # SITE_URL: "https://your-custom-domain.example/"   # only if you use a custom domain
       - uses: actions/configure-pages@v6
+      # 15 Nov 2026: two deploys in a row failed with "No artifacts named github-pages were found",
+      # even though the upload step had just finished: GitHub's artifact list lagged behind the upload.
+      # Re-running the failed run then failed with "Multiple artifacts named github-pages", because the
+      # re-run uploaded a second copy next to the first. So: the artifact name includes the attempt
+      # number (a re-run never sees two), and if the deploy can't find it, wait and try once more.
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+          name: github-pages-${{ github.run_attempt }}
       - id: deployment
         uses: actions/deploy-pages@v5
+        continue-on-error: true
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
+      - name: Wait before trying the deploy again
+        if: steps.deployment.outcome == 'failure'
+        run: |
+          echo "::warning title=Deploy retried::The first deploy attempt failed (often GitHub's artifact list lagging behind the upload). Trying once more in 30 seconds."
+          sleep 30
+      - id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
       - name: Check the live site really shows this build
         # GitHub can report "Reported success!" for a deploy while the live site keeps serving an older
         # one (12 Nov 2026: frozen for an hour). Read the live data file and fail loudly if it is older
         # than what this run just built, so the problem shows up as a red run instead of silently.
         # With the password lock on, index.json is encrypted and carries its build time as `at`.
-        if: steps.deployment.outcome == 'success'
+        if: steps.deployment.outcome == 'success' || steps.deployment_retry.outcome == 'success'
         env:
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
         run: |
           built=$(node -e "const j=JSON.parse(require('fs').readFileSync('site/data/index.json','utf8')); console.log(j.generatedAt||j.at||'')")
           live=""
