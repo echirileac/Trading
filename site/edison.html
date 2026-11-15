@@ -282,6 +282,9 @@
   #levels td .k { white-space: nowrap; font-size: 12px; border-radius: 0; padding: 2px 9px; border: 1px solid var(--line); color: var(--muted); }
   #levels td .k.down::before { content: "\25B2  "; font-size: 9px; }
   #levels td .k.up::before { content: "\25BC  "; font-size: 9px; }
+  /* status tags in their colour: resistance red, support green (tinted fill, stronger edge, full-colour text) */
+  #levels td .k.down { color: var(--down); background: color-mix(in srgb, var(--down) 12%, transparent); border-color: color-mix(in srgb, var(--down) 45%, transparent); font-weight: 500; }
+  #levels td .k.up { color: var(--up); background: color-mix(in srgb, var(--up) 12%, transparent); border-color: color-mix(in srgb, var(--up) 45%, transparent); font-weight: 500; }
   #levels tr.now td { color: var(--accent-text); font-weight: 600; }
   .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 14px; color: var(--muted); }
