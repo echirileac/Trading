@@ -60,22 +60,43 @@
   { let t; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => movePill(true), 80); }); }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => movePill(true));
 
-  // ---------- phones: the bottom tab bar hides while scrolling down and comes back on scrolling up ----------
+  // ---------- phones: the bottom tab bar follows the scroll ----------
+  // Like Safari's and Telegram's bars: scrolling down moves the bar down by exactly the distance scrolled, scrolling up
+  // brings it back the same way; when the scroll stops it glides the rest of the way in the direction it was going.
+  // Always shown near the top, at the end of the page and while it has keyboard focus. Reduce motion: it fades instead.
   {
-    const narrow = window.matchMedia('(max-width: 760px)');
-    let lastY = window.scrollY, ticking = false;
+    const narrow = window.matchMedia('(max-width: 760px)'), calmNav = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const nav = document.querySelector('.eg-nav');
+    let lastY = window.scrollY, off = 0, ticking = false, snapT = 0, dir = 0;
+    const range = () => (nav ? nav.offsetHeight + 32 : 0); // far enough to clear the bottom gap and the shadow
+    const set = (v, snap) => {
+      off = Math.max(0, Math.min(range(), v));
+      nav.classList.toggle('snap', !!snap);
+      nav.style.setProperty('--nav-off', off.toFixed(1) + 'px');
+      document.body.classList.toggle('eg-nav-hidden', off >= range() - 1);
+    };
     const update = () => {
       ticking = false;
-      const y = window.scrollY, dy = y - lastY;
+      if (!nav) return;
+      const y = window.scrollY, dy = y - lastY; lastY = y;
       const atEnd = window.innerHeight + y >= document.documentElement.scrollHeight - 4;
-      if (!narrow.matches || y < 80 || atEnd) document.body.classList.remove('eg-nav-hide');
-      else if (dy > 8) document.body.classList.add('eg-nav-hide');
-      else if (dy < -8) document.body.classList.remove('eg-nav-hide');
-      else return; // small jitter: keep the reference point
-      lastY = y;
+      const keep = !narrow.matches || y < 80 || atEnd || nav.contains(document.activeElement);
+      if (calmNav.matches) { // fade only
+        if (off) set(0, false);
+        if (keep || dy < -8) document.body.classList.remove('eg-nav-hide'); else if (dy > 8) document.body.classList.add('eg-nav-hide');
+        return;
+      }
+      document.body.classList.remove('eg-nav-hide');
+      clearTimeout(snapT);
+      if (keep) { if (off) set(0, true); return; }
+      if (Math.abs(dy) > 1) dir = Math.sign(dy);
+      set(off + dy, false); // move with the page
+      // when the scroll stops, finish in the direction it was going (down: hide, up: show), like Safari's bars;
+      // a tiny nudge (under 12 px) springs back instead of hiding
+      snapT = setTimeout(() => set(dir > 0 && off > 12 ? range() : 0, true), 140);
     };
     window.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
-    narrow.addEventListener('change', update);
+    narrow.addEventListener('change', () => { if (nav) set(0, false); });
   }
 
   // ---------- detail tabs (News, Timeframes, Key levels, Events, Sources, Method) ----------
