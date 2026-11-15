@@ -786,6 +786,53 @@
     .ov-table td:last-child { min-width: 0; }
     .ov-table .nm { font-size: 15px; }
   }
+
+  /* ---------- track record at a glance ---------- */
+  .trv-score { display: grid; gap: 14px; margin: 6px 0 4px; }
+  .trv-row { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(0, 2.4fr) minmax(120px, 1fr); gap: 6px 16px; align-items: center; }
+  .trv-row .lb { font-size: 14px; } .trv-row .lb small { display: block; color: var(--muted); font-size: 12px; }
+  .trv-bars { position: relative; display: grid; gap: 5px; padding: 10px 0 4px; }
+  .trv-bar { position: relative; height: 10px; background: var(--track); border-radius: 999px; overflow: visible; }
+  .trv-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; background: var(--ctl); transform-origin: left; } /* backtest: neutral */
+  .trv-bar.pub i { background: var(--accent); } /* published: the site's own record */
+  .trv-bar.pub.empty { background: repeating-linear-gradient(90deg, var(--track) 0 6px, transparent 6px 10px); }
+  .trv-bar.empty b { left: 0; translate: 0 -50%; padding-right: 8px; background: var(--panel); color: var(--muted); font-weight: 500; }
+  .trv-bar b.inside { translate: calc(-100% - 6px) -50%; color: #fff; }
+  .trv-bar b { position: absolute; z-index: 2; top: 50%; translate: 6px -50%; font-size: 12px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .trv-tgt { position: absolute; z-index: 1; top: 2px; bottom: 0; width: 1.5px; background: var(--fg); opacity: .7; translate: -1px 0; }
+  .trv-tgt span { position: absolute; top: -12px; left: 50%; translate: -50% 0; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .trv-key { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+  .trv-key i { display: inline-block; width: 18px; height: 6px; border-radius: 999px; margin-right: 6px; vertical-align: 1px; background: var(--ctl); }
+  .trv-key i.pub { background: var(--accent); }
+  .trv-verdict { font-size: 13px; font-weight: 600; } .trv-verdict small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .trv-tl { position: relative; margin: 6px 0 4px; }
+  .trv-tl svg { display: block; overflow: visible; font: 11px var(--font); font-variant-numeric: tabular-nums; }
+  .trv-tl .ax { fill: var(--muted); } .trv-tl .grid { stroke: var(--grid); } .trv-tl .zero { stroke: var(--ctl); stroke-dasharray: 3 3; }
+  .trv-tl .r90 { fill: var(--accent-soft); } .trv-tl .r68 { fill: var(--accent); opacity: .45; }
+  .trv-tl .pend .r68, .trv-tl .pend .r90 { fill: none; stroke: var(--accent); stroke-dasharray: 2 2; opacity: 1; }
+  .trv-tl .pubbg { fill: var(--accent-soft); opacity: .5; }
+  .trv-tl .d { stroke: var(--panel); stroke-width: 1.5; } .trv-tl .d.in { fill: var(--up); } .trv-tl .d.mid { fill: var(--neutral); } .trv-tl .d.out { fill: var(--down); }
+  .trv-tl .f { cursor: default; } .trv-tl .f:hover .r68 { opacity: .8; }
+  .trv-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  .trv-legend i { display: inline-block; vertical-align: -1px; margin-right: 6px; }
+  .trv-legend .k68, .trv-legend .k90 { width: 8px; height: 12px; background: var(--accent); opacity: .45; } .trv-legend .k90 { background: var(--accent-soft); opacity: 1; }
+  .trv-legend .dot { width: 9px; height: 9px; border-radius: 50%; } .trv-legend .in { background: var(--up); } .trv-legend .mid { background: var(--neutral); } .trv-legend .out { background: var(--down); }
+  .trv-legend .pend { border: 1.5px dashed var(--accent); width: 8px; height: 12px; border-radius: 0; }
+  .trv-sig { display: grid; gap: 10px; }
+  .trv-sig .trv-row { grid-template-columns: minmax(110px, 1fr) minmax(0, 3fr) minmax(70px, auto); }
+  .trv-in .trv-bar i { animation: trv-fill .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 60ms); }
+  @keyframes trv-fill { from { scale: 0 1; } }
+  .trv-in .trv-tl .f { animation: eg-fade .3s ease both; animation-delay: calc(var(--i, 0) * 12ms); }
+  @media (max-width: 760px) {
+    .trv-row, .trv-sig .trv-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .trv-row .trv-bars { grid-column: 1 / -1; grid-row: 2; }
+    .tr-stats, .tr-stats tbody { display: block; }
+    .tr-stats tr { display: grid; grid-template-columns: minmax(0, 1fr) 76px 76px; gap: 2px 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+    .tr-stats tr:first-child { border-top: 0; }
+    .tr-stats th, .tr-stats td { padding: 0; border: 0; white-space: normal; }
+    .tr-stats th:last-child { display: none; }
+    .tr-stats td.ref { grid-column: 1 / -1; color: var(--muted); font-size: 12px; min-width: 0; }
+  }
 </style>
 </head>
 <body data-view="market">
@@ -1047,6 +1094,15 @@
     <div class="eg-pagehead"><div><h1 id="eg-tr-h">Track record</h1><p id="eg-tr-sub">How the forecasts for this market have done.</p></div>
       <div class="eg-tools"><nav class="seg" role="tablist" aria-label="Forecast horizon"><button role="tab" data-h="1">1 day</button><button role="tab" data-h="3">3 days</button><button role="tab" data-h="5">5 days</button></nav></div>
     </div>
+    <section class="card needs-data" id="eg-trv" hidden aria-labelledby="eg-trv-h">
+      <h2 class="eg-h2" id="eg-trv-h">At a glance</h2>
+      <div class="trv-score" id="eg-trv-score"></div>
+      <h3 class="sub">Forecast vs what happened</h3>
+      <p class="note" id="eg-trv-tl-note"></p>
+      <div class="trv-tl" id="eg-trv-tl"></div>
+      <p class="trv-legend" id="eg-trv-legend"><span><i class="k68"></i>likely range (68%)</span><span><i class="k90"></i>wide range (90%)</span><span><i class="dot in"></i>closed inside the likely range</span><span><i class="dot mid"></i>inside the wide range</span><span><i class="dot out"></i>outside</span><span><i class="dot pend"></i>pending</span></p>
+      <div id="eg-trv-sig-wrap"><h3 class="sub">Which signals pointed the right way</h3><div class="trv-sig" id="eg-trv-sig"></div></div>
+    </section>
     <section class="card needs-data" id="track-card">
       <h2 class="eg-h2">Published and backtested</h2>
       <p class="note" id="track-note"></p>
@@ -1100,6 +1156,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=4"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=13"></script>
+<script src="edison.js?v=14"></script>
 </body>
 </html>

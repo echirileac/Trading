@@ -33,6 +33,7 @@
     movePill(!was);
     drawBadge();
     if (v === 'alerts') loadFeed();
+    if (v === 'record' && S.DATA) requestAnimationFrame(() => drawTrackViz(S.DATA, S.H)); // measured once the page is visible
     if (v === 'markets') syncMarketsView();
     if (v !== 'market') closeDrawer(false);
     if (was !== v) {
@@ -276,6 +277,128 @@
     const up = items.filter((it) => it.r.price > last).pop(), dn = items.find((it) => it.r.price < last);
     const near = [up && `nearest resistance ${up.r.label} at ${MW.usd(up.r.price)}`, dn && `nearest support ${dn.r.label} at ${MW.usd(dn.r.price)}`].filter(Boolean).join(', ');
     $('eg-lvz-cap').textContent = `${near ? near.charAt(0).toUpperCase() + near.slice(1) + '. ' : ''}${h ? `Bar: where the ${H}-day close is likely (dark, 68%) or possible (light, 90%). ● inside the likely range · ○ inside the wider range · faded: beyond it.` : ''}`;
+  }
+
+  // ---------- track record at a glance ----------
+  // 1) bars per measure against its target (backtest and, once scored, published); 2) every recent forecast as a
+  // range bar with a dot where the price closed, backtest first and the site's own published forecasts after;
+  // 3) per-signal hit rates against the coin-flip line.
+  let TRV_KEY = '';
+  function trvRow(box, label, sub, rows, tgt, verdict, i) {
+    const r = el('div', { class: 'trv-row' }), lb = el('div', { class: 'lb' }, label);
+    if (sub) lb.append(el('small', {}, sub));
+    const bars = el('div', { class: 'trv-bars' });
+    bars.style.setProperty('--i', i);
+    for (const x of rows) {
+      const b = el('div', { class: 'trv-bar' + (x.pub ? ' pub' : '') + (x.v == null ? ' empty' : '') + (x.cls ? ' ' + x.cls : '') });
+      const v = x.v == null ? null : Math.max(0, Math.min(100, x.v)), lab = el('b', {}, x.txt);
+      if (v != null) { const f = el('i'); f.style.width = v + '%'; b.append(f); lab.style.left = v + '%'; if (v > 72) lab.classList.add('inside'); } // long bars carry their number inside
+      b.append(lab);
+      bars.append(b);
+    }
+    if (tgt != null) { const t = el('div', { class: 'trv-tgt' }); t.style.left = tgt + '%'; t.append(el('span', {}, tgt + '%')); bars.append(t); }
+    r.append(lb, bars, verdict);
+    box.append(r);
+  }
+  function drawTrackViz(D, H) {
+    const card = $('eg-trv'), t = D && D.track;
+    card.hidden = !t || !t.backtest;
+    if (card.hidden) return;
+    const B = (t.backtest && t.backtest[H]) || {}, L = (t.live && t.live[H]) || {};
+    const pc = (a, b) => (b ? 100 * a / b : null), f0 = (v) => (v == null ? '—' : Math.round(v) + '%');
+    const key = ((D.meta && D.meta.id) || S.CUR_ID) + '|' + H;
+    card.classList.toggle('trv-in', key !== TRV_KEY && !calm.matches);
+    TRV_KEY = key;
+
+    // 1) scorecard
+    const sc = $('eg-trv-score'); sc.replaceChildren();
+    const k = el('p', { class: 'trv-key' });
+    k.innerHTML = `<span><i></i>Backtest (${B.n || 0})</span><span><i class="pub"></i>Published (${L.n || 0})</span><span>│ target</span>`;
+    sc.append(k);
+    const verdict = (txt, why, cls) => { const v = el('div', { class: 'trv-verdict ' + (cls || '') }, txt); if (why) v.append(el('small', {}, why)); return v; };
+    const judge = (v, tgt, kind) => {
+      if (v == null) return verdict('—', 'not enough forecasts yet');
+      if (kind === 'dir') return v >= 55 ? verdict('Has an edge', `${Math.round(v - 50)} points above a coin flip`, 'up') : v <= 45 ? verdict('Worse than a coin flip', `${Math.round(50 - v)} points below`, 'down') : verdict('About a coin flip', 'no reliable direction', 'flat');
+      const d = v - tgt;
+      return Math.abs(d) <= 4 ? verdict('Sized about right', `${d >= 0 ? '+' : ''}${Math.round(d)} points from target`, 'up') : d > 0 ? verdict('A little wide', `${Math.round(d)} points above target`, 'flat') : verdict('Too narrow', `${Math.round(-d)} points below target`, 'down');
+    };
+    const pubNote = L.n ? null : (t.open || []).filter((f) => f.h === H).map((f) => f.target).sort()[0];
+    const rowsFor = (bv, lv) => [{ v: bv, txt: f0(bv) }, { v: lv, txt: lv == null ? (pubNote ? `first result ${MW.dayName(pubNote)}` : 'not scored yet') : f0(lv), pub: true }];
+    const dirB = pc(B.dirHit, B.dirN), dirL = pc(L.dirHit, L.dirN);
+    const usePub = (L.n || 0) >= 20; // verdicts read the published record once it has 20 forecasts, the backtest until then
+    const basis = (v) => { const sm = v.querySelector('small'); if (sm) sm.textContent += (sm.textContent ? ' · ' : '') + (usePub ? 'published' : 'backtest'); return v; };
+    trvRow(sc, 'Direction right', 'up or down called correctly', rowsFor(dirB, dirL), 50, basis(judge(usePub ? dirL : dirB, 50, 'dir')), 0);
+    const i68B = pc(B.in68, B.n), i68L = pc(L.in68, L.n);
+    trvRow(sc, 'Inside the likely range', 'close within the 68% range', rowsFor(i68B, i68L), 68, basis(judge(usePub ? i68L : i68B, 68)), 1);
+    const i90B = pc(B.in90, B.n), i90L = pc(L.in90, L.n);
+    trvRow(sc, 'Inside the wide range', 'close within the 90% range', rowsFor(i90B, i90L), 90, basis(judge(usePub ? i90L : i90B, 90)), 2);
+    { // average miss vs assuming no change: shorter is better
+      const m = usePub && L.mae != null ? L : B;
+      if (m.mae != null && m.maeNaive != null) {
+        const top = Math.max(m.mae, m.maeNaive) * 1.15;
+        const better = m.mae < m.maeNaive * 0.97, worse = m.mae > m.maeNaive * 1.03;
+        trvRow(sc, 'Average miss', `${m === L ? 'published' : 'backtest'}: forecast vs "no change"`,
+          [{ v: 100 * m.mae / top, txt: `${m.mae.toFixed(2)}% forecast`, cls: 'pub' }, { v: 100 * m.maeNaive / top, txt: `${m.maeNaive.toFixed(2)}% no change` }], null,
+          better ? verdict('Forecast helps', 'misses less than "no change"', 'up') : worse ? verdict('No better than "no change"', '', 'down') : verdict('Same as "no change"', 'shorter bar is better', 'flat'), 3);
+      }
+    }
+
+    // 2) timeline: backtest forecasts, then the published ones (scored and pending)
+    const box = $('eg-trv-tl'), W = Math.round(box.clientWidth);
+    const pts = (t.backtest.pts && t.backtest.pts[H]) || [];
+    const pub = [...(t.recent || []).filter((f) => f.h === H), ...(t.open || []).filter((f) => f.h === H)].sort((a, b) => (a.d0 < b.d0 ? -1 : 1));
+    const items = pts.map(([d0, p0, c, lo68, hi68, lo90, hi90, actual]) => ({ d0, p0, c, lo68, hi68, lo90, hi90, actual }))
+      .concat(pub.map((f) => ({ ...f, pub: true })));
+    $('eg-trv-tl-note').textContent = pts.length
+      ? `Each bar is one ${H}-day forecast: its likely and wide range, as a move from the price when it was made, and a dot where the price actually closed ${H} session${H > 1 ? 's' : ''} later. Last ${pts.length} backtest forecasts${pub.length ? `, then the site's own published ones` : ''}.`
+      : 'The timeline appears after the next site update.';
+    box.replaceChildren(); $('eg-trv-legend').hidden = !items.length;
+    if (W && items.length) {
+      const mv = (v, p0) => 100 * (v / p0 - 1);
+      const ext = Math.max(...items.flatMap((f) => [mv(f.lo90, f.p0), mv(f.hi90, f.p0), f.actual != null ? mv(f.actual, f.p0) : 0]).map(Math.abs).filter(Number.isFinite), 0.5);
+      const step = ext > 12 ? 5 : ext > 6 ? 2 : ext > 3 ? 1 : 0.5, lim = Math.ceil(ext / step) * step;
+      const Hh = 220, padL = 40, padR = 6, top = 18, bot = Hh - 24;
+      const gapSlots = pub.length && pts.length ? 1.5 : 0, n = items.length + gapSlots;
+      const slot = (W - padL - padR) / n, bw = Math.max(2, Math.min(10, slot * 0.62));
+      const y = (pct) => top + (lim - pct) / (2 * lim) * (bot - top);
+      const svg = sv('svg', { viewBox: `0 0 ${W} ${Hh}`, width: W, height: Hh, role: 'img', 'aria-label': `${items.length} forecasts and where the price closed` });
+      for (let g = -lim; g <= lim + 1e-9; g += step) {
+        svg.append(sv('line', { x1: padL, x2: W - padR, y1: y(g), y2: y(g), class: Math.abs(g) < 1e-9 ? 'zero' : 'grid' }), sv('text', { x: padL - 6, y: y(g) + 4, 'text-anchor': 'end', class: 'ax' }, `${g > 0 ? '+' : ''}${+g.toFixed(1)}%`));
+      }
+      const x0 = (i) => padL + (i + (i >= pts.length ? gapSlots : 0) + 0.5) * slot;
+      if (pub.length) {
+        const xs = x0(pts.length) - slot / 2 - (gapSlots ? slot * 0.4 : 0);
+        svg.append(sv('rect', { x: xs, y: top - 14, width: W - padR - xs, height: bot - top + 14, class: 'pubbg' }), sv('text', { x: W - padR - 3, y: top - 4, 'text-anchor': 'end', class: 'ax' }, 'Published'));
+      }
+      items.forEach((f, i) => {
+        const cx = x0(i), g = sv('g', { class: 'f' + (f.actual == null ? ' pend' : '') });
+        g.style.setProperty('--i', i);
+        const a = f.actual != null ? mv(f.actual, f.p0) : null;
+        const res = a == null ? 'pending' : f.actual >= f.lo68 && f.actual <= f.hi68 ? 'in' : f.actual >= f.lo90 && f.actual <= f.hi90 ? 'mid' : 'out';
+        const s = (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+        g.append(sv('title', {}, `${f.pub ? 'Published' : 'Backtest'} · made ${MW.dayName(f.d0)}${f.target ? ` for ${MW.dayName(f.target)}` : ''}: likely ${s(mv(f.lo68, f.p0))} to ${s(mv(f.hi68, f.p0))}, ${a == null ? 'pending' : `closed ${s(a)} (${res === 'in' ? 'inside the likely range' : res === 'mid' ? 'inside the wide range' : 'outside both'})`}`),
+          sv('rect', { x: cx - bw / 2, y: y(mv(f.hi90, f.p0)), width: bw, height: Math.max(1, y(mv(f.lo90, f.p0)) - y(mv(f.hi90, f.p0))), class: 'r90' }),
+          sv('rect', { x: cx - bw / 2, y: y(mv(f.hi68, f.p0)), width: bw, height: Math.max(1, y(mv(f.lo68, f.p0)) - y(mv(f.hi68, f.p0))), class: 'r68' }));
+        if (a != null) g.append(sv('circle', { cx, cy: y(Math.max(-lim, Math.min(lim, a))), r: Math.max(2.4, Math.min(4, bw * 0.45)), class: 'd ' + res }));
+        svg.append(g);
+      });
+      if (pts.length) {
+        svg.append(sv('text', { x: x0(0) - bw / 2, y: Hh - 6, class: 'ax' }, MW.dayName(pts[0][0])));
+        svg.append(sv('text', { x: x0(pts.length - 1) + bw / 2, y: Hh - 6, 'text-anchor': 'end', class: 'ax' }, MW.dayName(pts[pts.length - 1][0])));
+      }
+      box.append(svg);
+    }
+
+    // 3) signals
+    const sigBox = $('eg-trv-sig'); sigBox.replaceChildren();
+    const names = { trend: 'Trend', momentum: 'Momentum', mtf: 'Timeframes', rsi: 'RSI', news: 'News' };
+    const sigs = Object.entries((L.n >= 20 ? L.signals : B.signals) || {}).filter(([, v]) => v && v[1] >= 10);
+    $('eg-trv-sig-wrap').hidden = !sigs.length;
+    sigs.sort((a, b) => b[1][0] / b[1][1] - a[1][0] / a[1][1]).forEach(([id, [hit, tot]], i) => {
+      const v = 100 * hit / tot;
+      trvRow(sigBox, names[id] || id, `${tot} times it pointed a way`, [{ v, txt: Math.round(v) + '%' }], 50,
+        v >= 55 ? verdict('Useful', '', 'up') : v <= 45 ? verdict('Misleading', '', 'down') : verdict('Coin flip', '', 'flat'), i);
+    });
   }
 
   function drawEdge(D, H) {
@@ -763,7 +886,7 @@
     if (D && D.price) {
       if (tickPrice(D)) { replay(document.querySelector('.eg-hero'), 'eg-swap'); enter($('news')); }
       markNewNews(D, true);
-      drawEvent(D); drawLadder(D, H); drawLevelViz(D, H); drawEdge(D, H); drawDisagree(D); drawNewsFilter(); drawTrackSmall(D, H);
+      drawEvent(D); drawLadder(D, H); drawLevelViz(D, H); drawTrackViz(D, H); drawEdge(D, H); drawDisagree(D); drawNewsFilter(); drawTrackSmall(D, H);
       if (!drawer.hidden) syncDrawer();
     } else { $('eg-event').hidden = true; $('eg-disagree').hidden = true; }
     drawLines(true);
