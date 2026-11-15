@@ -833,6 +833,18 @@
     .tr-stats th:last-child { display: none; }
     .tr-stats td.ref { grid-column: 1 / -1; color: var(--muted); font-size: 12px; min-width: 0; }
   }
+
+  /* ---------- switches and toolbars sit on the right, also when they wrap onto their own line ----------
+     (page heads: horizon / tiles-table / Add market; forecast card: horizon; chart: Live / Forecast;
+     top bar on phones: lock + Classic / Edison). Filter chips stay left, like the text they filter. */
+  .eg-tools { margin-left: auto; justify-content: flex-end; }
+  .fc-head > .seg, .pc-head > #pc-view { margin-left: auto; }
+  .eg-bar { justify-content: flex-end; } /* the spacer fills the first line, so only a wrapped line moves right */
+  .seg { max-width: 100%; }
+  @media (max-width: 380px) { .seg button { padding-inline: 12px; } } /* 1 / 3 / 5 days fits a 360 px phone */
+  #eg-fc { grid-template-columns: minmax(0, 1fr); } /* the forecast card's column is the card's width, not its widest line */
+  #eg-fc .ranges { flex-wrap: wrap; }
+  @media (max-width: 420px) { .eg-lean { grid-template-columns: auto minmax(0, 1fr); } .eg-lean .prob { grid-column: 1 / -1; min-width: 0; } } /* lean bar on its own line on narrow phones */
 </style>
 </head>
 <body data-view="market">
