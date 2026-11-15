@@ -696,25 +696,37 @@
   const alKey = (r) => `${r.id}|${r.t}|${r.type}|${r.text}`;
   // Last 24 hours by default; "Show older" brings back the rest of the 7 days for this visit.
   let FEED_MORE = false;
+  // The market picker is made once and only updated: rebuilding it on every refresh closed the phone's picker wheel
+  // (or dropped the choice) when a refresh landed while it was open. The type chips are redrawn next to it.
+  let AL_SEL = null, AL_CHIPS = null, AL_OPTS = '';
   function drawFeed() {
-    const fbox = $('eg-al-f'); fbox.replaceChildren();
+    const fbox = $('eg-al-f');
+    if (!AL_SEL) {
+      AL_CHIPS = el('div', { class: 'eg-alf-chips' });
+      AL_SEL = el('select', { 'aria-label': 'Market', class: 'eg-msel' });
+      AL_SEL.addEventListener('change', () => { AL_M = AL_SEL.value; put('eg-alm', AL_M); drawFeed(); enter($('eg-feed'), '.eg-feed li, .eg-day'); });
+      fbox.replaceChildren(AL_SEL, AL_CHIPS);
+    }
     const all = FEED.rows || [];
     const recent = all.filter((r) => Date.now() - Date.parse(r.t) <= 864e5);
     const rows = FEED_MORE ? all : recent;
+    const ids = FEED.markets.map((r) => r.m.id + ':' + nameOf(r.m)).join('|');
+    if (ids !== AL_OPTS) { // markets changed: rebuild the options only
+      AL_OPTS = ids;
+      AL_SEL.replaceChildren(el('option', { value: 'all' }, 'All markets'), ...FEED.markets.map((r) => el('option', { value: r.m.id }, nameOf(r.m))));
+    }
+    const mk = FEED.markets.some((r) => r.m.id === AL_M) ? AL_M : 'all';
+    if (AL_SEL.value !== mk) AL_SEL.value = mk;
+    const inMk = (r) => mk === 'all' || r.id === mk; // the chip counts follow the chosen market
+    const mkRows = rows.filter(inMk);
+    AL_CHIPS.replaceChildren();
     for (const [k, label] of AL_TYPES) {
-      const n = k === 'all' ? rows.length : rows.filter((r) => r.type === k).length;
+      const n = k === 'all' ? mkRows.length : mkRows.filter((r) => r.type === k).length;
       if (k !== 'all' && !n && k !== AL_F) continue;
       const b = el('button', { type: 'button', 'aria-pressed': String(k === AL_F) }, `${label} ${n}`);
       b.addEventListener('click', () => { AL_F = k; put('eg-alf', k); drawFeed(); enter($('eg-feed'), '.eg-feed li, .eg-day'); });
-      fbox.append(b);
+      AL_CHIPS.append(b);
     }
-    const sel = el('select', { 'aria-label': 'Market', class: 'eg-msel' });
-    sel.append(el('option', { value: 'all' }, 'All markets'));
-    for (const r of FEED.markets) sel.append(el('option', { value: r.m.id }, nameOf(r.m)));
-    sel.value = FEED.markets.some((r) => r.m.id === AL_M) ? AL_M : 'all';
-    sel.style.cssText = 'margin-left:auto;background:var(--panel2);color:var(--fg);border:1px solid var(--ctl);min-height:34px;padding:0 12px;font:13px var(--font)';
-    sel.addEventListener('change', () => { AL_M = sel.value; put('eg-alm', AL_M); drawFeed(); enter($('eg-feed'), '.eg-feed li, .eg-day'); });
-    fbox.append(sel);
     const box = $('eg-feed'); box.replaceChildren();
     if (!FEED.rows) {
       const sk = el('ul', { class: 'eg-feed eg-skel', 'aria-hidden': 'true' });
@@ -722,7 +734,7 @@
       box.append(el('p', { class: 'sr', role: 'status' }, 'Loading alerts…'), sk);
       return;
     }
-    const match = (r) => (AL_F === 'all' || r.type === AL_F) && (sel.value === 'all' || r.id === sel.value);
+    const match = (r) => (AL_F === 'all' || r.type === AL_F) && inMk(r);
     const list = rows.filter(match), nOld = all.filter(match).length - recent.filter(match).length;
     const span = FEED_MORE ? 'the last 7 days' : 'the last 24 hours';
     if (!list.length) { box.append(el('p', { class: 'note' }, rows.length ? `No alerts match this filter in ${span}.` : `No alerts in ${span}.`)); }

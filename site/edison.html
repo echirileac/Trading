@@ -866,6 +866,11 @@
       max-height: calc(100dvh - max(8px, env(safe-area-inset-bottom)) - max(16px, env(safe-area-inset-top))); } /* the visible screen, not the one behind Safari's bars */
     .eg-drawer-top .eg-grab { margin: 0; }
   }
+
+  /* ---------- Alerts filters: market picker + type chips ---------- */
+  .eg-alf-chips { display: contents; }
+  .eg-msel { order: 2; margin-left: auto; min-height: 34px; padding: 0 12px; max-width: 100%; background: var(--panel2); color: var(--fg); border: 1px solid var(--ctl); font: 13px var(--font); }
+  @media (max-width: 760px) { .eg-msel { order: -1; flex: 1 1 100%; margin: 0 0 4px; min-height: 44px; font-size: 15px; } } /* phones: the market picker first, full width */
 </style>
 </head>
 <body data-view="market">
@@ -1191,6 +1196,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=4"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=15"></script>
+<script src="edison.js?v=16"></script>
 </body>
 </html>
