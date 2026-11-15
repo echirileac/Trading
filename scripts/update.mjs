@@ -930,11 +930,14 @@ function backtest(px, opts) {
     for (const h of [1, 3, 5]) {
       if (t + h >= closes.length) continue;
       const mu = score * DRIFT_K * k.sigma * h, sd = k.sigma * Math.sqrt(h);
-      done.push({ h, p0, c: p0 * Math.exp(mu), lo68: p0 * Math.exp(mu - sd), hi68: p0 * Math.exp(mu + sd), lo90: p0 * Math.exp(mu - Z90 * sd), hi90: p0 * Math.exp(mu + Z90 * sd), actual: closes[t + h], sig: { trend: k.trendSig, momentum: k.momSig, rsi: k.rsiSig, mtf } });
+      done.push({ h, t, p0, c: p0 * Math.exp(mu), lo68: p0 * Math.exp(mu - sd), hi68: p0 * Math.exp(mu + sd), lo90: p0 * Math.exp(mu - Z90 * sd), hi90: p0 * Math.exp(mu + Z90 * sd), actual: closes[t + h], sig: { trend: k.trendSig, momentum: k.momSig, rsi: k.rsiSig, mtf } });
     }
   }
   const sessions = Math.max(0, closes.length - 1 - START);
-  return { sessions, from: sessions ? ymd(bars[START].t) : null, to: sessions ? ymd(bars.at(-1).t) : null, ...trackStats(done) };
+  // the last 40 forecasts per horizon for the page's timeline: [date made, p0, centre, lo68, hi68, lo90, hi90, actual]
+  const r6 = (v) => round(v, 6);
+  const pts = Object.fromEntries([1, 3, 5].map((h) => [h, done.filter((x) => x.h === h).slice(-40).map((x) => [ymd(bars[x.t].t), r6(x.p0), r6(x.c), r6(x.lo68), r6(x.hi68), r6(x.lo90), r6(x.hi90), r6(x.actual)])]));
+  return { sessions, from: sessions ? ymd(bars[START].t) : null, to: sessions ? ymd(bars.at(-1).t) : null, ...trackStats(done), pts };
 }
 async function loadTrack(id, prev, now) {
   const empty = () => ({ id, since: null, open: [], done: [] });
