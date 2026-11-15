@@ -337,7 +337,14 @@
   // Edison Growth (edison.html) runs this same file and listens for these events to draw its own extras; Classic ignores them.
   const mwState = () => ({ DATA, INDEX, H, CUR_ID });
   const emit = (name) => { try { document.dispatchEvent(new CustomEvent(name, { detail: mwState() })); } catch { /* old browser */ } };
-  function render() { try { renderInner(); } finally { emit('mw:render'); } }
+  // A table box that scrolls sideways can be reached with the keyboard (and is announced as a region); one that fits is not a tab stop.
+  function scrollRegions() {
+    document.querySelectorAll('.tbl-wrap').forEach((w) => {
+      if (w.clientWidth && w.scrollWidth > w.clientWidth + 1) { w.tabIndex = 0; w.setAttribute('role', 'region'); w.setAttribute('aria-label', 'Table, scrolls sideways'); }
+      else { w.removeAttribute('tabindex'); w.removeAttribute('role'); w.removeAttribute('aria-label'); }
+    });
+  }
+  function render() { try { renderInner(); } finally { scrollRegions(); emit('mw:render'); } }
   function renderInner() {
     setTabs();
     if (!DATA) { if (document.body.classList.contains('nodata')) { setView(); tvUpdate(); } return; }
@@ -850,7 +857,7 @@
     const pct = (a, b) => (b ? Math.round(100 * a / b) + '%' : '—');
     const miss = (x) => (x.n && x.mae != null ? `${x.mae.toFixed(2)}% / ${x.maeNaive.toFixed(2)}%` : '—');
     const st = $('track-stats'); st.replaceChildren();
-    const head = el('tr'); ['', `Published (${L.n})`, `Backtest (${B.n})`, 'Compare with'].forEach((x) => head.append(el('th', {}, x))); st.append(head);
+    const head = el('tr'); head.append(el('th', {}, el('span', { class: 'sr' }, 'Measure'))); [`Published (${L.n})`, `Backtest (${B.n})`, 'Compare with'].forEach((x) => head.append(el('th', {}, x))); st.append(head);
     const row = (label, a, b, ref) => { const tr = el('tr'); const c1 = el('td'), c2 = el('td'); c1.append(el('b', {}, a)); c2.append(el('b', {}, b)); tr.append(el('td', {}, label), c1, c2, el('td', { class: 'ref' }, ref)); st.append(tr); };
     row('Direction right', pct(L.dirHit, L.dirN), pct(B.dirHit, B.dirN), '50% is a coin flip');
     row('Close inside the likely range', pct(L.in68, L.n), pct(B.in68, B.n), '68% when the range is sized right');

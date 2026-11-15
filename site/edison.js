@@ -170,6 +170,12 @@
     $('eg-event').hidden = !ev;
     if (ev) { $('eg-event-n').textContent = ev.name; $('eg-event-w').textContent = ev.when; }
   }
+  function fitLadderLabels(lbs) {
+    if (!lbs.clientWidth) return; // hidden: checked again by the observer once shown
+    lbs.classList.remove('stack');
+    if (lbs.scrollWidth > lbs.clientWidth + 1) lbs.classList.add('stack');
+  }
+  const LADDER_RO = new ResizeObserver((es) => es.forEach((e) => fitLadderLabels(e.target)));
   function drawLadder(D, H) {
     const box = $('eg-ladder'), h = D.forecast && D.forecast.horizons && D.forecast.horizons[H];
     box.replaceChildren();
@@ -178,10 +184,12 @@
     const x = (v) => Math.max(1, Math.min(99, 8 + 84 * (v - lo) / Math.max(1e-9, hi - lo)));
     const bar = (cls, a, b) => { const d = el('div', { class: cls }); d.style.left = x(a) + '%'; d.style.width = (x(b) - x(a)) + '%'; return d; };
     const at = (cls, v) => { const d = el('div', { class: cls }); d.style.left = x(v) + '%'; return d; };
-    const lb = (v, txt, extra) => { const d = el('div', { class: 'lb ' + (extra || '') }, txt); d.style.left = x(v) + '%'; return d; };
-    box.append(el('div', { class: 't' }), bar('w', lo, hi), bar('l', h.lo68, h.hi68), at('c', h.center), at('n', last),
-      lb(lo, MW.usd(lo), 'e0'), lb(hi, MW.usd(hi), 'e1'), lb((lo + hi) / 2, `now ${MW.usd(last)} · centre ${MW.usd(h.center)}`));
-    box.querySelector('.lb.e0').style.left = '8%'; box.querySelector('.lb.e1').style.left = '92%';
+    // labels in a row under the bar: low and high at the ends, "now · centre" between them, or on its own line
+    // when it does not fit (narrow phones), so they never overlap
+    const lbs = el('div', { class: 'lbs' });
+    lbs.append(el('div', { class: 'lb e0' }, MW.usd(lo)), el('div', { class: 'lb mid' }, `now ${MW.usd(last)} · centre ${MW.usd(h.center)}`), el('div', { class: 'lb e1' }, MW.usd(hi)));
+    box.append(el('div', { class: 't' }), bar('w', lo, hi), bar('l', h.lo68, h.hi68), at('c', h.center), at('n', last), lbs);
+    fitLadderLabels(lbs); LADDER_RO.observe(lbs); // re-checked when the row becomes visible or changes width
     const key = ((D.meta && D.meta.id) || S.CUR_ID) + '|' + H;
     if (key !== LADDER_KEY) { LADDER_KEY = key; replay(box, 'eg-grow'); }
   }
@@ -745,7 +753,7 @@
       if (ds !== day) {
         day = ds;
         const lab = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
-        box.append(el('h3', { class: 'eg-day' }, ds === today ? `Today · ${lab}` : ds === yest ? `Yesterday · ${lab}` : lab));
+        box.append(el('h2', { class: 'eg-day' }, ds === today ? `Today · ${lab}` : ds === yest ? `Yesterday · ${lab}` : lab));
         ul = el('ul', { class: 'eg-feed' }); box.append(ul);
       }
       const li = el('li');
