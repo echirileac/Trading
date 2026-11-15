@@ -857,7 +857,8 @@
     const pct = (a, b) => (b ? Math.round(100 * a / b) + '%' : '—');
     const miss = (x) => (x.n && x.mae != null ? `${x.mae.toFixed(2)}% / ${x.maeNaive.toFixed(2)}%` : '—');
     const st = $('track-stats'); st.replaceChildren();
-    const head = el('tr'); head.append(el('th', {}, el('span', { class: 'sr' }, 'Measure'))); [`Published (${L.n})`, `Backtest (${B.n})`, 'Compare with'].forEach((x) => head.append(el('th', {}, x))); st.append(head);
+    // the empty corner cell gets a hidden label for screen readers (el() takes text only, so the span is appended)
+    const head = el('tr'), corner = el('th'); corner.append(el('span', { class: 'sr' }, 'Measure')); head.append(corner); [`Published (${L.n})`, `Backtest (${B.n})`, 'Compare with'].forEach((x) => head.append(el('th', {}, x))); st.append(head);
     const row = (label, a, b, ref) => { const tr = el('tr'); const c1 = el('td'), c2 = el('td'); c1.append(el('b', {}, a)); c2.append(el('b', {}, b)); tr.append(el('td', {}, label), c1, c2, el('td', { class: 'ref' }, ref)); st.append(tr); };
     row('Direction right', pct(L.dirHit, L.dirN), pct(B.dirHit, B.dirN), '50% is a coin flip');
     row('Close inside the likely range', pct(L.in68, L.n), pct(B.in68, B.n), '68% when the range is sized right');
