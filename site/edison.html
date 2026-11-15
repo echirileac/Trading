@@ -497,11 +497,11 @@
     .wrap { padding-bottom: 104px; gap: 14px; }
     .eg-bar { position: static; border-radius: 0; padding: 8px 10px; gap: 8px; backdrop-filter: none; background: var(--panel); } /* a backdrop filter would trap the fixed bottom bar */
     .eg-nav { position: fixed; z-index: 35; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px; border-radius: 0; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--float);
-      /* follows the scroll: moved down by exactly as much as the page scrolled (set from JS), no easing while the finger moves */
-      translate: 0 var(--nav-off, 0px); transition: none; will-change: translate; }
-    /* once the scroll stops it glides to fully shown or fully hidden, whichever is nearer (iOS sheet curve) */
-    .eg-nav.snap { transition: translate .34s cubic-bezier(.32, .72, 0, 1); }
-    body.eg-nav-hidden .eg-nav { pointer-events: none; }
+      /* the slide runs on the GPU as a plain transform (no blur, scale or fade), so it stays smooth while iOS scrolls;
+         the script only says hide or show (iOS delivers scroll events late, so moving the bar from script lagged) */
+      transform: translate3d(0, 0, 0); will-change: transform; backface-visibility: hidden;
+      transition: transform .34s cubic-bezier(.32, .72, 0, 1); }
+    body.eg-nav-hide .eg-nav:not(:focus-within) { transform: translate3d(0, calc(100% + 32px), 0); pointer-events: none; transition-duration: .28s; }
     .eg-nav button { flex: 1 1 0; flex-direction: column; gap: 2px; min-height: 52px; padding: 4px 0; font-size: 12px; border-radius: 0; }
     .eg-nav button svg { display: block; }
     .eg-nav button[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); }
@@ -521,7 +521,7 @@
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
   @media (prefers-reduced-motion: reduce) and (max-width: 760px) { /* no movement: the bar fades out and in where it is */
     .eg-nav { transition: opacity .2s ease !important; }
-    body.eg-nav-hide .eg-nav:not(:focus-within) { opacity: 0; pointer-events: none; }
+    body.eg-nav-hide .eg-nav:not(:focus-within) { transform: none; opacity: 0; pointer-events: none; }
   }
   .more-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
   .more-row .note { margin: 0; }
@@ -1205,8 +1205,8 @@
 </div>
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=19"></script>
+<script src="edison.js?v=20"></script>
 </body>
 </html>
