@@ -253,6 +253,13 @@
   .eg-tablist { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; margin: -8px -4px 18px; scrollbar-width: none; }
   .eg-tablist button { appearance: none; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font: 500 14px var(--font); padding: 14px 14px 12px; cursor: pointer; white-space: nowrap; }
   .eg-tablist button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+  /* tabs keep their full label and the row scrolls sideways when they do not fit (phones) */
+  .eg-tablist { scroll-snap-type: x proximity; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scroll-padding-inline: 16px; }
+  .eg-tablist::-webkit-scrollbar { display: none; }
+  .eg-tablist button { flex: none; scroll-snap-align: start; }
+  .eg-tablist.more-r { mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+  .eg-tablist.more-l { mask-image: linear-gradient(90deg, transparent, #000 36px); }
+  .eg-tablist.more-l.more-r { mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
   .eg-panel { min-width: 0; }
   .eg-panel > .card { background: none; border: 0; padding: 0; border-radius: 0; }
   .eg-filter { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 6px; }
@@ -1093,6 +1100,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=4"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=12"></script>
+<script src="edison.js?v=13"></script>
 </body>
 </html>

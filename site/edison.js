@@ -84,6 +84,7 @@
     tabs.forEach((x) => { const on = x === b; x.setAttribute('aria-selected', String(on)); x.tabIndex = on ? 0 : -1; $(x.getAttribute('aria-controls')).hidden = !on; });
     put('eg-tab', b.dataset.tab);
     if (b.dataset.tab === 'levels' && S.DATA) drawLevelViz(S.DATA, S.H); // measured only once the tab is visible
+    tabIntoView(b, !focus);
     if (focus) b.focus();
   }
   tabs.forEach((b, i) => {
@@ -183,6 +184,30 @@
     const key = ((D.meta && D.meta.id) || S.CUR_ID) + '|' + H;
     if (key !== LADDER_KEY) { LADDER_KEY = key; replay(box, 'eg-grow'); }
   }
+  // ---------- detail tabs on phones: a sideways-scrolling row ----------
+  function tabEdges() {
+    const tabRow = document.querySelector('.eg-tablist');
+    if (!tabRow) return;
+    const max = tabRow.scrollWidth - tabRow.clientWidth;
+    tabRow.classList.toggle('more-l', tabRow.scrollLeft > 2);
+    tabRow.classList.toggle('more-r', max - tabRow.scrollLeft > 2);
+  }
+  function tabIntoView(b, instant) { // scroll only the tab row (not the page) so the chosen tab is fully visible
+    const tabRow = document.querySelector('.eg-tablist');
+    if (!tabRow || tabRow.scrollWidth <= tabRow.clientWidth) { tabEdges(); return; }
+    const l = b.offsetLeft - tabRow.offsetLeft, r = l + b.offsetWidth, pad = 24;
+    let to = tabRow.scrollLeft;
+    if (l - pad < to) to = l - pad; else if (r + pad > to + tabRow.clientWidth) to = r + pad - tabRow.clientWidth;
+    tabRow.scrollTo({ left: Math.max(0, to), behavior: instant || calm.matches ? 'auto' : 'smooth' });
+    tabEdges();
+  }
+  {
+    const tabRow = document.querySelector('.eg-tablist');
+    tabRow.addEventListener('scroll', tabEdges, { passive: true });
+    window.addEventListener('resize', tabEdges);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(tabEdges);
+  }
+
   // ---------- key levels on a price scale ----------
   // Levels as ticks on a vertical price scale (red resistance, green support), the live price as a dashed line with
   // a pill, and the forecast range for the chosen horizon as a shaded bar: dark = likely (68%), light = possible
