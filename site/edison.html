@@ -27,7 +27,7 @@
 <style>
   /* Edison Growth. The variable names are the same as Classic's because the shared code (app.js) reads them for the charts. */
   :root {
-    --bg: #0B0B12; --panel: #15151E; --panel2: #1D1D29; --line: #2A2A38; --ctl: #2A2A38; --fg: #F2F1F7; --muted: #A6A3BC;
+    --bg: #0B0B12; --panel: #15151E; --panel2: #1D1D29; --line: #2A2A38; --ctl: #2A2A38; --fg: #F2F1F7; --muted: #A6A3BC; --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.5 1.5l4.5 4.5 4.5-4.5' fill='none' stroke='%23A6A3BC' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     --up: #4FD6A0; --down: #FF6B81; --neutral: #F5B544; --accent: #9D64F5; --accent-text: #B48CFF; --btn: #7D54CB;
     --accent-soft: rgba(157,100,245,.16); --glow: rgba(157,100,245,.24); --warn-soft: rgba(245,181,68,.10);
     --grid: #ffffff10; --track: #ffffff14; --track-strong: #ffffff30; --ref: #ffffffaa; --ref-soft: #ffffff55;
@@ -39,7 +39,7 @@
     --r: 0; --font: Inter, "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   }
   :root[data-theme="light"] {
-    --bg: #E4E4EB; --panel: #FFFFFF; --panel2: #EBEBF1; --line: #CBC9D6; --ctl: #8E8AA3; --fg: #0E0D15; --muted: #4A475E;
+    --bg: #E4E4EB; --panel: #FFFFFF; --panel2: #EBEBF1; --line: #CBC9D6; --ctl: #8E8AA3; --fg: #0E0D15; --muted: #4A475E; --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.5 1.5l4.5 4.5 4.5-4.5' fill='none' stroke='%234A475E' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     --up: #066140; --down: #A11F3A; --neutral: #734800; --accent: #6B3FD6; --accent-text: #5A2EC4; --btn: #6B3FD6;
     --accent-soft: rgba(107,63,214,.14); --glow: rgba(107,63,214,.15); --warn-soft: rgba(138,87,0,.10);
     --grid: #00000016; --track: #0000001e; --track-strong: #00000038; --ref: #00000099; --ref-soft: #00000055;
@@ -51,7 +51,7 @@
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-      --bg: #E4E4EB; --panel: #FFFFFF; --panel2: #EBEBF1; --line: #CBC9D6; --ctl: #8E8AA3; --fg: #0E0D15; --muted: #4A475E;
+      --bg: #E4E4EB; --panel: #FFFFFF; --panel2: #EBEBF1; --line: #CBC9D6; --ctl: #8E8AA3; --fg: #0E0D15; --muted: #4A475E; --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.5 1.5l4.5 4.5 4.5-4.5' fill='none' stroke='%234A475E' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
       --up: #066140; --down: #A11F3A; --neutral: #734800; --accent: #6B3FD6; --accent-text: #5A2EC4; --btn: #6B3FD6;
       --accent-soft: rgba(107,63,214,.14); --glow: rgba(107,63,214,.15); --warn-soft: rgba(138,87,0,.10);
       --grid: #00000016; --track: #0000001e; --track-strong: #00000038; --ref: #00000099; --ref-soft: #00000055;
@@ -380,7 +380,7 @@
   .rk-form select { white-space: nowrap; overflow: hidden; }
   .rk-form .row > select:not([aria-label="Account currency"]) { flex: 1 1 150px; }
   .rk-form .row:has(#rk-stop, #rk-tgt) > input { flex: 1 1 90px; } /* "My own price" + its box: side by side when there is room, otherwise the box goes under */
-  .rk-form input, .rk-form select { background: var(--panel2); border: 1px solid var(--ctl); border-radius: 0; color: var(--fg); font: 15px var(--font); min-height: 44px; padding: 0 12px; min-width: 0; width: 100%; }
+  .rk-form input, .rk-form select { background-color: var(--panel2); border: 1px solid var(--ctl); border-radius: 0; color: var(--fg); font: 15px var(--font); min-height: 44px; padding: 0 12px; min-width: 0; width: 100%; }
   .rk-form select { width: 100%; }
   .rk-form .row select[aria-label="Account currency"] { width: auto; flex: none; min-width: 84px; }
   .rk-form .row > span { white-space: nowrap; flex: none; }
@@ -741,6 +741,12 @@
     }
   }
   @media (prefers-reduced-motion: reduce) { ::picker(select), select::picker-icon { transition: none !important; } }
+  /* Phones and tablets: iOS draws its own select and ignores height and padding (the market picker came out ~27px tall
+     instead of 44+). Drawn as a plain box with our own chevron instead; tapping still opens the system picker. */
+  @media not ((hover: hover) and (pointer: fine)) {
+    select { -webkit-appearance: none; appearance: none; background-image: var(--chev); background-repeat: no-repeat;
+      background-position: right 16px center; background-size: 12px 8px; padding-right: 42px !important; text-overflow: ellipsis; }
+  }
 
   /* ---------- key levels drawn on a price scale (beside the table; above it on narrow screens) ---------- */
   .lv-wrap { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 24px; align-items: start; }
@@ -873,8 +879,8 @@
 
   /* ---------- Alerts filters: market picker + type chips ---------- */
   .eg-alf-chips { display: contents; }
-  .eg-msel { order: 2; margin-left: auto; min-height: 34px; padding: 0 12px; max-width: 100%; background: var(--panel2); color: var(--fg); border: 1px solid var(--ctl); font: 13px var(--font); }
-  @media (max-width: 760px) { .eg-msel { order: -1; flex: 1 1 100%; margin: 0 0 4px; min-height: 44px; font-size: 15px; } } /* phones: the market picker first, full width */
+  .eg-msel { order: 2; margin-left: auto; min-height: 40px; padding: 0 14px; max-width: 100%; background-color: var(--panel2); color: var(--fg); border: 1px solid var(--ctl); font: 500 14px var(--font); }
+  @media (max-width: 760px) { .eg-msel { order: -1; flex: 1 1 100%; margin: 0 0 6px; min-height: 52px; padding: 0 18px; font-size: 17px; } } /* phones: the market picker first, full width, a big tap target */
 
   /* ---------- page structure and small fixes from the app check ---------- */
   .eg-views { display: contents; } /* <main> for screen readers, no effect on the layout */
