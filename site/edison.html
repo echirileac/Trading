@@ -1148,6 +1148,11 @@
       </div>
 
       <aside class="eg-side" aria-label="Signals">
+        <section class="card ai needs-data" id="ai-card" aria-live="polite">
+          <div class="fc-head"><span>AI analyst</span><span class="bias" id="ai-stance" hidden></span></div>
+          <div id="ai-body"></div>
+          <button class="btn eg-why" type="button" id="eg-why" aria-expanded="false" aria-controls="ai-body">Why? Read the full note</button>
+        </section>
         <section class="card needs-data">
           <h2>Today's session</h2>
           <p class="note" id="intra-note">Today's range, where price opened and where it is now versus the previous close.</p>
@@ -1158,11 +1163,6 @@
           <h2>What the model sees</h2>
           <p class="note" id="score-note"></p>
           <div id="signals"></div>
-        </section>
-        <section class="card ai needs-data" id="ai-card" aria-live="polite">
-          <div class="fc-head"><span>AI analyst</span><span class="bias" id="ai-stance" hidden></span></div>
-          <div id="ai-body"></div>
-          <button class="btn eg-why" type="button" id="eg-why" aria-expanded="false" aria-controls="ai-body">Why? Read the full note</button>
         </section>
       </aside>
     </div>
