@@ -1059,36 +1059,49 @@
     }
     return a;
   }
-  let RK_ID = null;
+  let RK_ID = null, RK_PCT_OTHER = false;
+  const RK_PCTS = ['0.5', '1', '2'];
+  // the chip rows mirror the inputs that hold the real values (#rk-pct and the two selects under "More options")
+  function rkSyncPicks() {
+    const pct = String(Number($('rk-pct').value) || '');
+    const other = RK_PCT_OTHER || !RK_PCTS.includes(pct);
+    $('rk-pct-pick').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === 'other' ? other : !other && b.dataset.v === pct)));
+    $('rk-pct-row').hidden = !other;
+    for (const k of ['stop', 'tgt']) {
+      const v = $('rk-' + k).value;
+      $('rk-' + k + '-pick').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
+      $('rk-' + k + '-px').hidden = v !== 'custom';
+    }
+  }
   function drawRisk() {
     if (!DATA?.price) return;
     const meta = DATA.meta || { id: 'NATGAS', category: 'energy', symbol: 'NG' };
     const id = meta.id || 'NATGAS', spec = xtbSpec(meta), p = DATA.price, f = DATA.forecast;
     const ccy = rkGet('ccy', 'RON');
+    const sel = (s, v, d) => { s.value = v; if (s.value !== String(v)) s.value = d; };
     // fill the form when the market changes
     if (RK_ID !== id) {
       RK_ID = id;
       $('rk-bal').value = rkGet('bal', '') ?? '';
       $('rk-ccy').value = ccy;
       $('rk-pct').value = rkGet('pct', 1);
+      RK_PCT_OTHER = false;
       const dirSaved = rkGet('dir-' + id, null);
       $('rk-dir').dataset.d = String(dirSaved ?? (f.score < -0.15 ? -1 : 1));
       $('rk-entry').value = '';
-      $('rk-stop').value = rkGet('stop', '1.5');
+      sel($('rk-stop'), rkGet('stop', '1.5'), '1.5');
       $('rk-stop-px').value = '';
-      $('rk-tgt').value = rkGet('tgt', '2');
+      sel($('rk-tgt'), rkGet('tgt', '2'), '2');
       $('rk-tgt-px').value = '';
       $('rk-lot').value = rkGet('lot-' + id, spec.lot);
     }
+    rkSyncPicks();
     $('rk-entry').placeholder = fmtNum(p.last, DEC) + ' (live)';
     const lotOk = spec.sure || rkGet('lot-ok-' + id, false);
     $('rk-lot-lbl').textContent = `Units per lot (${spec.unit}) · xStation: ${spec.sym}`;
     const d = Number($('rk-dir').dataset.d) || 1;
     $('rk-dir').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.d) === d)));
-    const method = $('rk-stop').value;
-    $('rk-stop-px').hidden = method !== 'custom';
-    const tMethod = $('rk-tgt').value;
-    $('rk-tgt-px').hidden = tMethod !== 'custom';
+    const method = $('rk-stop').value, tMethod = $('rk-tgt').value;
     // currency: prices are in USD (stocks, commodities); currencies are left as quoted
     const quoteUsd = meta.category !== 'fx' || /\/USD$/.test(meta.symbol || '');
     const fxWrap = $('rk-fx-wrap');
@@ -1102,43 +1115,85 @@
     }
     const fx = ccy === 'USD' || !quoteUsd ? 1 : Number($('rk-fx').value) || null;  // account currency per 1 USD
     const out = (k, v) => { $(k).textContent = v; };
-    const lines = $('rk-lines'); lines.replaceChildren();
-    const line = (txt, cls) => { const li = el('li', cls ? { class: cls } : {}, txt); lines.append(li); return li; };
+    const lines = $('rk-lines'), info = $('rk-info'); lines.replaceChildren(); info.replaceChildren();
+    const order = { bad: 0, warn: 1, '': 2 };
+    // "check before you trade": problems first, then plain notes; everything explanatory goes under "How these numbers are worked out"
+    const line = (txt, cls = '') => {
+      const li = el('li', cls ? { class: cls } : {}, txt); li.dataset.o = order[cls] ?? 2;
+      const after = [...lines.children].find((x) => Number(x.dataset.o) > Number(li.dataset.o));
+      lines.insertBefore(li, after || null); return li;
+    };
+    const note = (txt) => { info.append(el('li', {}, txt)); };
+    const pctOf = (x) => `${x < 10 ? x.toFixed(1) : Math.round(x)}%`;
+    const amt = (usdAmt) => (fx ? `${Math.round(usdAmt * fx).toLocaleString('en-US')} ${ccy === 'USD' ? 'USD' : ccy}` : `$${Math.round(usdAmt).toLocaleString('en-US')}`);
+    const money = (usdAmt) => (fx ? `${Math.round(usdAmt * fx).toLocaleString('en-US')} ${ccy}` + (ccy !== 'USD' && quoteUsd ? ` ($${Math.round(usdAmt).toLocaleString('en-US')})` : '') : `$${Math.round(usdAmt).toLocaleString('en-US')}`);
+    const money2 = (usdAmt) => { const g = (x) => (Math.abs(x) < 10 ? x.toFixed(2) : Math.round(x).toLocaleString('en-US')); return fx ? `${g(usdAmt * fx)} ${ccy}` : `$${g(usdAmt)}`; };
 
     const atr = atr14(p.daily || []);
-    const entry = Number($('rk-entry').value) || p.last;
+    const typed = Number($('rk-entry').value);
+    const entry = typed || p.last;
     let stop = null;
     if (method === 'custom') stop = Number($('rk-stop-px').value) || null;
     else if (method === 'r90') stop = d > 0 ? f.horizons[1].lo90 : f.horizons[1].hi90;
     else if (atr) stop = entry - d * Number(method) * atr;
     const dist = stop != null ? (entry - stop) * d : null;
-    // profit target: a multiple of the risk, the model's 3-day range edge or centre, or the user's own price
+    // take profit: a multiple of the risk, the model's 3-day range edge or centre, or the user's own price
     let tgt = null;
     if (tMethod === 'custom') tgt = Number($('rk-tgt-px').value) || null;
     else if (tMethod === 'r68') tgt = (d > 0 ? f.horizons[3]?.hi68 : f.horizons[3]?.lo68) ?? null;
     else if (tMethod === 'c3') tgt = f.horizons[3]?.center ?? null;
     else if (dist > 0) tgt = entry + d * Number(tMethod) * dist;
     const tdist = tgt != null ? (tgt - entry) * d : null;
-    out('rk-tgt-out', tgt != null ? usd(tgt) : '—');
     const bal = Number($('rk-bal').value), pct = Number($('rk-pct').value);
     const lot = Number($('rk-lot').value) || spec.lot;
-    const money = (usdAmt) => (fx ? `${Math.round(usdAmt * fx).toLocaleString('en-US')} ${ccy}` + (ccy !== 'USD' && quoteUsd ? ` ($${Math.round(usdAmt).toLocaleString('en-US')})` : '') : `$${Math.round(usdAmt).toLocaleString('en-US')}`);
-    const money2 = (usdAmt) => { const f = (x) => (Math.abs(x) < 10 ? x.toFixed(2) : Math.round(x).toLocaleString('en-US')); return fx ? `${f(usdAmt * fx)} ${ccy}` + (ccy !== 'USD' && quoteUsd ? ` ($${f(usdAmt)})` : '') : `$${f(usdAmt)}`; };
+
+    // ---- hints under the inputs
+    const riskAmt = bal > 0 && pct > 0 ? bal * pct / 100 : null;
+    $('rk-pct-hint').textContent = riskAmt ? `That is up to ${Math.round(riskAmt).toLocaleString('en-US')} ${ccy} on this trade.${pct > 2 ? ' Most traders stay at 1–2%.' : ''}` : !(bal > 0) ? 'Enter your balance above to see this as an amount.' : '';
+    $('rk-pct-hint').className = 'rk-hint' + (pct > 5 ? ' bad' : pct > 2 ? ' warn' : '');
+    const lean = f.score > 0.15 ? 'up' : f.score < -0.15 ? 'down' : null;
+    $('rk-dir-hint').textContent = lean ? `The model leans ${lean}${(lean === 'up') === (d > 0) ? '' : ', against this direction'}. It has no proven sense of direction, so this is your call.` : 'The model has no clear lean right now. This is your call.';
+    const away = (x) => `${usd(x)} away, ${(100 * x / entry).toFixed(1)}% from the entry`;
+    const stopName = { 1: '1 normal day', 1.5: '1.5 normal days', 2: '2 normal days', 3: '3 normal days' }[method];
+    let sh = '';
+    if (stopName && atr) sh = `${stopName} away. A normal day here moves about ${usd(atr)} (${(100 * atr / p.last).toFixed(1)}%).`;
+    else if (stopName) sh = 'Not enough price history yet to measure a normal day. Choose "My price".';
+    else if (method === 'r90') sh = 'At the edge of the 1-day 90% range (from More options).';
+    else if (method === 'custom' && !(Number($('rk-stop-px').value) > 0)) sh = `Type the price where you would get out${d > 0 ? ' (below the entry)' : ' (above the entry)'}.`;
+    else if (dist > 0) sh = `${away(dist)}${atr ? `, ${(dist / atr).toFixed(1)} normal days` : ''}.`;
+    if (method === '3') sh += ' (Very wide, from More options.)';
+    $('rk-stop-hint').textContent = sh;
+    let th = '';
+    if (tMethod === 'custom' && !(Number($('rk-tgt-px').value) > 0)) th = `Type the price where you would take the profit${d > 0 ? ' (above the entry)' : ' (below the entry)'}.`;
+    else if (tdist > 0 && dist > 0) th = `Aims to win ${(tdist / dist).toFixed(tdist / dist < 1 ? 2 : 1).replace(/\.0$/, '')}× what you risk${tMethod === 'r68' ? ', at the edge of the 3-day likely range' : tMethod === 'c3' ? ', at the model\'s 3-day centre' : tMethod === '1.5' ? ' (from More options)' : ''}.`;
+    $('rk-tgt-hint').textContent = th;
+
+    // ---- the plan
+    const lad = $('rk-ladder');
+    lad.classList.toggle('sell', d < 0);
+    out('rk-entry-out', usd(entry) + (typed ? '' : ' (live)'));
     out('rk-stop-out', stop != null ? usd(stop) : '—');
-    if (atr) line(`Average daily range (ATR, 14 sessions): ${usd(atr)}, ${(100 * atr / p.last).toFixed(1)}% of the price.`);
-    else line('Not enough daily history yet for the average daily range; use your own stop price.', 'warn');
+    out('rk-tgt-out', tgt != null && tdist > 0 ? usd(tgt) : '—');
+    out('rk-ratio', dist > 0 && tdist > 0 ? `win ${(tdist / dist).toFixed(tdist / dist < 1 ? 2 : 1).replace(/\.0$/, '')} : lose 1` : '');
+    out('rk-size-verb', d > 0 ? 'Buy' : 'Sell');
+    const blank = (msg) => {
+      ['rk-size', 'rk-loss', 'rk-margin', 'rk-profit'].forEach((k) => out(k, '—'));
+      out('rk-size-sub', msg || '');
+      $('rk-result').classList.add('empty');
+    };
+    $('rk-result').classList.remove('empty');
     if (!lotOk) {
-      const li = line(`Check the lot size: in xStation open ${spec.sym} → Specification → "Nominal value of 1 lot". If it shows price × ${Number(lot).toLocaleString('en-US')}, this is right.`, 'warn');
+      const li = line(`Check the lot size: in xStation open ${spec.sym} → Specification → "Nominal value of 1 lot". If it shows price × ${Number(lot).toLocaleString('en-US')}, this is right. Otherwise change it under More options.`, 'warn');
       const b = el('button', { type: 'button' }, 'It matches'); b.addEventListener('click', () => { rkSet('lot-ok-' + id, true); drawRisk(); }); li.append(b);
     }
+    if (atr) note(`A normal day: the average daily range (ATR) over the last 14 sessions is ${usd(atr)}, ${(100 * atr / p.last).toFixed(1)}% of the price. Tight, Normal and Wide put the stop 1, 1.5 and 2 of these away.`);
     if (dist == null || !(dist > 0)) {
-      ['rk-size', 'rk-loss', 'rk-margin', 'rk-profit'].forEach((k) => out(k, '—'));
-      if (stop != null) line(d > 0 ? 'For a buy, the stop must be below the entry.' : 'For a sell, the stop must be above the entry.', 'bad');
+      blank(stop == null ? 'Choose a stop loss to see the size.' : '');
+      if (stop != null) line(d > 0 ? 'For a buy, the stop loss must be below the entry.' : 'For a sell, the stop loss must be above the entry.', 'bad');
       return;
     }
     if (!(bal > 0) || !(pct > 0) || !fx) {
-      ['rk-size', 'rk-loss', 'rk-margin', 'rk-profit'].forEach((k) => out(k, '—'));
-      line(!(bal > 0) ? 'Enter your account balance to get a position size.' : !fx ? `Enter the USD to ${ccy} rate.` : 'Enter the risk per trade.', 'warn');
+      blank(!(bal > 0) ? 'Enter your account balance to see how much to trade.' : !fx ? `Enter the USD to ${ccy} rate under More options.` : 'Choose how much you are willing to lose.');
       return;
     }
     const riskUsd = (bal * pct / 100) / fx;
@@ -1149,66 +1204,82 @@
     const capped = spec.max && lots > spec.max;
     if (capped) lots = spec.max;
     const lotTxt = (x) => spec.step >= 1 ? `${x.toLocaleString('en-US')} ${spec.unit}` : `${x.toFixed(lotDec)} lot${x === 1 ? '' : 's'}`;
+    if (pct > 2) line(`If the stop loss is hit you lose ${pctOf(pct)} of your account. Most traders risk 1–2% per trade, so a run of losing trades stays survivable.`, pct > 5 ? 'bad' : 'warn');
     if (lots <= 0) {
       const minLoss = minLot * lot * dist;
-      out('rk-size', '0'); out('rk-loss', '—'); out('rk-margin', '—'); out('rk-profit', '—');
-      line(`Too small: even the minimum ${lotTxt(minLot)} would lose ${money(minLoss)} at this stop (${(100 * minLoss * fx / bal).toFixed(2)}% of the balance). Use a closer stop, a higher risk %, or skip the trade.`, 'bad');
+      blank('Too small to trade at this stop.');
+      out('rk-size', '0');
+      line(`Even the smallest trade XTB allows (${lotTxt(minLot)}) would lose ${amt(minLoss)} at this stop, ${pctOf(100 * minLoss * fx / bal)} of the balance. Use a tighter stop, allow a bigger loss, or skip the trade.`, 'bad');
     } else {
-      const lossUsd = lots * lot * dist, notional = lots * lot * entry;
-      out('rk-size', lotTxt(lots) + (spec.step < 1 ? ` · ${Math.round(lots * lot).toLocaleString('en-US')} ${spec.unit}` : ''));
-      out('rk-loss', `${money(lossUsd)} · ${(100 * lossUsd * fx / bal).toFixed(2)}%`);
-      out('rk-margin', `${money(notional * spec.margin / 100)} · ${spec.margin}%`);
+      const lossUsd = lots * lot * dist, notional = lots * lot * entry, marginUsd = notional * spec.margin / 100;
+      out('rk-size', lotTxt(lots));
+      out('rk-size-sub', `${spec.step < 1 ? `${Math.round(lots * lot).toLocaleString('en-US')} ${spec.unit} · ` : ''}in xStation: ${spec.sym}`);
+      out('rk-loss', `−${amt(lossUsd)} · ${pctOf(100 * lossUsd * fx / bal)}`);
+      out('rk-margin', amt(marginUsd));
       if (tdist > 0) {
         const profitUsd = lots * lot * tdist;
-        out('rk-profit', `${money(profitUsd)} · ${(100 * profitUsd * fx / bal).toFixed(2)}% · ${(tdist / dist).toFixed(tdist < dist ? 2 : 1)}R`);
+        out('rk-profit', `+${amt(profitUsd)} · ${pctOf(100 * profitUsd * fx / bal)}`);
+        note(`In dollars: ${d > 0 ? 'buy' : 'sell'} ${lotTxt(lots)}, lose $${Math.round(lossUsd).toLocaleString('en-US')} at the stop loss, win $${Math.round(profitUsd).toLocaleString('en-US')} at the take profit, margin $${Math.round(marginUsd).toLocaleString('en-US')} (XTB retail margin ${spec.margin}%).`);
       } else out('rk-profit', '—');
-      if (notional * spec.margin / 100 * fx > bal) line('The margin is more than the balance, so XTB would not open this position. Lower the risk %, or use a wider stop (a wider stop gives a smaller size).', 'bad');
-      line(`Exposure: ${money(notional)} (${(notional * fx / bal).toFixed(1)}× the balance). Each ${usd(atr || dist)} move ${atr ? '(one average day)' : ''} is ${money(lots * lot * (atr || dist))}.`);
+      if (marginUsd * fx > bal) line('XTB would not open this: the margin it keeps aside is more than your balance. Allow a smaller loss, or use a wider stop (a wider stop gives a smaller trade).', 'bad');
       if (capped) line(`Capped at XTB's maximum of ${spec.max} lots per position.`, 'warn');
       if (spec.swap) {
         const sw = d > 0 ? spec.swap.long : spec.swap.short, night = notional * sw / 100;
-        line(`Overnight cost (XTB swap ${d > 0 ? 'long' : 'short'} ${sw}% a day, as of ${spec.swap.asOf}): ${night < 0 ? 'about ' + money2(-night) + ' charged' : 'about ' + money2(night) + ' credited'} for each night the position is held, ${money2(Math.abs(night) * 7)} a week.`);
+        line(`Keeping it open overnight ${night < 0 ? 'costs' : 'pays'} about ${money2(Math.abs(night))} a night, ${money2(Math.abs(night) * 7)} a week (XTB swap ${sw}% a day, as of ${spec.swap.asOf}).`);
       }
+      note(`Size of the position: ${money(notional)}, ${(notional * fx / bal).toFixed(1)}× your balance. ${atr ? `A normal day's move (${usd(atr)}) changes it by ${money(lots * lot * atr)}.` : ''}`);
+      note(`The size is rounded down to XTB's step of ${lotTxt(spec.step)}, so the loss at the stop is at most what you chose.`);
     }
     // how the stop compares with normal day-to-day noise, from the forecast's daily volatility
     if (f.sigmaDaily) {
       const z = Math.log(1 + dist / entry) / f.sigmaDaily;
-      const pDay = 1 - normCdf(z);
-      const msg = `Stop ${usd(dist)} away (${(100 * dist / entry).toFixed(1)}%${atr ? `, ${(dist / atr).toFixed(1)}× ATR` : ''}). A daily close that far against you happens on about ${Math.round(100 * pDay)}% of days; intraday touches are more frequent.`;
-      line(msg, z < 1 ? 'warn' : '');
-      if (z < 1) line('That is inside one normal day\'s movement, so ordinary noise is likely to stop you out.', 'warn');
+      note(`Stop loss ${away(dist)}${atr ? ` (${(dist / atr).toFixed(1)} normal days)` : ''}. The price closes that far against you on about ${Math.round(100 * (1 - normCdf(z)))}% of days; it touches that level during the day more often.`);
+      if (z < 1) line('Your stop loss is closer than one ordinary day\'s move, so normal ups and downs are likely to close the trade. A wider stop gives a smaller trade with the same risk.', 'warn');
     }
     // the target: how far, how often a close gets there, and the hit rate needed to come out ahead
-    if (tgt != null && !(tdist > 0)) line(tMethod === 'c3' ? 'The model\'s 3-day centre is on the losing side of this entry, so it gives no target in this direction. Pick another target.' : d > 0 ? 'For a buy, the target must be above the entry.' : 'For a sell, the target must be below the entry.', 'bad');
+    if (tgt != null && !(tdist > 0)) line(tMethod === 'c3' ? 'The model\'s 3-day centre is on the losing side of this entry, so it gives no take profit in this direction. Pick another one.' : d > 0 ? 'For a buy, the take profit must be above the entry.' : 'For a sell, the take profit must be below the entry.', 'bad');
     else if (tdist > 0) {
       const R = tdist / dist, need = 100 / (1 + R);
-      let msg = `Target ${usd(tdist)} away (${(100 * tdist / entry).toFixed(1)}%, ${R.toFixed(R < 1 ? 2 : 1)}R). With this stop and target, more than ${Math.round(need)}% of such trades must reach the target first to come out ahead, before spread and overnight costs.`;
+      let msg = `Take profit ${away(tdist)}. Winning ${R.toFixed(R < 1 ? 2 : 1).replace(/\.0$/, '')}× what you risk means more than ${Math.round(need)}% of trades like this must reach the take profit first to come out ahead, before spread and overnight costs.`;
       if (f.sigmaDaily) {
         const z = Math.log(1 + tdist / entry) / f.sigmaDaily;
-        const pct = (x) => (x < 0.01 ? 'under 1' : String(Math.round(100 * x)));
-        const pc = [1, 3, 5].map((h) => `${h} day${h > 1 ? 's' : ''} ${pct(1 - normCdf(z / Math.sqrt(h)))}%`);
-        msg += ` Chance that the close is at or past it, with no direction assumed: ${pc.join(' · ')} (touching it during the day is more likely).`;
+        const pc = (x) => (x < 0.01 ? 'under 1' : String(Math.round(100 * x)));
+        msg += ` Chance the price closes at or past it, with no direction assumed: ${[1, 3, 5].map((h) => `${h} day${h > 1 ? 's' : ''} ${pc(1 - normCdf(z / Math.sqrt(h)))}%`).join(' · ')}.`;
       }
-      line(msg, R < 1 ? 'warn' : '');
+      note(msg);
+      if (R < 1) line('You aim to win less than you risk, so you would need to be right most of the time.', 'warn');
     }
     // reward compared with risk, using the model's centres for 1, 3 and 5 days
-    const rr = [1, 3, 5].map((h) => { const c = f.horizons[h]?.center; return c ? `${h}d ${((c - entry) * d / dist).toFixed(2)}R` : null; }).filter(Boolean);
-    if (rr.length) line(`Model's expected move as a multiple of the risk (R): ${rr.join(' · ')}. ${(f.horizons[3]?.center - entry) * d < 0 ? 'The model leans against this direction.' : 'Below 1R means the expected move is smaller than the risk.'} The model has shown no reliable direction edge so far: treat this as context.`);
-    if (pct > 2) line('Many traders keep the risk per trade at 1-2% so a losing streak stays survivable.', 'warn');
+    const rr = [1, 3, 5].map((h) => { const c = f.horizons[h]?.center; return c ? `${h} day${h > 1 ? 's' : ''} ${((c - entry) * d / dist).toFixed(2)}×` : null; }).filter(Boolean);
+    if (rr.length) note(`The model's middle forecast, as a multiple of your risk (minus means against you): ${rr.join(' · ')}. The model has shown no reliable sense of direction so far: treat this as background.`);
     const roll = (spec.rollovers || []).find((x) => Date.parse(x + 'T23:59:59Z') >= Date.now());
-    if (roll) line(`XTB rolls ${spec.sym} to the next futures month on ${new Date(roll + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}: the quoted price jumps to the new contract and XTB books a correction on open positions. Check your stop in xStation after the rollover.`, 'warn');
-    if ((DATA.events || []).some((e) => e.date <= f.horizons[1].targetDate)) line(`Scheduled report before the next close (${DATA.events.filter((e) => e.date <= f.horizons[1].targetDate).map((e) => e.name).join(', ')}): price can jump past a stop.`, 'warn');
+    if (roll) line(`XTB rolls ${spec.sym} to the next futures month on ${new Date(roll + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}: the price jumps to the new contract and XTB books a correction on open trades. Check your stop loss in xStation after it.`, 'warn');
+    if ((DATA.events || []).some((e) => e.date <= f.horizons[1].targetDate)) line(`Report due before the next close (${DATA.events.filter((e) => e.date <= f.horizons[1].targetDate).map((e) => e.name).join(', ')}): the price can jump past a stop loss.`, 'warn');
+    if (!lines.querySelector('.bad, .warn')) line('Nothing unusual. Check the numbers in xStation before you trade.', 'ok');
   }
   ['rk-bal', 'rk-pct', 'rk-entry', 'rk-stop-px', 'rk-tgt-px', 'rk-lot', 'rk-fx'].forEach((k) => $(k).addEventListener('input', () => {
     const v = $(k).value;
-    if (k === 'rk-bal') rkSet('bal', v); if (k === 'rk-pct') rkSet('pct', v);
+    if (k === 'rk-bal') rkSet('bal', v); if (k === 'rk-pct') { rkSet('pct', v); RK_PCT_OTHER = true; }
     if (k === 'rk-lot' && RK_ID) { rkSet('lot-' + RK_ID, Number(v) || null); rkSet('lot-ok-' + RK_ID, true); }
     if (k === 'rk-fx') rkSet('fx-' + $('rk-ccy').value, Number(v) || 0);
     drawRisk();
   }));
   $('rk-ccy').addEventListener('change', () => { rkSet('ccy', $('rk-ccy').value); drawRisk(); });
-  $('rk-stop').addEventListener('change', () => { rkSet('stop', $('rk-stop').value); if ($('rk-stop').value === 'custom' && !$('rk-stop-px').value && $('rk-stop-out').textContent !== '—') $('rk-stop-px').value = $('rk-stop-out').textContent.replace(/[^0-9.]/g, ''); drawRisk(); });
-  $('rk-tgt').addEventListener('change', () => { rkSet('tgt', $('rk-tgt').value); if ($('rk-tgt').value === 'custom' && !$('rk-tgt-px').value && $('rk-tgt-out').textContent !== '—') $('rk-tgt-px').value = $('rk-tgt-out').textContent.replace(/[^0-9.]/g, ''); drawRisk(); });
+  // switching to "My price" starts from the price the planner had just worked out
+  const rkMethod = (k, v) => {
+    const s = $('rk-' + k), px = $('rk-' + k + '-px'), shown = $('rk-' + k + '-out').textContent;
+    s.value = v; rkSet(k, v);
+    if (v === 'custom' && !px.value && shown !== '—') px.value = shown.replace(/[^0-9.]/g, '');
+    drawRisk();
+    if (v === 'custom') px.focus();
+  };
+  $('rk-stop').addEventListener('change', () => rkMethod('stop', $('rk-stop').value));
+  $('rk-tgt').addEventListener('change', () => rkMethod('tgt', $('rk-tgt').value));
+  for (const k of ['stop', 'tgt']) $('rk-' + k + '-pick').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => rkMethod(k, b.dataset.v)));
+  $('rk-pct-pick').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.v === 'other') { RK_PCT_OTHER = true; drawRisk(); $('rk-pct').focus(); $('rk-pct').select(); return; }
+    RK_PCT_OTHER = false; $('rk-pct').value = b.dataset.v; rkSet('pct', b.dataset.v); drawRisk();
+  }));
   $('rk-dir').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { $('rk-dir').dataset.d = b.dataset.d; if (RK_ID) rkSet('dir-' + RK_ID, Number(b.dataset.d)); drawRisk(); }));
   rkLoadFx();
 

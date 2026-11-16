@@ -373,32 +373,59 @@
   .eg-drawer-h p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
   .eg-drawer #rk-card { border: 0; padding: 0; background: none; }
   .eg-drawer #rk-card > h2 { display: none; }
-  .rk-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 4px 0 14px; }
-  .rk-form label { display: grid; grid-template-rows: 1fr auto; align-items: end; gap: 6px; font-size: 13px; color: var(--muted); } /* inputs line up even when one label takes two lines */
+  .rk-intro { font-size: 14px; line-height: 1.55; }
+  .rk-step { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px; }
+  .rk-step h3, .rk-result h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+  .rk-n { display: inline-grid; place-items: center; width: 24px; height: 24px; flex: none; background: var(--accent-soft); color: var(--fg); font-size: 13px; font-weight: 600; border-radius: var(--r-in, 0); }
+  .rk-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; }
+  .rk-form label, .rk-field { display: grid; gap: 6px; font-size: 13px; color: var(--muted); align-content: start; }
+  .rk-wide { grid-column: 1 / -1; }
+  #rk-card [hidden] { display: none !important; }
+  .rk-lbl { font-size: 13px; color: var(--muted); }
   .rk-form .row { display: flex; gap: 6px; align-items: center; }
-  .rk-form .row:has(#rk-stop, #rk-tgt) { flex-wrap: wrap; }
-  .rk-form select { white-space: nowrap; overflow: hidden; }
-  .rk-form .row > select:not([aria-label="Account currency"]) { flex: 1 1 150px; }
-  .rk-form .row:has(#rk-stop, #rk-tgt) > input { flex: 1 1 90px; } /* "My own price" + its box: side by side when there is room, otherwise the box goes under */
-  .rk-form input, .rk-form select { background-color: var(--panel2); border: 1px solid var(--ctl); border-radius: 0; color: var(--fg); font: 15px var(--font); min-height: 44px; padding: 0 12px; min-width: 0; width: 100%; }
-  .rk-form select { width: 100%; }
-  .rk-form .row select[aria-label="Account currency"] { width: auto; flex: none; min-width: 84px; }
   .rk-form .row > span { white-space: nowrap; flex: none; }
-  .rk-form .chips { margin: 0; padding: 4px; border-radius: 0; background: var(--panel2); flex-wrap: nowrap; }
-  .rk-form .chips button { flex: 1 1 0; justify-content: center; border: 0; border-radius: 0; min-height: 36px; }
-  .rk-form .chips button[aria-pressed="true"] { background: var(--btn); color: #fff; }
-  .rk-out { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; } /* not the bottom alignment of .ranges */
-  .rk-out div { background: var(--panel2); border-radius: 0; padding: 12px 14px; display: grid; gap: 2px; align-content: start; }
-  .rk-out small { font-size: 12px; color: var(--muted); }
-  .rk-out b { font-size: 16px; font-weight: 500; }
-  .rk-out b.big { font-size: 18px; }
-  #rk-loss { color: var(--down); } #rk-profit { color: var(--up); }
+  .rk-form input, .rk-form select { background-color: var(--panel2); border: 1px solid var(--ctl); border-radius: 0; color: var(--fg); font: 15px var(--font); min-height: 44px; padding: 0 12px; min-width: 0; width: 100%; }
+  .rk-form select { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rk-form .row select[aria-label="Account currency"] { width: auto; flex: none; min-width: 84px; }
+  .rk-pick { margin: 0; padding: 4px; border-radius: 0; background: var(--panel2); flex-wrap: nowrap; display: flex; gap: 4px; }
+  .rk-pick button { flex: 1 1 0; justify-content: center; border: 0; border-radius: 0; min-height: 38px; padding: 0 6px; white-space: nowrap; font-size: 14px; }
+  .rk-pick button[aria-pressed="true"] { background: var(--btn); color: #fff; }
+  .rk-hint { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .rk-hint:empty { display: none; }
+  .rk-hint.warn { color: var(--neutral); } .rk-hint.bad { color: var(--down); font-weight: 500; }
+  details.rk-more { margin-top: 14px; }
+  details.rk-more > summary { cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); padding: 6px 0; }
+  details.rk-more > summary:hover { color: var(--fg); }
+  details.rk-more[open] > .rk-form { margin-top: 10px; }
+  .rk-result { margin-top: 18px; padding: 16px; background: var(--panel2); border: 1px solid var(--line); }
+  .rk-result h3 { margin-bottom: 8px; }
+  .rk-size { margin: 0 0 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 22px; font-weight: 300; }
+  .rk-size b { font-weight: 600; }
+  .rk-size small { flex-basis: 100%; font-size: 13px; color: var(--muted); font-weight: 400; }
+  .rk-result.empty .rk-size > span, .rk-result.empty .rk-size b, .rk-result.empty .rk-margin { display: none; }
+  .rk-result.empty .rk-size small { font-size: 14px; color: var(--fg); }
+  .rk-ladder { display: flex; flex-direction: column; border-left: 3px solid var(--line); }
+  .rk-ladder.sell { flex-direction: column-reverse; }
+  .rk-rung { display: grid; grid-template-columns: 88px auto 1fr; align-items: baseline; gap: 8px; padding: 8px 0 8px 12px; position: relative; font-size: 14px; }
+  .rk-rung::before { content: ''; position: absolute; left: -3px; top: 0; bottom: 0; width: 3px; }
+  .rk-rung.tgt::before { background: var(--up); } .rk-rung.stop::before { background: var(--down); } .rk-rung.entry::before { background: var(--accent); }
+  .rk-rung .k { color: var(--muted); font-size: 13px; }
+  .rk-rung b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .rk-rung .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .rk-rung.tgt .v { color: var(--up); font-weight: 500; } .rk-rung.stop .v { color: var(--down); font-weight: 500; }
+  .rk-rung.entry .v { color: var(--muted); font-size: 13px; }
+  .rk-margin { display: flex; justify-content: space-between; gap: 8px; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .rk-margin b { color: var(--fg); font-weight: 500; }
   .rk-lines { list-style: none; margin: 14px 0 0; padding: 0; font-size: 13px; display: grid; gap: 8px; color: var(--muted); line-height: 1.5; }
+  #rk-lines:empty { display: none; }
   .rk-lines li.warn { color: var(--fg); background: var(--warn-soft); border: 1px solid var(--banner-line); border-radius: 0; padding: 8px 12px; }
   .rk-lines li.bad { color: var(--fg); background: color-mix(in srgb, var(--down) 10%, transparent); border: 1px solid var(--down); border-radius: 0; padding: 8px 12px; }
+  .rk-lines li.ok { color: var(--fg); }
   .rk-lines button { background: transparent; border: 1px solid var(--line); color: var(--fg); border-radius: 0; padding: 2px 10px; font: 600 12px var(--font); cursor: pointer; margin-left: 6px; }
+  .rk-info { margin-top: 8px; } .rk-info li { padding-left: 12px; border-left: 2px solid var(--line); }
+  .rk-foot { font-size: 12px; margin-top: 14px !important; }
+  @media (max-width: 420px) { .rk-rung { grid-template-columns: 76px 1fr; } .rk-rung .v { grid-column: 2; text-align: left; } }
   .eg-drawer .note { margin-bottom: 0; }
-  .eg-drawer #rk-card > .note:first-of-type { margin-bottom: 16px; } /* intro text: same 16px gap above the form as above the intro */
 
   /* markets view */
   .eg-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 18px; }
@@ -594,7 +621,7 @@
     .seg, .eg-seg, .seg button, .eg-seg button, #pc-view, #pc-view button, .eg-nav, .eg-nav button,
     .tg-btn .sw, .eg-tgl > a, .rk-lines button, .rk-form .chips, .rk-form .chips button, .aib, #levels td .k, .ai .lv span,
     .eg-ladder .t, .eg-ladder .w, .eg-ladder .l, .prob-bar, .dbar, .dbar i, .eg-tile .bar, .eg-msel { border-radius: 999px; }
-    .eg-more summary, .tg-btn .sw::after { border-radius: 50%; }
+    .eg-more summary, .tg-btn .sw::after, .rk-n { border-radius: 50%; }
     /* containers */
     .card, .eg-bar, .eg-tile, .lock form, .search.open, .eg-tour { border-radius: var(--r); }
     .eg-panel > .card { border-radius: 0; }
@@ -603,7 +630,7 @@
     .eg-menu a, .eg-menu button { border-radius: 16px; } /* 22 - 6 padding */
     /* inside a card: concentric, minimum 12-14px */
     .eg-event, .eg-disagree, .ev-line, .pc-wrap, .tv-box, .cal-box, .tf, .fc-tf-row > span, .ai .ai-outlook,
-    .rk-out div, .rk-lines li.warn, .rk-lines li.bad, .search input, .tv-sym input, .rk-form input, .rk-form select,
+    .rk-result, .rk-lines li.warn, .rk-lines li.bad, .search input, .tv-sym input, .rk-form input, .rk-form select,
     .lock input[type=password] { border-radius: var(--r-in); }
     .eg-tile .ev, .eg-feed .ic, .tip { border-radius: 12px; }
     /* Plan a trade: a floating sheet inset from the screen edges */
@@ -624,12 +651,12 @@
     .btn, .chips button, .eg-filter button, .bias, .chip, .pill, .filters button, .rk-lines button, .eg-tgl > a, .eg-msel,
     .seg, .eg-seg, #pc-view, .eg-ui, .rk-form .chips, .eg-more summary,
     .eg-event, .eg-disagree, .ev-line, .pc-wrap, .tv-box, .cal-box, .tf, .fc-tf-row > span, .ai .ai-outlook,
-    .rk-out div, .rk-lines li.warn, .rk-lines li.bad, .search input, .tv-sym input, .rk-form input, .rk-form select,
+    .rk-result, .rk-lines li.warn, .rk-lines li.bad, .search input, .tv-sym input, .rk-form input, .rk-form select,
     .lock input[type=password], .eg-tile .ev, .eg-feed .ic, .tip { border-radius: 6px; }
     .seg button, .eg-seg button, #pc-view button, .eg-ui > *, .rk-form .chips button, .eg-menu a, .eg-menu button,
     .eg-nav button, .aib, #levels td .k, .ai .lv span { border-radius: 4px; }
     .tg-btn .sw, .eg-ladder .t, .eg-ladder .w, .eg-ladder .l, .prob-bar, .dbar, .dbar i, .eg-tile .bar { border-radius: 999px; }
-    .tg-btn .sw::after { border-radius: 50%; }
+    .tg-btn .sw::after, .rk-n { border-radius: 50%; }
     .eg-drawer { border-radius: 8px; }
     body .uis-dlg { border-radius: 10px; }
     body .uis-btns button { border-radius: 6px; }
@@ -1179,27 +1206,72 @@
   </div>
   <section class="card needs-data" id="rk-card">
     <h2>Risk helper</h2>
-    <p class="note">How big a position can be so that hitting the stop costs a fixed share of your account, and what it would make if the price reaches your target. The stop is based on the market's average daily range (ATR). Your inputs stay in this browser only.</p>
-    <div class="rk-form">
-      <label>Account balance<span class="row"><input id="rk-bal" type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 10000"><select id="rk-ccy" aria-label="Account currency"><option>RON</option><option>EUR</option><option>USD</option></select></span></label>
-      <label>Risk per trade (% of balance)<input id="rk-pct" type="number" min="0.05" max="20" step="0.05" inputmode="decimal"></label>
-      <label>Direction<span class="chips" id="rk-dir"><button type="button" data-d="1">Buy</button><button type="button" data-d="-1">Sell</button></span></label>
-      <label>Entry price<input id="rk-entry" type="number" step="any" inputmode="decimal"></label>
-      <label>Stop<span class="row"><select id="rk-stop" aria-label="Stop method"><option value="1.5">1.5 × ATR</option><option value="2">2 × ATR</option><option value="1">1 × ATR</option><option value="3">3 × ATR</option><option value="r90">Edge of 1-day 90% range</option><option value="custom">My own price</option></select><input id="rk-stop-px" type="number" step="any" inputmode="decimal" aria-label="Stop price" hidden></span></label>
-      <label>Profit target<span class="row"><select id="rk-tgt" aria-label="Target method"><option value="2">2 × the risk (2R)</option><option value="1">1 × the risk (1R)</option><option value="1.5">1.5 × the risk (1.5R)</option><option value="3">3 × the risk (3R)</option><option value="r68">Edge of 3-day likely range</option><option value="c3">Model's 3-day centre</option><option value="custom">My own price</option></select><input id="rk-tgt-px" type="number" step="any" inputmode="decimal" aria-label="Target price" hidden></span></label>
-      <label><span id="rk-lot-lbl">Units per lot (XTB)</span><input id="rk-lot" type="number" min="0" step="any" inputmode="decimal"></label>
-      <label id="rk-fx-wrap">USD rate<span class="row"><span id="rk-fx-pre">1 USD =</span><input id="rk-fx" type="number" min="0" step="any" inputmode="decimal"><span id="rk-fx-ccy"></span></span></label>
+    <p class="note rk-intro">Decide how much you're willing to lose. The planner tells you how big the trade can be, where to put the stop and take profit, and what you could win or lose.</p>
+    <div class="rk-step">
+      <h3><span class="rk-n" aria-hidden="true">1</span>Your account</h3>
+      <div class="rk-form">
+        <label class="rk-wide">Account balance<span class="row"><input id="rk-bal" type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 10000"><select id="rk-ccy" aria-label="Account currency"><option>RON</option><option>EUR</option><option>USD</option></select></span></label>
+        <div class="rk-field rk-wide">
+          <span class="rk-lbl" id="rk-pct-lbl">Most you're willing to lose on this trade</span>
+          <span class="chips rk-pick" id="rk-pct-pick" role="group" aria-labelledby="rk-pct-lbl"><button type="button" data-v="0.5">0.5%</button><button type="button" data-v="1">1%</button><button type="button" data-v="2">2%</button><button type="button" data-v="other">Other</button></span>
+          <span class="row" id="rk-pct-row" hidden><input id="rk-pct" type="number" min="0.05" max="100" step="0.05" inputmode="decimal" aria-labelledby="rk-pct-lbl"><span>% of the balance</span></span>
+          <small class="rk-hint" id="rk-pct-hint"></small>
+        </div>
+      </div>
     </div>
-    <div class="ranges rk-out">
-      <div><small>Position size</small><b class="big" id="rk-size">—</b></div>
-      <div><small>Margin needed (XTB retail)</small><b id="rk-margin">—</b></div>
-      <div><small>Loss if the stop is hit</small><b id="rk-loss">—</b></div>
-      <div><small>Stop price</small><b id="rk-stop-out">—</b></div>
-      <div><small>Possible profit at target</small><b id="rk-profit">—</b></div>
-      <div><small>Target price</small><b id="rk-tgt-out">—</b></div>
+    <div class="rk-step">
+      <h3><span class="rk-n" aria-hidden="true">2</span>The trade</h3>
+      <div class="rk-form">
+        <div class="rk-field rk-wide">
+          <span class="rk-lbl" id="rk-dir-lbl">Which way do you expect the price to go?</span>
+          <span class="chips rk-pick" id="rk-dir" role="group" aria-labelledby="rk-dir-lbl"><button type="button" data-d="1">▲ Up · Buy</button><button type="button" data-d="-1">▼ Down · Sell</button></span>
+          <small class="rk-hint" id="rk-dir-hint"></small>
+        </div>
+        <label class="rk-wide">Entry price<input id="rk-entry" type="number" step="any" inputmode="decimal"><small class="rk-hint">Leave empty to use the live price.</small></label>
+      </div>
     </div>
-    <ul class="rk-lines" id="rk-lines"></ul>
-    <p class="note" style="margin:10px 0 0">Stops are not guaranteed: prices can jump past them over weekends or on reports. Spread and overnight costs are not included in the loss or the profit. This is arithmetic, not advice: check the numbers in xStation before trading.</p>
+    <div class="rk-step">
+      <h3><span class="rk-n" aria-hidden="true">3</span>Where you get out</h3>
+      <div class="rk-form">
+        <div class="rk-field rk-wide">
+          <span class="rk-lbl" id="rk-stop-lbl">Stop loss: closes the trade if the price goes against you</span>
+          <span class="chips rk-pick" id="rk-stop-pick" role="group" aria-labelledby="rk-stop-lbl"><button type="button" data-v="1">Tight</button><button type="button" data-v="1.5">Normal</button><button type="button" data-v="2">Wide</button><button type="button" data-v="custom">My price</button></span>
+          <input id="rk-stop-px" type="number" step="any" inputmode="decimal" aria-label="Stop loss price" placeholder="Stop loss price" hidden>
+          <small class="rk-hint" id="rk-stop-hint"></small>
+        </div>
+        <div class="rk-field rk-wide">
+          <span class="rk-lbl" id="rk-tgt-lbl">Take profit: how much you aim to win, compared with what you risk</span>
+          <span class="chips rk-pick" id="rk-tgt-pick" role="group" aria-labelledby="rk-tgt-lbl"><button type="button" data-v="1">Same</button><button type="button" data-v="2">2×</button><button type="button" data-v="3">3×</button><button type="button" data-v="custom">My price</button></span>
+          <input id="rk-tgt-px" type="number" step="any" inputmode="decimal" aria-label="Take profit price" placeholder="Take profit price" hidden>
+          <small class="rk-hint" id="rk-tgt-hint"></small>
+        </div>
+      </div>
+      <details class="rk-more" id="rk-adv">
+        <summary>More options</summary>
+        <div class="rk-form">
+          <label>Stop loss method<select id="rk-stop"><option value="1">Tight: 1 normal day (1 × ATR)</option><option value="1.5">Normal: 1.5 normal days (1.5 × ATR)</option><option value="2">Wide: 2 normal days (2 × ATR)</option><option value="3">Very wide: 3 normal days (3 × ATR)</option><option value="r90">Edge of the 1-day 90% range</option><option value="custom">My own price</option></select></label>
+          <label>Take profit method<select id="rk-tgt"><option value="1">Same as the risk (1R)</option><option value="1.5">1.5 × the risk (1.5R)</option><option value="2">2 × the risk (2R)</option><option value="3">3 × the risk (3R)</option><option value="r68">Edge of the 3-day likely range</option><option value="c3">Model's 3-day centre</option><option value="custom">My own price</option></select></label>
+          <label><span id="rk-lot-lbl">Units per lot (XTB)</span><input id="rk-lot" type="number" min="0" step="any" inputmode="decimal"></label>
+          <label id="rk-fx-wrap">USD rate<span class="row"><span id="rk-fx-pre">1 USD =</span><input id="rk-fx" type="number" min="0" step="any" inputmode="decimal"><span id="rk-fx-ccy"></span></span></label>
+        </div>
+      </details>
+    </div>
+    <div class="rk-result" id="rk-result" aria-live="polite">
+      <h3>Your plan</h3>
+      <p class="rk-size" id="rk-size-wrap"><span id="rk-size-verb"></span> <b id="rk-size">—</b><small id="rk-size-sub"></small></p>
+      <div class="rk-ladder" id="rk-ladder">
+        <div class="rk-rung tgt" id="rk-rung-tgt"><span class="k">Take profit</span><b id="rk-tgt-out">—</b><span class="v" id="rk-profit">—</span></div>
+        <div class="rk-rung entry"><span class="k">Entry</span><b id="rk-entry-out">—</b><span class="v" id="rk-ratio"></span></div>
+        <div class="rk-rung stop" id="rk-rung-stop"><span class="k">Stop loss</span><b id="rk-stop-out">—</b><span class="v" id="rk-loss">—</span></div>
+      </div>
+      <p class="rk-margin"><span>XTB keeps aside as margin</span><b id="rk-margin">—</b></p>
+    </div>
+    <ul class="rk-lines" id="rk-lines" aria-label="Check before you trade"></ul>
+    <details class="rk-more" id="rk-why">
+      <summary>How these numbers are worked out</summary>
+      <ul class="rk-lines rk-info" id="rk-info"></ul>
+    </details>
+    <p class="note rk-foot">Stops are not guaranteed: prices can jump past them over weekends or on reports. Spread and overnight costs are not included in the win or loss. This is arithmetic, not advice: check the numbers in xStation before trading.</p>
   </section>
   <p class="eg-chartnote" id="eg-drawer-chart"></p>
 </aside>
@@ -1211,7 +1283,7 @@
 </div>
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 <script src="switch.js?v=1"></script>
 <script src="edison.js?v=20"></script>
 </body>
