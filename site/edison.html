@@ -318,7 +318,90 @@
   .cal-box { height: 480px; margin-top: 12px; border: 1px solid var(--line); border-radius: 0; overflow: hidden; }
   .cal-box .tradingview-widget-container, .cal-box .tradingview-widget-container__widget { width: 100%; height: 100%; }
   .eg-method p, .eg-method li { font-size: 14px; color: var(--muted); line-height: 1.6; }
-  .eg-method summary { display: none; }
+  /* Method tab: visual explainer */
+  .eg-mth { display: grid; gap: 22px; }
+  .eg-mth .eg-h2 { margin-bottom: 0; }
+  .eg-mth-lead { margin: -14px 0 0; font-size: 14px; color: var(--muted); }
+  .eg-mth-lead b { color: var(--fg); font-weight: 600; }
+  .mth-flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; counter-reset: st; }
+  .mth-flow li { position: relative; display: grid; gap: 4px; align-content: start; padding: 14px; background: var(--panel2); counter-increment: st; }
+  .mth-flow li:not(:last-child)::after { content: '→'; position: absolute; right: -10px; top: 50%; translate: 50% -50%; z-index: 1; color: var(--accent-text); font-size: 15px; line-height: 1; background: var(--panel); padding: 2px; }
+  .mth-flow .ic { width: 30px; height: 30px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); margin-bottom: 6px; }
+  .mth-flow .ic svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .mth-flow b::before { content: counter(st) ' · '; color: var(--muted); font-weight: 500; }
+  .mth-flow b { font-size: 15px; font-weight: 600; }
+  .mth-flow span:not(.ic) { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .mth-sec { border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 12px; }
+  .mth-sec[hidden] { display: none; }
+  .mth-sec h3 { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .mth-sec h3 .n { display: inline-grid; place-items: center; width: 24px; height: 24px; font-size: 13px; background: var(--accent-soft); color: var(--fg); }
+  .mth-sec > .note { margin: -4px 0 0; }
+  .mth-fresh { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .mth-fresh div { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); }
+  .mth-fresh small { font-size: 12px; color: var(--muted); } .mth-fresh b { font-size: 14px; font-weight: 500; }
+  .mth-src { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; }
+  .mth-src details { background: var(--panel2); padding: 0; }
+  .mth-src summary { display: grid !important; gap: 2px; padding: 12px 36px 12px 14px; cursor: pointer; list-style: none; position: relative; }
+  .mth-src summary::-webkit-details-marker { display: none; }
+  .mth-src summary::after { content: '+'; position: absolute; right: 14px; top: 12px; color: var(--muted); font-size: 16px; }
+  .mth-src details[open] summary::after { content: '−'; }
+  .mth-src summary b { font-size: 14px; font-weight: 600; color: var(--fg); }
+  .mth-src summary span { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .mth-src details p { margin: 0; padding: 0 14px 14px; font-size: 13px !important; }
+  .mth-sigs, .mth-bt { display: grid; }
+  .mth-sigs [role="row"] { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(90px, .6fr) minmax(120px, .9fr); gap: 16px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .mth-sigs .hd, .mth-bt .hd { border-top: 0; padding: 0 0 4px; font-size: 12px; color: var(--muted); }
+  .mth-sigs .nm b, .mth-bt .nm b { display: block; font-size: 14px; font-weight: 500; color: var(--fg); }
+  .mth-sigs .nm small, .mth-bt .nm small { display: block; font-size: 12.5px; color: var(--muted); line-height: 1.4; margin-top: 2px; }
+  .mth-sigs .w, .mth-sigs .rd { display: grid; grid-template-columns: 40px 1fr; gap: 8px; align-items: center; font-size: 13px; }
+  .mth-sigs .rd { grid-template-columns: 1fr 44px; } .mth-sigs .rd b { text-align: right; }
+  .mth-sigs b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .mth-sigs .bar, .mth-sigs .dv, .mth-bt .bar { position: relative; height: 8px; background: var(--panel2); display: block; overflow: hidden; }
+  .mth-sigs .bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+  .mth-sigs .dv { overflow: visible; }
+  .mth-sigs .dv::after { content: ''; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--muted); }
+  .mth-sigs .dv i { position: absolute; top: 0; bottom: 0; background: var(--muted); }
+  .mth-sigs .dv i.up { background: var(--up); } .mth-sigs .dv i.down { background: var(--down); }
+  .mth-total { margin: 0; font-size: 13.5px; color: var(--muted); } .mth-total b { color: var(--fg); font-weight: 600; }
+  .mth-fan { position: relative; }
+  .mth-fan svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .mth-fan .b90 { fill: var(--accent); opacity: .14; } .mth-fan .b68 { fill: var(--accent); opacity: .3; }
+  .mth-fan .ctr { fill: none; stroke: var(--accent-text); stroke-width: 2; stroke-dasharray: 5 4; }
+  .mth-fan .now { fill: var(--fg); stroke: var(--panel); stroke-width: 2; }
+  .mth-fan .grid { stroke: var(--line); stroke-dasharray: 2 4; }
+  .mth-fan .guide { stroke: var(--muted); }
+  .mth-fan .ax, .mth-fan .lk { fill: var(--muted); font-size: 11px; } .mth-fan .lv { fill: var(--fg); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .mth-fan .tip { top: 8px; }
+  .mth-fan .tip b { font-weight: 600; }
+  .mth-eq { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .mth-eq div { padding: 12px 14px; background: var(--panel2); display: grid; gap: 2px; align-content: start; }
+  .mth-eq small { font-size: 12px; color: var(--muted); } .mth-eq b { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .mth-eq p { margin: 4px 0 0; font-size: 12.5px !important; line-height: 1.45 !important; }
+  .mth-formula { margin: 0; } .mth-formula code { font-size: 12.5px; color: var(--muted); background: var(--panel2); padding: 6px 10px; display: inline-block; overflow-wrap: anywhere; }
+  .mth-bt [role="row"] { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 14px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .mth-bt .hd [role="cell"].cur { color: var(--fg); font-weight: 600; }
+  .mth-bt .bt { display: grid; gap: 4px; }
+  .mth-bt .bt b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .mth-bt .bar { overflow: visible; height: 6px; }
+  .mth-bt .bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+  .mth-bt .bar em { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--fg); }
+  .mth-bt .bt small { font-size: 12px; color: var(--muted); }
+  .mth-bt .bt small.ok { color: var(--up); } .mth-bt .bt small.off { color: var(--neutral); }
+  .mth-limit { margin: 0; padding: 12px 14px; border-left: 3px solid var(--neutral); background: var(--warn-soft); font-size: 13.5px !important; color: var(--fg) !important; }
+  .mth-full > summary { display: list-item !important; cursor: pointer; font-size: 13px; color: var(--muted); }
+  .mth-full p { margin-top: 10px; font-size: 13px !important; }
+  @media (max-width: 760px) {
+    .mth-flow { grid-template-columns: 1fr 1fr; }
+    .mth-flow li:not(:last-child)::after { display: none; }
+    .mth-fresh { grid-template-columns: 1fr 1fr; }
+    .mth-src, .mth-eq { grid-template-columns: 1fr; }
+    .mth-sigs [role="row"] { grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+    .mth-sigs [role="row"] > .nm { grid-column: 1 / -1; }
+    .mth-sigs .hd > [role="cell"]:first-child { display: none; }
+    .mth-bt [role="row"] { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; }
+    .mth-bt [role="row"] > .nm { grid-column: 1 / -1; }
+    .mth-bt .hd > [role="cell"]:first-child { display: none; }
+  }
 
   /* timeframes in detail */
   .tf-text { font-size: 15px; line-height: 1.5; margin: 6px 0 14px; }
@@ -1128,21 +1211,55 @@
             <ul class="sources" id="sources"></ul>
           </div>
           <div class="eg-panel eg-method" role="tabpanel" id="p-method" aria-labelledby="t-method" data-panel="method">
-            <div class="method">
-    <h2 class="eg-h2">How the forecast works</h2>
-    <p id="method"></p>
-    <ul>
-      <li>Prices: NATGAS uses the NYMEX Henry Hub front-month futures quote from CNBC plus its own daily history; every other market comes from Twelve Data (daily history once a day, live quotes every 10–15 minutes to stay within the free plan).</li>
-      <li>News: stories from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence, Rigzone and others) found with a search built for each market, refreshed about every 15 minutes. The server opens each article and reads its full text where the publisher allows it; every relevant sentence is scored with a keyword list for that kind of market (natural gas: weather, storage, production, LNG; oil: OPEC, inventories; metals: dollar, rates, safe-haven demand; stocks and indices: earnings, guidance, rates; crypto: ETF flows, regulation; plus general market language). The article body counts for 70% of a story's score and the headline 30%; paywalled stories fall back to the headline. Stories are weighted by recency.</li>
-      <li>Stocks and ETFs: because keyword lists catch mostly generic words for a company, each new headline is also read once by a free AI model (gpt-oss on Groq). It says whether the story is really about the company and rates its likely effect on the share price over 1 to 5 sessions from -2 to +2, with a short reason shown under the story. That rating counts for 75% of the story's score and the keyword score of the article text for 25%; stories judged not to be about the company are left out. If the AI is unavailable, keyword scoring is used.</li>
-      <li>Charts: the Live chart is TradingView's free embedded chart with its own data feed (real-time for forex and crypto, delayed for stocks; CFD prices for commodities and indices). The Forecast view draws the model's lines on the daily prices the forecast itself uses.</li>
-      <li>Timeframes: on every refresh the 15-minute, 1-hour and daily charts are read with the same fixed textbook rules. Trend: price against its 20- and 50-bar averages and whether highs and lows are rising or falling (ADX says how strong the trend is). Momentum: RSI and MACD. Patterns: engulfing bars, hammers and shooting stars, morning and evening stars, double tops and bottoms, head and shoulders, breakouts from the last 20 bars, RSI divergences, pullbacks that end inside a trend, and average crossovers. A pattern counts only once its bar has closed. For natural gas and Brent the 15-minute bars are built from the site's own price samples (about one a minute, so very short spikes can be missed); for Twelve Data markets the exchange's 15-minute candles are fetched about every 15 minutes. Every pattern is scored on this market's own history (was the close 1 hour, 4 hours or 3 sessions later on its side?) and again from the day it went live.</li>
-      <li>Track record: every trading day at the close the site writes down its 1, 3 and 5-day forecasts and later scores each against the actual close. Target dates count trading sessions only: weekends and exchange holidays are skipped (NYSE holidays for stocks and natural gas, ICE closures for Brent; none for currencies, spot metals and crypto). The log is kept on the site (data/h/) and nothing in it is edited afterwards. The backtest replays only the price signals on past closes, so it says how well the ranges are sized, not how good the news reading is.</li>
-      <li>Events: weekly EIA reports follow their usual day and time (they move in US holiday weeks), Fed decision days come from the Fed's published calendar, US inflation (CPI) and jobs report days from the Bureau of Labor Statistics schedule (not for natural gas), and a stock's next earnings date is looked up once a day from Nasdaq and can be an estimate. Events are flagged on the forecast and given to the AI analyst; the ranges are not widened for them.</li>
-      <li>The page itself checks for new data every minute.</li>
-      <li>It is a mechanical keyword model, not a human reading. It can be wrong when an article is mixed, quotes opposing views, or is mainly about something else.</li>
-    </ul>
-  </div>
+            <div class="method eg-mth">
+              <h2 class="eg-h2">How the forecast works</h2>
+              <p class="eg-mth-lead">Four steps, repeated every few minutes. The numbers below are live for <b id="mth-name">this market</b>.</p>
+              <ol class="mth-flow">
+                <li><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><b>Collect</b><span>Prices, news from trusted outlets, the 15-minute, 1-hour and daily charts, and scheduled reports.</span></li>
+                <li><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-7"/></svg></span><b>Score</b><span>Five signals, each from −1 to +1, add up to one score from bearish to bullish.</span></li>
+                <li><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12h3l13-7M6 12l13 7M6 12h13"/></svg></span><b>Forecast</b><span>Volatility sets how wide the ranges are; the score only nudges the centre.</span></li>
+                <li><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><b>Check</b><span>Each close the forecasts are written down and later scored against the real price.</span></li>
+              </ol>
+
+              <section class="mth-sec">
+                <h3><span class="n">1</span>Where the data comes from</h3>
+                <div class="mth-fresh" id="mth-fresh"></div>
+                <div class="mth-src">
+                  <details><summary><b>Prices</b><span>CNBC futures quote for NATGAS and Brent, Twelve Data for the rest</span></summary><p>NATGAS uses the NYMEX Henry Hub front-month futures quote from CNBC plus its own daily history; every other market comes from Twelve Data (daily history once a day, live quotes every 10–15 minutes to stay within the free plan).</p></details>
+                  <details><summary><b>News</b><span>Trusted outlets only, full articles read where allowed</span></summary><p>Stories from a whitelist of trusted outlets (Reuters, Bloomberg, NGI, EIA, Barchart, FXEmpire, S&amp;P Global, Energy Intelligence, Rigzone and others) found with a search built for each market, refreshed about every 15 minutes. The server opens each article and reads its full text where the publisher allows it; every relevant sentence is scored with a keyword list for that kind of market (natural gas: weather, storage, production, LNG; oil: OPEC, inventories; metals: dollar, rates, safe-haven demand; stocks and indices: earnings, guidance, rates; crypto: ETF flows, regulation; plus general market language). The article body counts for 70% of a story's score and the headline 30%; paywalled stories fall back to the headline. Stories are weighted by recency.</p></details>
+                  <details><summary><b>AI news reading</b><span>Stocks and ETFs: each headline rated −2 to +2 by a free AI model</span></summary><p>Because keyword lists catch mostly generic words for a company, each new headline is also read once by a free AI model (gpt-oss on Groq). It says whether the story is really about the company and rates its likely effect on the share price over 1 to 5 sessions from -2 to +2, with a short reason shown under the story. That rating counts for 75% of the story's score and the keyword score of the article text for 25%; stories judged not to be about the company are left out. If the AI is unavailable, keyword scoring is used.</p></details>
+                  <details><summary><b>Timeframes</b><span>15-minute, 1-hour and daily charts read with textbook rules</span></summary><p>On every refresh the 15-minute, 1-hour and daily charts are read with the same fixed textbook rules. Trend: price against its 20- and 50-bar averages and whether highs and lows are rising or falling (ADX says how strong the trend is). Momentum: RSI and MACD. Patterns: engulfing bars, hammers and shooting stars, morning and evening stars, double tops and bottoms, head and shoulders, breakouts from the last 20 bars, RSI divergences, pullbacks that end inside a trend, and average crossovers. A pattern counts only once its bar has closed. For natural gas and Brent the 15-minute bars are built from the site's own price samples (about one a minute, so very short spikes can be missed); for Twelve Data markets the exchange's 15-minute candles are fetched about every 15 minutes. Every pattern is scored on this market's own history (was the close 1 hour, 4 hours or 3 sessions later on its side?) and again from the day it went live.</p></details>
+                  <details><summary><b>Events</b><span>EIA reports, Fed days, CPI and jobs, earnings dates</span></summary><p>Weekly EIA reports follow their usual day and time (they move in US holiday weeks), Fed decision days come from the Fed's published calendar, US inflation (CPI) and jobs report days from the Bureau of Labor Statistics schedule (not for natural gas), and a stock's next earnings date is looked up once a day from Nasdaq and can be an estimate. Events are flagged on the forecast and given to the AI analyst; the ranges are not widened for them.</p></details>
+                  <details><summary><b>Track record</b><span>Every forecast logged at the close, scored later, never edited</span></summary><p>Every trading day at the close the site writes down its 1, 3 and 5-day forecasts and later scores each against the actual close. Target dates count trading sessions only: weekends and exchange holidays are skipped (NYSE holidays for stocks and natural gas, ICE closures for Brent; none for currencies, spot metals and crypto). The log is kept on the site (data/h/) and nothing in it is edited afterwards. The backtest replays only the price signals on past closes, so it says how well the ranges are sized, not how good the news reading is.</p></details>
+                  <details><summary><b>Charts</b><span>TradingView live chart; Forecast view uses the model's own prices</span></summary><p>The Live chart is TradingView's free embedded chart with its own data feed (real-time for forex and crypto, delayed for stocks; CFD prices for commodities and indices). The Forecast view draws the model's lines on the daily prices the forecast itself uses.</p></details>
+                </div>
+              </section>
+
+              <section class="mth-sec">
+                <h3><span class="n">2</span>What goes into the score</h3>
+                <p class="note">Each signal's share is fixed. The bar on the right is what it reads now, from bearish (left) to bullish (right).</p>
+                <div class="mth-sigs" id="mth-sigs" role="table" aria-label="Signals, their share and current reading"></div>
+                <p class="mth-total" id="mth-total"></p>
+              </section>
+
+              <section class="mth-sec">
+                <h3><span class="n">3</span>How the ranges are built</h3>
+                <p class="note">The ranges widen with time because there is more room for the price to move. Point at or tap the chart for the numbers.</p>
+                <div class="mth-fan" id="mth-fan"></div>
+                <div class="mth-eq" id="mth-eq"></div>
+                <p class="mth-formula"><code>range = price × exp(drift × days ± z × daily volatility × √days)</code></p>
+              </section>
+
+              <section class="mth-sec">
+                <h3><span class="n">4</span>How well it has done</h3>
+                <p class="note" id="mth-bt-note">Replaying the price signals on past closes. News cannot be replayed, so this tests the ranges more than the lean.</p>
+                <div class="mth-bt" id="mth-bt" role="table" aria-label="Backtest results"></div>
+              </section>
+
+
+              <p class="mth-limit"><b>Limits.</b> It is a mechanical model, not a human reading: news scoring can be wrong when an article is mixed, quotes opposing views, or is mainly about something else. The higher/lower split is a lean, not a calibrated probability.</p>
+              <details class="mth-full"><summary>Full technical description</summary><p id="method"></p></details>
+            </div>
           </div>
         </section>
       </div>
@@ -1302,6 +1419,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=7"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=21"></script>
+<script src="edison.js?v=22"></script>
 </body>
 </html>
