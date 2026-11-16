@@ -460,7 +460,11 @@
   .ai:not(.full) .cols { display: none; }
   .ai .fc-head { color: var(--fg); }
   .ai .fc-head > span:first-child { font-size: 16px; font-weight: 600; }
-  .ai .ev-line { margin-bottom: 10px; }
+  /* analyst vs model note: same look as the other in-app notices (Signals disagree): neutral box, amber edge, warning icon */
+  .ai .ev-line { margin: 10px 0 !important; position: relative; padding: 10px 14px 10px 40px; background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--neutral); color: var(--fg); font-size: 13.5px; }
+  .ai .ev-line::before { content: ''; position: absolute; left: 13px; top: 11px; width: 18px; height: 18px; background: var(--neutral);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3 2 20h20z'/%3E%3Cpath d='M12 10v4M12 17v.5'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3 2 20h20z'/%3E%3Cpath d='M12 10v4M12 17v.5'/%3E%3C/svg%3E") center / contain no-repeat; }
   .eg-why { margin-top: 4px; }
 
   /* plan a trade drawer */
