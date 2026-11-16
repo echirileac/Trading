@@ -1052,6 +1052,15 @@
 
   { let t; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (!$('p-method').hidden && S.DATA && S.DATA.forecast) drawMethod(S.DATA, S.H); }, 200); }); }
 
+  // ---------- Add a market: dim the page behind the dialog ----------
+  {
+    const box = $('search'), dim = $('eg-search-dim');
+    const sync = () => { const on = box.classList.contains('open'); dim.hidden = !on; document.body.classList.toggle('eg-dialog-open', on); };
+    new MutationObserver(sync).observe(box, { attributes: true, attributeFilter: ['class'] });
+    dim.addEventListener('click', () => box.classList.remove('open'));
+    sync();
+  }
+
   // ---------- react to the shared code ----------
   let firstRender = true;
   document.addEventListener('mw:render', (e) => {
