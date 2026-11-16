@@ -89,6 +89,7 @@
     tabs.forEach((x) => { const on = x === b; x.setAttribute('aria-selected', String(on)); x.tabIndex = on ? 0 : -1; $(x.getAttribute('aria-controls')).hidden = !on; });
     put('eg-tab', b.dataset.tab);
     if (b.dataset.tab === 'levels' && S.DATA) drawLevelViz(S.DATA, S.H); // measured only once the tab is visible
+    if (b.dataset.tab === 'method' && S.DATA && S.DATA.forecast) drawMethod(S.DATA, S.H); // the chart is sized to the visible panel
     tabIntoView(b, !focus);
     if (focus) b.focus();
   }
@@ -930,6 +931,127 @@
       { duration: 520, easing: 'cubic-bezier(.4, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' })).catch(() => {});
   }, true);
 
+  // ---------- Method tab: the forecast explained with this market's live numbers ----------
+  const SIG_DESC = {
+    news: 'Headlines and articles from trusted outlets, last 72 hours; newer stories count more',
+    trend: 'Price above or below its 20-day average',
+    momentum: 'How far the price moved over the last 5 sessions',
+    rsi: 'Bets on a pull-back after big runs: above 70 leans down, below 30 leans up',
+    mtf: 'The 15-minute, 1-hour and daily charts read together'
+  };
+  const sgn = (x, d = 2) => (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toFixed(d);
+  const cell = (cls, ...kids) => { const c = el('div', { role: 'cell', class: cls || null }); c.append(...kids); return c; };
+  function drawMethod(D, H) {
+    const f = D.forecast || {}, p = D.price || {}, meta = D.meta || {};
+    $('mth-name').textContent = nameOf(meta);
+    // how fresh each input is
+    const fr = $('mth-fresh'); fr.replaceChildren();
+    const cnbc = meta.provider === 'cnbc' || meta.id === 'NATGAS';
+    [['Page', 'checks every minute'], ['Price', cnbc ? 'about every 5 min' : 'every 10–15 min'], ['News', 'about every 15 min'], ['AI analyst', 'about hourly while open']].forEach(([k, v]) => {
+      const d = el('div'); d.append(el('small', {}, k), el('b', {}, v)); fr.append(d);
+    });
+
+    // step 2: signals, share and current reading
+    const sigs = (f.signals || []).filter((s) => s.weight > 0);
+    const box = $('mth-sigs'); box.replaceChildren();
+    const maxW = Math.max(...sigs.map((s) => s.weight), 0.01);
+    const hd = el('div', { role: 'row', class: 'hd' });
+    hd.append(cell('', document.createTextNode('Signal')), cell('', document.createTextNode('Share')), cell('', document.createTextNode('Reading now')));
+    box.append(hd);
+    for (const s of sigs) {
+      const r = el('div', { role: 'row', title: s.detail || '' });
+      const nm = el('div'); nm.append(el('b', {}, s.name), el('small', {}, SIG_DESC[s.id] || ''));
+      const w = el('div', { class: 'w' }); const wb = el('span', { class: 'bar' }); const wi = el('i'); wi.style.width = (100 * s.weight / maxW) + '%'; wb.append(wi);
+      w.append(el('b', {}, Math.round(100 * s.weight) + '%'), wb);
+      const v = Math.max(-1, Math.min(1, s.value || 0)), rd = el('div', { class: 'rd' });
+      const db = el('span', { class: 'dv' }); const di = el('i', { class: v > 0 ? 'up' : v < 0 ? 'down' : '' });
+      di.style.left = (v < 0 ? 50 + 50 * v : 50) + '%'; di.style.width = (50 * Math.abs(v)) + '%'; db.append(di);
+      rd.append(db, el('b', {}, sgn(v)));
+      r.append(cell('nm', nm), cell('', w), cell('', rd));
+      box.append(r);
+    }
+    const sc = f.score || 0, lean = sc > 0.15 ? 'leans up' : sc < -0.15 ? 'leans down' : 'is neutral';
+    $('mth-total').replaceChildren(document.createTextNode('Reading × share, added up: '), el('b', {}, `${sgn(sc)} → the model ${lean}`), document.createTextNode(' (it needs more than ±0.15 to lean).'));
+
+    // step 3: the fan of ranges
+    const hz = [1, 3, 5].map((d) => f.horizons && f.horizons[d] ? { d, ...f.horizons[d] } : null).filter(Boolean);
+    const fan = $('mth-fan'); fan.replaceChildren();
+    if (p.last != null && hz.length) {
+      const W = Math.round(Math.max(300, Math.min(760, fan.clientWidth || 640))), Ht = W < 520 ? 230 : 250, L = 10, R = W < 520 ? 80 : 96, T = 14, B = 28; // 1 unit = 1 px, so text stays readable on phones
+      const xs = (d) => L + (d / 5) * (W - L - R);
+      const lo = Math.min(p.last, ...hz.map((h) => h.lo90)), hi = Math.max(p.last, ...hz.map((h) => h.hi90)), pad = (hi - lo) * 0.04;
+      const ys = (v) => T + (hi + pad - v) / (hi - lo + 2 * pad) * (Ht - T - B);
+      const pts = [{ d: 0, lo90: p.last, hi90: p.last, lo68: p.last, hi68: p.last, center: p.last }, ...hz];
+      const poly = (a, b) => [...pts.map((q) => `${xs(q.d)},${ys(q[a])}`), ...pts.slice().reverse().map((q) => `${xs(q.d)},${ys(q[b])}`)].join(' ');
+      const svg = sv('svg', { viewBox: `0 0 ${W} ${Ht}`, role: 'img', 'aria-label': `Forecast ranges for 1, 3 and 5 days from ${MW.usd(p.last)}` });
+      [1, 3, 5].forEach((d) => svg.append(sv('line', { x1: xs(d), x2: xs(d), y1: T, y2: Ht - B, class: 'grid' })));
+      svg.append(sv('polygon', { points: poly('hi90', 'lo90'), class: 'b90' }), sv('polygon', { points: poly('hi68', 'lo68'), class: 'b68' }));
+      svg.append(sv('polyline', { points: pts.map((q) => `${xs(q.d)},${ys(q.center)}`).join(' '), class: 'ctr' }));
+      svg.append(sv('circle', { cx: xs(0), cy: ys(p.last), r: 5, class: 'now' }));
+      [['Now', 0], ['1 day', 1], ['3 days', 3], ['5 days', 5]].forEach(([t, d]) => svg.append(sv('text', { x: xs(d), y: Ht - 8, 'text-anchor': d === 0 ? 'start' : 'middle', class: 'ax' }, t)));
+      // labels at the 5-day edge, pushed apart so they never overlap
+      const h5 = hz[hz.length - 1];
+      const labs = [['90% high', h5.hi90], ['68% high', h5.hi68], ['centre', h5.center], ['68% low', h5.lo68], ['90% low', h5.lo90]].map(([k, v]) => ({ k, v, y: ys(v) }));
+      for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 26) labs[i].y = labs[i - 1].y + 26;
+      const over = labs[labs.length - 1].y - (Ht - B + 6); if (over > 0) labs.forEach((l) => { l.y -= over; });
+      labs.forEach((l) => { const t = sv('text', { x: xs(5) + 10, y: l.y - 2, class: 'lv' }, MW.usd(l.v)); svg.append(t, sv('text', { x: xs(5) + 10, y: l.y + 10, class: 'lk' }, l.k)); });
+      // hover: the nearest horizon's numbers
+      const tip = el('div', { class: 'tip', hidden: '' }), guide = sv('line', { y1: T, y2: Ht - B, class: 'guide', visibility: 'hidden' });
+      svg.append(guide);
+      const onPt = (e) => {
+        const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width;
+        const q = pts.reduce((a, b) => (Math.abs(xs(b.d) - x) < Math.abs(xs(a.d) - x) ? b : a));
+        guide.setAttribute('x1', xs(q.d)); guide.setAttribute('x2', xs(q.d)); guide.setAttribute('visibility', 'visible');
+        tip.replaceChildren(el('div', { class: 'h' }, q.d ? `${q.d} day${q.d > 1 ? 's' : ''} ahead · ${MW.dayName ? MW.dayName(q.targetDate) : q.targetDate}` : 'Now'));
+        if (q.d) [['Likely (68%)', `${MW.usd(q.lo68)} – ${MW.usd(q.hi68)}`], ['Wide (90%)', `${MW.usd(q.lo90)} – ${MW.usd(q.hi90)}`], ['Centre', MW.usd(q.center)]].forEach(([k, v]) => { const d = el('div'); d.append(document.createTextNode(k + ': '), el('b', {}, v)); tip.append(d); });
+        else { const d = el('div'); d.append(el('b', {}, MW.usd(p.last))); tip.append(d); }
+        tip.hidden = false;
+        const left = xs(q.d) * r.width / W;
+        tip.style.left = Math.min(Math.max(0, left + 12), r.width - 200) + 'px'; tip.style.top = '8px';
+      };
+      svg.addEventListener('pointermove', onPt); svg.addEventListener('pointerdown', onPt);
+      svg.addEventListener('pointerleave', () => { tip.hidden = true; guide.setAttribute('visibility', 'hidden'); });
+      fan.append(svg, tip);
+    }
+    const sd = f.sigmaDaily || 0, drift = sc * 0.25 * sd;
+    const eq = $('mth-eq'); eq.replaceChildren();
+    [['Width = volatility', `${(100 * sd).toFixed(1)}% a day`, 'A blend of the last 20 and 60 sessions, with a floor per asset class. The main driver of the ranges.'],
+      ['Centre = the score\'s nudge', `${sgn(100 * drift, 2)}% a day`, `Score ${sgn(sc)} × 0.25 × volatility. Kept small on purpose: the lean has no proven edge.`],
+      ['Two bands', '68% and 90%', '68%: ± 1 × volatility × √days. 90%: ± 1.75 × volatility × √days (1.645 covered only 87–89% in the backtest).']
+    ].forEach(([k, v, t]) => { const d = el('div'); d.append(el('small', {}, k), el('b', {}, v), el('p', {}, t)); eq.append(d); });
+
+    // step 4: backtest, one column per horizon
+    const BT = D.track && D.track.backtest, bt = $('mth-bt'); bt.replaceChildren();
+    $('mth-bt').closest('.mth-sec').hidden = !BT;
+    if (BT) {
+      $('mth-bt-note').textContent = `Replaying the price signals on ${BT.sessions || BT[1]?.n || 'past'} past sessions. News cannot be replayed, so this tests the ranges more than the lean.`;
+      const head = el('div', { role: 'row', class: 'hd' }); head.append(cell('', document.createTextNode('')));
+      [1, 3, 5].forEach((d) => head.append(cell(d === H ? 'cur' : '', document.createTextNode(`${d} day${d > 1 ? 's' : ''}`))));
+      bt.append(head);
+      const rows = [
+        ['Likely range held the close', 'aim 68%', 68, (b) => [b.in68, b.n], (v) => (Math.abs(v - 68) <= 5 ? 'on target' : v > 68 ? 'a bit wide' : 'too narrow')],
+        ['Wide range held the close', 'aim 90%', 90, (b) => [b.in90, b.n], (v) => (Math.abs(v - 90) <= 4 ? 'on target' : v > 90 ? 'a bit wide' : 'too narrow')],
+        ['Lean pointed the right way', '50% = coin flip', 50, (b) => [b.dirHit, b.dirN], (v) => (v >= 55 ? 'useful' : v <= 45 ? 'worse than a coin flip' : 'coin flip')]
+      ];
+      for (const [name, aimTxt, aim, get2, verdictOf] of rows) {
+        const r = el('div', { role: 'row' }); const nm = el('div'); nm.append(el('b', {}, name), el('small', {}, aimTxt)); r.append(cell('nm', nm));
+        [1, 3, 5].forEach((d) => {
+          const b = BT[d]; if (!b) { r.append(cell('', document.createTextNode('—'))); return; }
+          const [k, n] = get2(b); const v = n ? 100 * k / n : null;
+          if (v == null) { r.append(cell('', document.createTextNode('—'))); return; }
+          const c = el('div', { class: 'bt' }); const bar = el('span', { class: 'bar' }); const fi = el('i'); fi.style.width = v + '%'; const tk = el('em'); tk.style.left = aim + '%'; bar.append(fi, tk);
+          const vd = verdictOf(v);
+          c.append(el('b', {}, Math.round(v) + '%'), bar, el('small', { class: vd === 'on target' || vd === 'useful' ? 'ok' : vd === 'coin flip' ? '' : 'off' }, vd));
+          c.title = `${k} of ${n}`;
+          r.append(cell(d === H ? 'cur' : '', c));
+        });
+        bt.append(r);
+      }
+    }
+  }
+
+  { let t; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (!$('p-method').hidden && S.DATA && S.DATA.forecast) drawMethod(S.DATA, S.H); }, 200); }); }
+
   // ---------- react to the shared code ----------
   let firstRender = true;
   document.addEventListener('mw:render', (e) => {
@@ -943,7 +1065,7 @@
     if (D && D.price) {
       if (tickPrice(D)) { replay(document.querySelector('.eg-hero'), 'eg-swap'); enter($('news')); }
       markNewNews(D, true);
-      drawEvent(D); drawLadder(D, H); drawLevelViz(D, H); drawTrackViz(D, H); drawEdge(D, H); drawDisagree(D); drawNewsFilter(); drawTrackSmall(D, H);
+      drawEvent(D); drawLadder(D, H); drawLevelViz(D, H); drawTrackViz(D, H); drawEdge(D, H); drawDisagree(D); drawNewsFilter(); drawTrackSmall(D, H); drawMethod(D, H);
       if (!drawer.hidden) syncDrawer();
     } else { $('eg-event').hidden = true; $('eg-disagree').hidden = true; }
     drawLines(true);
