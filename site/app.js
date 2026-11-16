@@ -465,6 +465,8 @@
   const TF_BARS = { '1M': 22, '3M': 66, '6M': 130, '1Y': 260 };
   if (!['1D', '1W', '1M', '3M', '6M', '1Y'].includes(PC_TF)) PC_TF = '6M';
 
+  // TradingView's default candle colours (both themes), so the Forecast view matches the Live chart
+  const CANDLE_UP = '#089981', CANDLE_DOWN = '#F23645';
   const cssVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const probeEl = document.createElement('span');
   function rgba(v) { // resolve a theme colour (incl. #rrggbbaa) to rgb()/rgba() for the chart canvas
@@ -528,7 +530,7 @@
     PC.rsi = LWC.createChart($('pc-rsi'), sub);
     PC.macd = LWC.createChart($('pc-macd'), sub);
     const line = (chart, color, extra = {}) => chart.addLineSeries({ color: rgba(color), lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...extra });
-    PC.s.candles = PC.main.addCandlestickSeries({ upColor: rgba('--up'), downColor: rgba('--down'), wickUpColor: rgba('--up'), wickDownColor: rgba('--down'), borderVisible: false });
+    PC.s.candles = PC.main.addCandlestickSeries({ upColor: CANDLE_UP, downColor: CANDLE_DOWN, wickUpColor: CANDLE_UP, wickDownColor: CANDLE_DOWN, borderVisible: false });
     PC.s.ma20 = line(PC.main, '--c-ma20'); PC.s.ma50 = line(PC.main, '--c-ma50'); PC.s.ma200 = line(PC.main, '--c-ma200');
     PC.s.bbU = line(PC.main, '--c-bb', { lineWidth: 1 }); PC.s.bbL = line(PC.main, '--c-bb', { lineWidth: 1 });
     PC.s.bbM = line(PC.main, '--c-bb', { lineWidth: 1, lineStyle: LWC.LineStyle.Dotted });
@@ -652,7 +654,7 @@
     PC.s.bbU.setData(asLine(bb.up)); PC.s.bbL.setData(asLine(bb.lo)); PC.s.bbM.setData(asLine(bb.mid));
     PC.s.rsi.setData(asLine(rsi));
     PC.s.macd.setData(asLine(mac.line)); PC.s.sig.setData(asLine(mac.sig));
-    const upC = rgba('--up'), dnC = rgba('--down');
+    const upC = CANDLE_UP, dnC = CANDLE_DOWN;
     PC.s.hist.setData(mac.hist.map((v, i) => (v == null ? { time: times[i] } : { time: times[i], value: v, color: v >= 0 ? upC : dnC })).concat(ws));
     // forecast lines (daily views only): centre and 68% band, same maths as the forecast card
     let fcPts = [];
