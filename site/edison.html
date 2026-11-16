@@ -467,6 +467,22 @@
             mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3 2 20h20z'/%3E%3Cpath d='M12 10v4M12 17v.5'/%3E%3C/svg%3E") center / contain no-repeat; }
   .eg-why { margin-top: 4px; }
 
+  /* back to top: appears after scrolling down; sits above the phone tab bar and moves down when the bar hides */
+  .eg-top { position: fixed; z-index: 34; right: 24px; bottom: 24px; width: 44px; height: 44px; display: grid; place-items: center; padding: 0;
+    background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--float); cursor: pointer;
+    transition: opacity .2s ease, transform .25s ease, bottom .34s cubic-bezier(.32, .72, 0, 1), right .26s ease; }
+  .eg-top svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .eg-top:hover { border-color: var(--accent); color: var(--accent-text); }
+  .eg-top:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .eg-top[data-off] { opacity: 0; transform: translateY(12px); pointer-events: none; visibility: hidden; transition: opacity .2s ease, transform .25s ease, visibility 0s .25s; }
+  body.eg-plan-open .eg-top, body.eg-dialog-open .eg-top { opacity: 0; pointer-events: none; }
+  @media (min-width: 1024px) { body.eg-plan-open .eg-top { right: calc(var(--plan-w) + 24px); opacity: 1; pointer-events: auto; } }
+  @media (max-width: 760px) {
+    .eg-top { right: 16px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 74px); width: 46px; height: 46px; border-radius: 50%; }
+    body.eg-nav-hide .eg-top { bottom: max(16px, env(safe-area-inset-bottom)); }
+  }
+  @media (prefers-reduced-motion: reduce) { .eg-top, .eg-top[data-off] { transition: opacity .2s ease; transform: none; } }
+
   /* plan a trade drawer */
   .eg-drawer { position: fixed; z-index: 40; top: 84px; right: max(16px, calc((100vw - 1400px) / 2 + 16px)); bottom: 16px; width: min(480px, calc(100vw - 32px)); overflow: auto; background: var(--panel); border: 1px solid var(--accent); border-radius: 0; box-shadow: var(--shadow); padding: 22px; display: grid; gap: 16px; align-content: start; }
   /* wide screens: the planner is a full-height side panel and the page moves left to make room */
@@ -1350,6 +1366,7 @@
 
 <div class="eg-scrim" id="eg-scrim" hidden></div>
 <div class="eg-dim" id="eg-search-dim" hidden></div>
+<button type="button" class="eg-top" id="eg-top" aria-label="Back to top" title="Back to top" data-off><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
 <aside class="eg-drawer" id="eg-drawer" aria-labelledby="eg-drawer-h" tabindex="-1" hidden>
   <div class="eg-drawer-top">
     <div class="eg-grab" aria-hidden="true"></div>
@@ -1436,6 +1453,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=9"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=23"></script>
+<script src="edison.js?v=24"></script>
 </body>
 </html>
