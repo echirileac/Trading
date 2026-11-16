@@ -226,10 +226,24 @@
   .prob-lbl { display: flex; justify-content: space-between; font-size: 12px; }
   .prob-lbl span { color: var(--muted) !important; }
   .eg-lean .note { grid-column: 1 / -1; margin: 0; }
-  .eg-disagree { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; padding: 14px 18px; border-radius: 0; background: var(--panel); border: 1px solid var(--line); font-size: 14px; }
-  .eg-disagree svg { width: 18px; height: 18px; flex: none; stroke: var(--neutral); }
-  .eg-disagree b { font-weight: 500; }
-  .eg-disagree span { color: var(--muted); }
+  .eg-disagree { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px 24px; padding: 16px 18px; border-radius: 0; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--neutral); font-size: 14px; }
+  .eg-dis-top { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+  .eg-dis-top svg { width: 20px; height: 20px; flex: none; stroke: var(--neutral); margin-top: 1px; }
+  .eg-dis-top b { font-weight: 600; font-size: 15px; }
+  .eg-dis-top p { margin: 3px 0 0; color: var(--muted); line-height: 1.5; font-size: 13.5px; }
+  .eg-dis-sigs { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .eg-dis-sig { display: grid; gap: 2px; text-align: left; padding: 8px 12px; min-width: 112px; max-width: 240px; background: var(--panel2); border: 1px solid transparent; border-top: 2px solid var(--muted); color: var(--fg); font: inherit; cursor: pointer; border-radius: 0; }
+  .eg-dis-sig:hover { border-color: var(--line); border-top-color: inherit; }
+  .eg-dis-sig .k { font-size: 12px; color: var(--muted); }
+  .eg-dis-sig .v { font-size: 14px; font-weight: 500; display: flex; gap: 6px; align-items: baseline; }
+  .eg-dis-sig .v i { font-style: normal; font-size: 11px; }
+  .eg-dis-sig.up { border-top-color: var(--up); } .eg-dis-sig.up .v i { color: var(--up); }
+  .eg-dis-sig.down { border-top-color: var(--down); } .eg-dis-sig.down .v i { color: var(--down); }
+  .eg-dis-sig.flat .v i { color: var(--muted); }
+  @media (max-width: 900px) { .eg-disagree { grid-template-columns: 1fr; } .eg-dis-sigs { justify-content: flex-start; } }
+  @media (max-width: 560px) { .eg-dis-sigs { display: grid; grid-template-columns: 1fr; } .eg-dis-sig, .eg-dis-sig.up, .eg-dis-sig.down { max-width: none; grid-template-columns: 96px 1fr; align-items: baseline; border: 1px solid transparent; } }
+  .eg-flash { animation: eg-flash 1.4s ease-out; }
+  @keyframes eg-flash { 0%, 30% { box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: 0 0 0 2px transparent; } }
 
   /* chart */
   .pc-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -629,7 +643,7 @@
     .eg-menu { border-radius: 22px; }
     .eg-menu a, .eg-menu button { border-radius: 16px; } /* 22 - 6 padding */
     /* inside a card: concentric, minimum 12-14px */
-    .eg-event, .eg-disagree, .ev-line, .pc-wrap, .tv-box, .cal-box, .tf, .fc-tf-row > span, .ai .ai-outlook,
+    .eg-event, .eg-disagree, .eg-dis-sig, .ev-line, .pc-wrap, .tv-box, .cal-box, .tf, .fc-tf-row > span, .ai .ai-outlook,
     .rk-result, .rk-lines li.warn, .rk-lines li.bad, .search input, .tv-sym input, .rk-form input, .rk-form select,
     .lock input[type=password] { border-radius: var(--r-in); }
     .eg-tile .ev, .eg-feed .ic, .tip { border-radius: 12px; }
@@ -650,7 +664,7 @@
     .eg-panel > .card { border-radius: 0; }
     .btn, .chips button, .eg-filter button, .bias, .chip, .pill, .filters button, .rk-lines button, .eg-tgl > a, .eg-msel,
     .seg, .eg-seg, #pc-view, .eg-ui, .rk-form .chips, .eg-more summary,
-    .eg-event, .eg-disagree, .ev-line, .pc-wrap, .tv-box, .cal-box, .tf, .fc-tf-row > span, .ai .ai-outlook,
+    .eg-event, .eg-disagree, .eg-dis-sig, .ev-line, .pc-wrap, .tv-box, .cal-box, .tf, .fc-tf-row > span, .ai .ai-outlook,
     .rk-result, .rk-lines li.warn, .rk-lines li.bad, .search input, .tv-sym input, .rk-form input, .rk-form select,
     .lock input[type=password], .eg-tile .ev, .eg-feed .ic, .tip { border-radius: 6px; }
     .seg button, .eg-seg button, #pc-view button, .eg-ui > *, .rk-form .chips button, .eg-menu a, .eg-menu button,
@@ -1022,7 +1036,10 @@
           </div>
         </section>
 
-        <div class="eg-disagree needs-data" id="eg-disagree" role="note" hidden><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></svg><b>Signals disagree</b><span id="eg-disagree-t"></span></div>
+        <div class="eg-disagree needs-data" id="eg-disagree" role="note" aria-labelledby="eg-dis-h" hidden>
+          <div class="eg-dis-top"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></svg><div><b id="eg-dis-h">Signals disagree</b><p id="eg-disagree-t"></p></div></div>
+          <div class="eg-dis-sigs" id="eg-dis-sigs"></div>
+        </div>
 
         <section class="card view-live" id="pc-card">
     <div class="pc-head">
@@ -1285,6 +1302,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=7"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=20"></script>
+<script src="edison.js?v=21"></script>
 </body>
 </html>

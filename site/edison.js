@@ -423,17 +423,49 @@
       ? `The lean pointed the right way ${parts.join(', ')} (50% is a coin flip). The ranges are the tested part: treat the lean as context.`
       : 'Too few scored forecasts to judge the lean yet: treat it as context. The ranges are the tested part.';
   }
+  // When the model, the AI analyst and the timeframe reading point different ways: one tile per signal (tap to see
+  // where it comes from) and one plain line on what that means for a trade.
   function drawDisagree(D) {
-    const f = D.forecast || {}, out = [], dirs = new Set();
+    const f = D.forecast || {}, sigs = [];
     const m = dirOf(f.score);
-    dirs.add(m); out.push(m > 0 ? 'Model leans up' : m < 0 ? 'Model leans down' : 'Model neutral');
+    sigs.push({ k: 'Model', d: m, v: m > 0 ? 'Leans up' : m < 0 ? 'Leans down' : 'Neutral', go: 'model' });
     const a = D.ai && D.ai.stance && D.ai.status !== 'off' && D.ai.status !== 'pending' && D.ai.status !== 'error' ? D.ai.stance : null;
-    if (a) { const d = a === 'bullish' ? 1 : a === 'bearish' ? -1 : 0; dirs.add(d); out.push(`AI analyst ${a}`); }
+    if (a) { const d = a === 'bullish' ? 1 : a === 'bearish' ? -1 : 0; sigs.push({ k: 'AI analyst', d, v: a.charAt(0).toUpperCase() + a.slice(1), go: 'ai' }); }
     const v = D.mtf && D.mtf.verdict;
-    if (v && v.title) { const d = Math.sign(v.dir || 0); dirs.add(d); out.push(`timeframes: ${v.title.charAt(0).toLowerCase() + v.title.slice(1)}`); }
-    const show = dirs.size > 1 && out.length > 1;
+    if (v && v.title && v.id !== 'none') sigs.push({ k: 'Timeframes', d: Math.sign(v.dir || 0), v: v.title, go: 'tf' });
+    const show = new Set(sigs.map((x) => x.d)).size > 1 && sigs.length > 1;
     $('eg-disagree').hidden = !show;
-    if (show) $('eg-disagree-t').textContent = out.join(' · ');
+    if (!show) return;
+    const box = $('eg-dis-sigs'); box.replaceChildren();
+    for (const x of sigs) {
+      const cls = x.d > 0 ? 'up' : x.d < 0 ? 'down' : 'flat';
+      const b = el('button', { type: 'button', class: 'eg-dis-sig ' + cls, title: `Show the ${x.k.toLowerCase()} reading` });
+      const val = el('span', { class: 'v' }); val.append(el('i', { 'aria-hidden': 'true' }, x.d > 0 ? '▲' : x.d < 0 ? '▼' : '◆'), document.createTextNode(x.v));
+      b.append(el('span', { class: 'k' }, x.k), val);
+      b.addEventListener('click', () => disGo(x.go));
+      box.append(b);
+    }
+    const name = (x) => (x.k === 'Model' ? 'the model' : x.k === 'AI analyst' ? 'the AI analyst' : 'the timeframes');
+    const ups = sigs.filter((x) => x.d > 0), downs = sigs.filter((x) => x.d < 0), flats = sigs.filter((x) => !x.d);
+    const list = (xs) => xs.map(name).join(' and ');
+    let head, tip;
+    if (ups.length && downs.length) {
+      head = 'Signals point opposite ways';
+      tip = `${cap(list(ups))} ${ups.length > 1 ? 'point' : 'points'} up, ${list(downs)} down. There is no edge in either direction: the forecast range is the safer guide. Wait for them to line up, or trade smaller.`;
+    } else {
+      const one = ups.length ? ups : downs, way = ups.length ? 'up' : 'down';
+      head = 'No clear direction';
+      tip = `Only ${list(one)} ${one.length > 1 ? 'point' : 'points'} ${way}; ${list(flats)} ${flats.length > 1 ? 'see' : 'sees'} no clear direction. Treat it as a weak hint, not a signal to trade.`;
+    }
+    $('eg-dis-h').textContent = head;
+    $('eg-disagree-t').textContent = tip;
+  }
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  function disGo(go) {
+    const spot = (n) => { if (!n) return; n.scrollIntoView({ behavior: calm.matches ? 'auto' : 'smooth', block: 'center' }); n.classList.remove('eg-flash'); void n.offsetWidth; n.classList.add('eg-flash'); };
+    if (go === 'model') spot($('bias').closest('.eg-lean') || $('bias'));
+    else if (go === 'ai') spot($('ai-card'));
+    else { const t = $('fc-tf'); if (t && !t.hidden && t.offsetParent) spot(t.closest('section')); else { setTab('tf'); spot($('p-tf')); } }
   }
   function drawPulse(D) {
     const p = $('eg-pulse'), t = $('eg-pulse-t');
