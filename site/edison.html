@@ -811,6 +811,10 @@
   /* Plan a trade: dimmed page behind it, animated close, drag the sheet down on phones */
   .eg-scrim { position: fixed; inset: 0; z-index: 39; background: rgba(10, 10, 16, .38); animation: eg-fade .25s ease both; }
   .eg-scrim.out { animation: eg-fade-out .25s ease both; }
+  /* backdrop behind the Add a market dialog: darker than the planner's, on every screen size; a click closes the dialog */
+  .eg-dim { position: fixed; inset: 0; z-index: 59; background: rgba(8, 8, 14, .55); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); animation: eg-fade .2s ease both; }
+  .eg-dim[hidden] { display: none; }
+  body.eg-dialog-open { overflow: hidden; }
   @media (min-width: 1024px) { .eg-scrim { display: none; } }
   .eg-grab { display: none; }
   @keyframes eg-fade-out { to { opacity: 0; } }
@@ -1333,6 +1337,7 @@
 </div>
 
 <div class="eg-scrim" id="eg-scrim" hidden></div>
+<div class="eg-dim" id="eg-search-dim" hidden></div>
 <aside class="eg-drawer" id="eg-drawer" aria-labelledby="eg-drawer-h" tabindex="-1" hidden>
   <div class="eg-drawer-top">
     <div class="eg-grab" aria-hidden="true"></div>
@@ -1419,6 +1424,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=7"></script>
 <script src="switch.js?v=1"></script>
-<script src="edison.js?v=22"></script>
+<script src="edison.js?v=23"></script>
 </body>
 </html>
