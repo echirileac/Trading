@@ -82,6 +82,18 @@
     narrow.addEventListener('change', () => show(true));
   }
 
+  // ---------- back to top: shown once the page has scrolled more than one screen ----------
+  {
+    const btn = $('eg-top'); let ticking = false;
+    const update = () => { ticking = false; btn.toggleAttribute('data-off', window.scrollY < Math.max(600, window.innerHeight)); };
+    window.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+    btn.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: calm.matches ? 'auto' : 'smooth' });
+      const first = document.querySelector('.eg-bar a, .eg-bar button'); if (first) first.focus({ preventScroll: true });
+    });
+    update();
+  }
+
   // ---------- detail tabs (News, Timeframes, Key levels, Events, Sources, Method) ----------
   const tabs = [...document.querySelectorAll('.eg-tablist [role="tab"]')];
   function setTab(t, focus) {
