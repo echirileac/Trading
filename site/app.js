@@ -424,10 +424,26 @@
     const lv = el('div');
     if (a.levels?.support?.length || a.levels?.resistance?.length) {
       lv.append(el('h4', {}, 'Levels to watch'));
-      const row = el('div', { class: 'lv' });
-      (a.levels.resistance || []).forEach((v) => row.append(el('span', { class: 'down' }, `R ${fmtNum(v, DEC)}`)));
-      (a.levels.support || []).forEach((v) => row.append(el('span', { class: 'up' }, `S ${fmtNum(v, DEC)}`)));
-      lv.append(row); cols.append(lv);
+      // highest first with the live price in its place; colour by type (resistance red, support green), the nearest of
+      // each type filled, and a dashed outline when the price has already crossed the level
+      const row = el('div', { class: 'lv' }), now = DATA.price?.last;
+      const items = [...(a.levels.resistance || []).map((v) => ({ v, t: 'r' })), ...(a.levels.support || []).map((v) => ({ v, t: 's' }))].sort((x, y) => y.v - x.v);
+      const nearR = Math.min(...items.filter((x) => x.t === 'r' && x.v >= now).map((x) => x.v));
+      const nearS = Math.max(...items.filter((x) => x.t === 's' && x.v <= now).map((x) => x.v));
+      let placed = now == null;
+      const pct = (v) => (now ? ` (${v > now ? '+' : ''}${(100 * (v / now - 1)).toFixed(1)}%)` : '');
+      for (const x of items) {
+        if (!placed && x.v < now) { row.append(el('span', { class: 'now', title: 'Live price' }, `Now ${fmtNum(now, DEC)}`)); placed = true; }
+        const crossed = now != null && (x.t === 'r' ? x.v < now : x.v > now);
+        const near = x.v === (x.t === 'r' ? nearR : nearS);
+        const cls = [x.t === 'r' ? 'r down' : 's up', near ? 'near' : '', crossed ? 'crossed' : ''].filter(Boolean).join(' ');
+        const what = x.t === 'r' ? 'Resistance' : 'Support';
+        const title = `${what} ${fmtNum(x.v, DEC)}${pct(x.v)}${crossed ? (x.t === 'r' ? ': the price is already above it, so it may now act as support' : ': the price is already below it, so it may now act as resistance') : near ? `: the nearest ${what.toLowerCase()}` : ''}`;
+        row.append(el('span', { class: cls, title }, `${x.t.toUpperCase()} ${fmtNum(x.v, DEC)}`));
+      }
+      if (!placed) row.append(el('span', { class: 'now', title: 'Live price' }, `Now ${fmtNum(now, DEC)}`));
+      lv.append(row, el('p', { class: 'lv-key' }, 'R resistance (sellers above) · S support (buyers below) · filled = nearest · dashed = already crossed'));
+      cols.append(lv);
     }
     [section('What would change the view', a.flip), section('Risks to watch', a.risks)].forEach((d) => d && cols.append(d));
     box.append(cols);
