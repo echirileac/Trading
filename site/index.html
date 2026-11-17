@@ -250,6 +250,19 @@
   .pc-sub { height: 120px; border-top: 1px solid var(--line); position: relative; }
   .pc-sub .pc-tag { position: absolute; z-index: 2; top: 4px; left: 10px; font-size: 11px; color: var(--muted); pointer-events: none; }
   .pc-credit { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  .pc-fckey { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+  .pc-fckey p { margin: 0; }
+  .pc-fck-h b { color: var(--fg); font-weight: 600; }
+  .pc-fck-r { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; }
+  .pc-fck-i { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .pc-fck-i b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pc-fck-s { font-size: 12px; }
+  .pc-fck-sw { display: inline-block; width: 16px; height: 10px; flex: none; }
+  .pc-fck-sw.c { height: 2px; background: var(--c); }
+  .pc-fck-sw.r68 { background: color-mix(in srgb, var(--c) 40%, transparent); border-top: 1px solid var(--c); border-bottom: 1px solid var(--c); }
+  .pc-fck-sw.r90 { background: color-mix(in srgb, var(--c) 18%, transparent); border-top: 1px dashed var(--c); border-bottom: 1px dashed var(--c); }
+  .pc-fck-n { font-size: 12px; margin-top: 4px !important; }
+  .chips i.pc-fc-chip { height: 8px; background: color-mix(in srgb, var(--fg) 30%, transparent); border-top: 1px solid var(--fg); border-bottom: 1px solid var(--fg); box-sizing: border-box; }
   .view-live .pc-forecast, .view-forecast .pc-live { display: none; }
   .tv-box { height: 560px; border: 1px solid var(--line); border-radius: 0; overflow: hidden; background: var(--panel2); }
   .tv-box .tradingview-widget-container, .tv-box .tradingview-widget-container__widget { width: 100%; height: 100%; }
@@ -1191,18 +1204,19 @@
       <button type="button" data-k="ma50"><i style="background:var(--c-ma50)"></i>MA 50</button>
       <button type="button" data-k="ma200"><i style="background:var(--c-ma200)"></i>MA 200</button>
       <button type="button" data-k="bb"><i style="background:var(--c-bb)"></i>Bollinger</button>
-      <button type="button" data-k="fc"><i style="background:var(--fg)"></i>Forecast</button>
+      <button type="button" data-k="fc"><i class="pc-fc-chip"></i>Forecast</button>
       <button type="button" data-k="rsi">RSI</button>
       <button type="button" data-k="macd">MACD</button>
     </div>
     <p class="note" id="pc-note" hidden style="margin:-4px 0 8px"></p>
+    <div class="pc-fckey" id="pc-fckey" hidden></div>
     <div class="pc-wrap">
       <div class="pc-legend" id="pc-legend"></div>
       <div class="pc-main" id="pc-main"></div>
       <div class="pc-sub" id="pc-rsi-box"><span class="pc-tag" id="pc-rsi-tag">RSI 14</span><div id="pc-rsi" style="height:100%"></div></div>
       <div class="pc-sub" id="pc-macd-box"><span class="pc-tag" id="pc-macd-tag">MACD 12, 26, 9</span><div id="pc-macd" style="height:100%"></div></div>
     </div>
-    <p class="note" style="margin:8px 0 0">1M–1Y: daily candles. 1D and 1W: 15-minute and 1-hour candles built from the server's own price samples (use the Live chart for true intraday candles). Drag to pan, scroll or pinch to zoom. Dashed lines (daily views): the model's centre forecast and 68% range for the selected horizon.</p>
+    <p class="note" style="margin:8px 0 0">1M–1Y: daily candles. 1D and 1W: 15-minute and 1-hour candles built from the server's own price samples (use the Live chart for true intraday candles). Drag to pan, scroll or pinch to zoom; hover or tap the fan to read the forecast for any point. Forecast (every view): a fan from the latest price (“Now”) to the target close of the selected horizon. The line is the model's centre, the darker band the likely range (about 68% of closes land inside) and the lighter band the wide range (about 90%). Its colour follows the lean: green bullish, red bearish, amber neutral.</p>
     <p class="pc-credit">Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>.</p>
     </div>
   </section>
@@ -1462,7 +1476,7 @@
 </div>
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 <script src="edison.js?v=28"></script>
 </body>
 </html>

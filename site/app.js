@@ -514,7 +514,7 @@
       localization: { priceFormatter: (v) => fmtNum(v, DEC) }
     };
   }
-  function pcDestroy() { for (const k of ['main', 'rsi', 'macd']) if (PC[k]) { PC[k].remove(); PC[k] = null; } PC.s = {}; PC.pl = []; }
+  function pcDestroy() { for (const k of ['main', 'rsi', 'macd']) if (PC[k]) { PC[k].remove(); PC[k] = null; } PC.s = {}; PC.pl = []; PC.fan = null; PC.fanData = null; }
   // extra horizontal lines on the Forecast view (Edison Growth draws stop / target / key levels with these)
   let EXTRA_LINES = [];
   function applyExtraLines() {
@@ -534,9 +534,7 @@
     PC.s.ma20 = line(PC.main, '--c-ma20'); PC.s.ma50 = line(PC.main, '--c-ma50'); PC.s.ma200 = line(PC.main, '--c-ma200');
     PC.s.bbU = line(PC.main, '--c-bb', { lineWidth: 1 }); PC.s.bbL = line(PC.main, '--c-bb', { lineWidth: 1 });
     PC.s.bbM = line(PC.main, '--c-bb', { lineWidth: 1, lineStyle: LWC.LineStyle.Dotted });
-    PC.s.fcC = line(PC.main, '--fg', { lineStyle: LWC.LineStyle.Dashed, lineWidth: 2 });
-    PC.s.fcH = line(PC.main, '--muted', { lineStyle: LWC.LineStyle.Dashed, lineWidth: 1 });
-    PC.s.fcL = line(PC.main, '--muted', { lineStyle: LWC.LineStyle.Dashed, lineWidth: 1 });
+    PC.fan = new FanPrimitive(); PC.s.candles.attachPrimitive(PC.fan);
     PC.s.rsi = line(PC.rsi, '--accent', { lastValueVisible: true });
     PC.s.rsi.createPriceLine({ price: 70, color: rgba('--down'), lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
     PC.s.rsi.createPriceLine({ price: 30, color: rgba('--up'), lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
@@ -548,37 +546,190 @@
       if (PC.syncing || !r) return;
       PC.syncing = true; charts.forEach((d) => { if (d !== c) d.timeScale().setVisibleLogicalRange(r); }); PC.syncing = false;
     }));
-    PC.main.subscribeCrosshairMove((p) => pcLegend(p && p.time));
+    PC.main.subscribeCrosshairMove((p) => pcLegend(p && p.time, p && p.logical));
     PC.themeKey = cssVar('--bg');
   }
   function timeKey(t) { return typeof t === 'string' ? t : typeof t === 'number' ? String(t) : t && t.year ? `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}` : null; }
-  function pcLegend(time) {
+  function pcLegend(time, logical) {
     const L = PC.legendMap; if (!L) return;
-    const t = (time && L.get(timeKey(time))) || L.get('__last');
     const box = $('pc-legend'); box.replaceChildren();
-    if (!t) return;
     const add = (label, val, color) => { const s1 = el('span'); if (color) s1.style.color = rgba(color); if (label) s1.append(document.createTextNode(label + ' ')); s1.append(el('b', {}, val)); box.append(s1); };
+    const F = PC.fanData;
+    if (F && PC_SHOW.fc && logical != null && logical > PC.n - 0.5) { // hovering the forecast fan
+      const K = F.slots.length, k = Math.min(K, Math.max(1, Math.ceil(((logical - (PC.n - 1)) * K) / F.span - 0.5))), sl = F.slots[k - 1], v = F.at(sl.s);
+      box.append(el('span', {}, `${sl.label} · forecast`));
+      add('Centre', fmtNum(v.c, DEC), F.colorVar);
+      add('Likely', `${fmtNum(v.l68, DEC)}–${fmtNum(v.h68, DEC)}`);
+      add('Wide', `${fmtNum(v.l90, DEC)}–${fmtNum(v.h90, DEC)}`);
+      return;
+    }
+    const t = (time && L.get(timeKey(time))) || L.get('__last');
+    if (!t) return;
     box.append(el('span', {}, t.label));
     if (t.o != null) { add('O', fmtNum(t.o, DEC)); add('H', fmtNum(t.h, DEC)); add('L', fmtNum(t.l, DEC)); add('C', fmtNum(t.c, DEC)); if (t.chg != null) add('', sp(t.chg)); }
     if (PC_SHOW.ma20 && t.ma20 != null) add('MA20', fmtNum(t.ma20, DEC), '--c-ma20');
     if (PC_SHOW.ma50 && t.ma50 != null) add('MA50', fmtNum(t.ma50, DEC), '--c-ma50');
     if (PC_SHOW.ma200 && t.ma200 != null) add('MA200', fmtNum(t.ma200, DEC), '--c-ma200');
     if (PC_SHOW.bb && t.bbU != null) add('BB', `${fmtNum(t.bbL, DEC)}–${fmtNum(t.bbU, DEC)}`, '--c-bb');
-    if (t.fc) add('Forecast', `${fmtNum(t.fc[1], DEC)} (${fmtNum(t.fc[0], DEC)}–${fmtNum(t.fc[2], DEC)})`);
     const md = DEC > 3 ? DEC : 3;
     $('pc-rsi-tag').textContent = t.rsi != null ? `RSI 14 · ${t.rsi.toFixed(1)}` : 'RSI 14';
     $('pc-macd-tag').textContent = t.macd != null ? `MACD 12, 26, 9 · ${t.macd.toFixed(md)} · signal ${t.sig != null ? t.sig.toFixed(md) : '—'}` : 'MACD 12, 26, 9';
   }
-  function futureDates(lastISO, n, everyDay) {
-    const out = []; let d = new Date(lastISO + 'T00:00:00Z');
-    while (out.length < n) { d = new Date(d.getTime() + 864e5); if (everyDay || d.getUTCDay() % 6 !== 0) out.push(d.toISOString().slice(0, 10)); }
-    return out;
+  // ---------- forecast fan ----------
+  // The forecast card gives centre, likely (68%) and wide (90%) ranges at the target close. On the chart they become a fan
+  // that starts at the latest price and widens with the square root of time, so the end of the fan is exactly the card's numbers.
+  const nyFmt = (() => { try { return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch { return null; } })();
+  function nyWallMs(ymd, hh, mm) { // a New York wall-clock time on a date, in ms
+    const guess = Date.parse(`${ymd}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00Z`);
+    if (!nyFmt) return guess + 5 * 36e5;
+    const q = Object.fromEntries(nyFmt.formatToParts(new Date(guess)).map((x) => [x.type, x.value]));
+    return guess - (Date.UTC(+q.year, q.month - 1, +q.day, +q.hour % 24, +q.minute) - guess);
+  }
+  function closeMs(ymd) { // when the forecast's target close happens (the same close times the server counts sessions by)
+    const m = DATA.meta || {};
+    if (m.category === 'crypto') return Date.parse(ymd + 'T00:00:00Z') + 864e5;
+    if (m.id === 'NATGAS' || m.provider === 'cnbc') return nyWallMs(ymd, 14, 30);
+    if (['equity', 'etf', 'index'].includes(m.category)) return nyWallMs(ymd, 16, 0);
+    return nyWallMs(ymd, 17, 0);
+  }
+  function fcShape(h, L0) {
+    const mH = Math.log(h.center / L0), sH = (Math.log(h.hi68) - Math.log(h.lo68)) / 2;
+    const z = sH > 0 ? (Math.log(h.hi90) - Math.log(h.lo90)) / 2 / sH : 1.75;
+    return (s) => { const m = mH * s, w = sH * Math.sqrt(Math.max(0, s)), e = (x) => L0 * Math.exp(x); return { c: e(m), l68: e(m - w), h68: e(m + w), l90: e(m - z * w), h90: e(m + z * w) }; };
+  }
+  function fanSlots(rows, intra, p, f) {
+    const h = f && f.horizons && f.horizons[H];
+    if (!h || !(h.center > 0) || !(h.lo68 > 0) || !(h.lo90 > 0)) return null;
+    const L0 = p.last ?? rows[rows.length - 1].close;
+    const T = closeMs(h.targetDate), nowMs = Math.min(Date.parse(p.asOf) || Date.now(), T - 60e3);
+    const frac = (ms) => Math.min(1, Math.max(0, (ms - nowMs) / (T - nowMs)));
+    const closeWord = (DATA.meta?.id === 'NATGAS' || DATA.meta?.provider === 'cnbc') ? 'settlement' : 'close';
+    const target = `${dayName(h.targetDate)} ${closeWord}`;
+    const slots = [], ws = []; let squeezed = false;
+    if (intra) {
+      const n = rows.length, lastK = rows[n - 1].k, real = Math.max(1, Math.ceil((T - lastK) / intra.bucket)), cap = Math.max(12, n);
+      const count = Math.min(real, cap), step = real > cap ? (T - lastK) / count : intra.bucket;
+      squeezed = real > cap;
+      const fmtT = (ms) => new Date(ms).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+      for (let i = 1; i <= count; i++) {
+        const ms = i === count ? Math.max(T, lastK + i * step) : lastK + i * step, s = frac(ms);
+        ws.push({ time: Math.round(ms / 1000 - new Date(ms).getTimezoneOffset() * 60) });
+        slots.push({ s, label: s >= 1 ? target : fmtT(ms) });
+      }
+    } else {
+      // the sessions after the last candle up to the target; when the target is the close of the last candle itself
+      // (the session in progress), the fan takes one unlabelled slot to the right of it
+      const everyDay = DATA.meta?.category === 'crypto', lastDate = rows[rows.length - 1].time;
+      for (let d = new Date(lastDate + 'T00:00:00Z'); ;) {
+        d = new Date(d.getTime() + 864e5); const ymd = d.toISOString().slice(0, 10);
+        if (ymd > h.targetDate) break;
+        if (!everyDay && d.getUTCDay() % 6 === 0) continue;
+        slots.push({ s: ymd === h.targetDate ? 1 : frac(closeMs(ymd)), label: ymd === h.targetDate ? target : dayName(ymd) });
+      }
+      if (!slots.length) slots.push({ s: 1, label: target });
+    }
+    // daily views: a few sessions would be a sliver at the right edge, so the fan gets about a fifth of the visible bars
+    // (no dates are put on the axis there; the fan carries its own target label)
+    const span = intra ? slots.length : Math.max(slots.length, Math.round((TF_BARS[PC_TF] || 130) * 0.2));
+    const at = fcShape(h, L0), end = at(1);
+    const colorVar = f.score > 0.15 ? '--up' : f.score < -0.15 ? '--down' : '--neutral';
+    return { slots, ws, span, at, end, h, L0, target, squeezed, stretched: span > slots.length, colorVar, targetShort: dayName(h.targetDate), min: intra ? end.l68 : end.l90, max: intra ? end.h68 : end.h90 };
+  }
+  const withAlpha = (rgb, a) => { const c = (rgb.match(/[\d.]+/g) || [0, 0, 0]).map(Number); return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`; };
+  // Lightweight Charts series primitive: shaded bands under the candles, centre line and labels on top, price-axis labels
+  class FanPrimitive {
+    constructor() { this.d = null; this.on = true; this.req = null; this.axis = []; }
+    attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; this.req = requestUpdate; }
+    detached() { this.chart = this.series = this.req = null; }
+    set(d) {
+      this.d = d;
+      if (d) this.col = { main: rgba(d.colorVar), muted: rgba('--muted'), panel: rgba('--panel'), fg: rgba('--fg'), font: cssVar('--font') || 'sans-serif' };
+      this.updateAllViews(); if (this.req) this.req();
+    }
+    show(on) { this.on = on; this.updateAllViews(); if (this.req) this.req(); }
+    autoscaleInfo(from, to) { const d = this.d; return d && this.on && to >= d.start ? { priceRange: { minValue: d.min, maxValue: d.max } } : null; }
+    updateAllViews() {
+      const d = this.d, S = this.series;
+      if (!d || !this.on || !S) { this.axis = []; return; }
+      const mk = (price, back, text) => ({ coordinate: () => S.priceToCoordinate(price) ?? -100, text: () => fmtNum(price, DEC), textColor: () => text, backColor: () => back, visible: () => true, tickVisible: () => true });
+      this.axis = [mk(d.end.c, this.col.main, this.col.panel)];
+    }
+    priceAxisViews() { return this.axis; }
+    paneViews() {
+      return [
+        { zOrder: () => 'bottom', renderer: () => ({ draw: (t) => this.draw(t, false) }) },
+        { zOrder: () => 'top', renderer: () => ({ draw: (t) => this.draw(t, true) }) }
+      ];
+    }
+    path() { // [{x, v}] sampled along the fan
+      const d = this.d, ts = this.chart.timeScale(), x0 = ts.logicalToCoordinate(d.start), x1 = ts.logicalToCoordinate(d.start + 1);
+      if (x0 == null || x1 == null) return null;
+      const K = d.slots.length, bar = (x1 - x0) * d.span / K, sAt = (u) => { const i = Math.floor(u); if (i >= K) return 1; const a = i ? d.slots[i - 1].s : 0, b = d.slots[i].s; return a + (b - a) * (u - i); };
+      const N = Math.max(24, K * 4), out = [];
+      for (let j = 0; j <= N; j++) { const u = (K * j) / N; out.push({ x: x0 + u * bar, v: d.at(sAt(u)) }); }
+      return out;
+    }
+    draw(target, top) {
+      const d = this.d; if (!d || !this.on || !this.chart || !this.series) return;
+      target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+        const pts = this.path(); if (!pts) return;
+        const y = (p) => this.series.priceToCoordinate(p);
+        const C = this.col, line = (key) => { ctx.beginPath(); pts.forEach((q, i) => { const yy = y(q.v[key]); if (yy == null) return; i ? ctx.lineTo(q.x, yy) : ctx.moveTo(q.x, yy); }); ctx.stroke(); };
+        const band = (lo, hi) => { ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q.x, y(q.v[hi])) : ctx.moveTo(q.x, y(q.v[hi])))); for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x, y(pts[i].v[lo])); ctx.closePath(); ctx.fill(); };
+        const x0 = pts[0].x, xe = pts[pts.length - 1].x;
+        if (!top) {
+          // "now" divider, then wide and likely bands
+          ctx.save(); ctx.strokeStyle = withAlpha(C.muted, 0.45); ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(Math.round(x0) + 0.5, 0); ctx.lineTo(Math.round(x0) + 0.5, mediaSize.height); ctx.stroke(); ctx.restore();
+          ctx.fillStyle = withAlpha(C.main, 0.12); band('l90', 'h90');
+          ctx.fillStyle = withAlpha(C.main, 0.24); band('l68', 'h68');
+          return;
+        }
+        ctx.save();
+        ctx.lineWidth = 1; ctx.strokeStyle = withAlpha(C.main, 0.55); ctx.setLineDash([3, 3]); line('h90'); line('l90');
+        ctx.setLineDash([]); ctx.strokeStyle = withAlpha(C.main, 0.8); line('h68'); line('l68');
+        ctx.lineWidth = 2; ctx.strokeStyle = C.main; line('c');
+        // target marker: a bracket over the wide range with a dot on the centre
+        const yc = y(d.end.c), y9h = y(d.end.h90), y9l = y(d.end.l90);
+        if (yc != null && y9h != null && y9l != null) {
+          ctx.lineWidth = 2; ctx.strokeStyle = C.main; ctx.beginPath(); ctx.moveTo(xe, y9h); ctx.lineTo(xe, y9l); ctx.stroke();
+          ctx.beginPath(); ctx.arc(xe, yc, 4, 0, 2 * Math.PI); ctx.fillStyle = C.main; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = C.panel; ctx.stroke();
+          // labels: target day above the fan, "Now" at the bottom of the divider
+          ctx.font = `600 11px ${C.font}`; ctx.textBaseline = 'bottom'; ctx.lineJoin = 'round';
+          const lbl = d.targetShort, rx = Math.min(xe - 6, mediaSize.width - 4), ly = Math.max(14, y9h - 6);
+          ctx.textAlign = 'right'; ctx.lineWidth = 3; ctx.strokeStyle = C.panel; ctx.strokeText(lbl, rx, ly); ctx.fillStyle = C.main; ctx.fillText(lbl, rx, ly); ctx.textAlign = 'left';
+        }
+        ctx.font = `500 10px ${C.font}`; ctx.textBaseline = 'bottom';
+        const nw = ctx.measureText('Now').width; ctx.lineWidth = 3; ctx.strokeStyle = C.panel; ctx.strokeText('Now', x0 - nw / 2, mediaSize.height - 4); ctx.fillStyle = C.muted; ctx.fillText('Now', x0 - nw / 2, mediaSize.height - 4);
+        ctx.restore();
+      });
+    }
+  }
+  function drawFcKey(F) {
+    const box = $('pc-fckey'); if (!box) return;
+    box.replaceChildren(); box.hidden = !F || !PC_SHOW.fc;
+    if (!F) return;
+    const pct = (v) => sp(100 * (v / F.L0 - 1));
+    const bias = DATA.forecast.bias, col = F.colorVar;
+    const mk = (tag, cls, text, ...kids) => { const n = el(tag, cls ? { class: cls } : {}, text); n.append(...kids); return n; };
+    const b = el('span', {}, bias); b.style.color = `var(${col})`;
+    const head = mk('p', 'pc-fck-h', null, el('b', {}, `${H}-day forecast`), ` to ${F.target} · `, b);
+    const sw = (kind) => { const s1 = el('i', { class: 'pc-fck-sw ' + kind }); s1.style.setProperty('--c', `var(${col})`); return s1; };
+    const item = (kind, name, val, sub) => mk('span', 'pc-fck-i', null, sw(kind), name + ' ', el('b', {}, val), ...(sub ? [el('span', { class: 'pc-fck-s' }, ' ' + sub)] : []));
+    const row = mk('div', 'pc-fck-r', null,
+      item('c', 'Centre', fmtNum(F.end.c, DEC), pct(F.end.c)),
+      item('r68', 'Likely', `${fmtNum(F.end.l68, DEC)} – ${fmtNum(F.end.h68, DEC)}`, '68% of closes'),
+      item('r90', 'Wide', `${fmtNum(F.end.l90, DEC)} – ${fmtNum(F.end.h90, DEC)}`, '90%'));
+    box.append(head, row);
+    if (F.stretched) box.append(el('p', { class: 'pc-fck-n' }, `The fan is drawn wider than ${H === 1 ? 'one day' : H + ' days'} would take on this scale so it can be read; the time axis stops at "Now".`));
+    if (F.squeezed) box.append(el('p', { class: 'pc-fck-n' }, 'Right of "Now" the time axis is squeezed so the whole forecast fits; switch to 1M or longer to see it day by day.'));
   }
   function pcSetVisibility() {
     const v = (k, on) => { if (PC.s[k]) PC.s[k].applyOptions({ visible: !!on }); };
     v('ma20', PC_SHOW.ma20); v('ma50', PC_SHOW.ma50); v('ma200', PC_SHOW.ma200);
     ['bbU', 'bbL', 'bbM'].forEach((k) => v(k, PC_SHOW.bb));
-    ['fcC', 'fcH', 'fcL'].forEach((k) => v(k, PC_SHOW.fc));
+    if (PC.fan) PC.fan.show(!!PC_SHOW.fc);
+    if ($('pc-fckey')) $('pc-fckey').hidden = !PC_SHOW.fc || !PC.fanData;
     $('pc-rsi-box').hidden = !PC_SHOW.rsi; $('pc-macd-box').hidden = !PC_SHOW.macd;
     document.querySelectorAll('#pc-tools button').forEach((b) => b.setAttribute('aria-pressed', String(!!PC_SHOW[b.dataset.k])));
     document.querySelectorAll('#pc-tf button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tf === PC_TF)));
@@ -644,8 +795,8 @@
       labelOf = (r) => dayName(r.time);
     }
     const closes = rows.map((r) => r.close), times = rows.map((r) => r.time);
-    const fut = intra || !rows.length ? [] : futureDates(times[times.length - 1], H, DATA.meta?.category === 'crypto');
-    const ws = fut.map((t) => ({ time: t }));
+    const fan = rows.length ? fanSlots(rows, intra, p, f) : null;
+    const ws = fan ? fan.ws : [];
     const asLine = (arr) => arr.map((v, i) => (v == null ? { time: times[i] } : { time: times[i], value: v })).concat(ws);
     PC.s.candles.applyOptions({ priceFormat: { type: 'price', precision: DEC, minMove: 1 / 10 ** DEC } });
     PC.s.candles.setData(rows.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })).concat(ws));
@@ -656,30 +807,22 @@
     PC.s.macd.setData(asLine(mac.line)); PC.s.sig.setData(asLine(mac.sig));
     const upC = CANDLE_UP, dnC = CANDLE_DOWN;
     PC.s.hist.setData(mac.hist.map((v, i) => (v == null ? { time: times[i] } : { time: times[i], value: v, color: v >= 0 ? upC : dnC })).concat(ws));
-    // forecast lines (daily views only): centre and 68% band, same maths as the forecast card
-    let fcPts = [];
-    if (!intra && rows.length) {
-      const mu = f.score * 0.25 * f.sigmaDaily, sg = f.sigmaDaily, L0 = p.last ?? closes[closes.length - 1];
-      fcPts = [{ time: times[times.length - 1], c: L0, h: L0, l: L0 }].concat(fut.map((t, k) => ({
-        time: t, c: L0 * Math.exp(mu * (k + 1)), h: L0 * Math.exp(mu * (k + 1) + sg * Math.sqrt(k + 1)), l: L0 * Math.exp(mu * (k + 1) - sg * Math.sqrt(k + 1))
-      })));
-    }
-    PC.s.fcC.setData(fcPts.map((x) => ({ time: x.time, value: x.c })));
-    PC.s.fcH.setData(fcPts.map((x) => ({ time: x.time, value: x.h })));
-    PC.s.fcL.setData(fcPts.map((x) => ({ time: x.time, value: x.l })));
+    // forecast fan (every view): from the latest price to the target close, same numbers as the forecast card
+    PC.fanData = fan;
+    PC.fan.set(fan ? { ...fan, start: rows.length - 1 } : null);
+    drawFcKey(fan);
     // legend lookup
     const map = new Map();
     rows.forEach((r, i) => map.set(String(r.time), { label: labelOf(r), o: r.open, h: r.high, l: r.low, c: r.close, chg: i ? 100 * (r.close / rows[i - 1].close - 1) : null, ma20: ma20[i], ma50: ma50[i], ma200: ma200[i], bbU: bb.up[i], bbL: bb.lo[i], rsi: rsi[i], macd: mac.line[i], sig: mac.sig[i] }));
-    fcPts.slice(1).forEach((x) => map.set(String(x.time), { label: dayName(x.time) + ' (forecast)', fc: [x.l, x.c, x.h] }));
     if (times.length) map.set('__last', map.get(String(times[times.length - 1])));
     PC.legendMap = map;
-    PC.n = rows.length; PC.future = fut.length; PC.key = id; PC.h = H;
+    PC.n = rows.length; PC.future = fan ? fan.span : 0; PC.key = id; PC.h = H;
     pcSetVisibility();
     if (keepRange) PC.main.timeScale().setVisibleLogicalRange(keepRange); else pcRange();
     pcLegend(null);
     applyExtraLines();
   }
-  document.querySelectorAll('#pc-tf button').forEach((b) => b.addEventListener('click', () => { const was = INTRA[PC_TF] ? PC_TF : 'daily'; PC_TF = b.dataset.tf; keep('pc-tf', PC_TF); const now = INTRA[PC_TF] ? PC_TF : 'daily'; if (was !== now && DATA) pcUpdate(); else { pcSetVisibility(); pcRange(); } }));
+  document.querySelectorAll('#pc-tf button').forEach((b) => b.addEventListener('click', () => { const was = INTRA[PC_TF] ? PC_TF : 'daily'; PC_TF = b.dataset.tf; keep('pc-tf', PC_TF); const now = INTRA[PC_TF] ? PC_TF : 'daily'; if (DATA) { pcUpdate(); if (was === now) pcRange(); } }));
   document.querySelectorAll('#pc-tools button').forEach((b) => b.addEventListener('click', () => { PC_SHOW[b.dataset.k] = !PC_SHOW[b.dataset.k]; keep('pc-show', PC_SHOW); pcSetVisibility(); pcLegend(null); }));
 
   // ---------- chart views + live chart (TradingView Advanced Chart widget: free, no key, data included) ----------
