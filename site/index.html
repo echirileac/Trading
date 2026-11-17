@@ -1028,6 +1028,20 @@
   .eg-views { display: contents; } /* <main> for screen readers, no effect on the layout */
   .sym h1 { margin: 0; font: inherit; letter-spacing: inherit; }
   .btn.icon { flex: none; min-width: 40px; min-height: 40px; } /* the drawer's close button no longer shrinks on phones */
+
+  /* ---------- top bar on phones: one row, all controls the same 40px round size ----------
+     (the lock used to wrap onto its own line, and the Telegram and theme buttons were wider than the lock) */
+  @media (max-width: 760px) {
+    .eg-bar { flex-wrap: nowrap; gap: 6px; padding: 8px 8px 8px 12px; min-width: 0; }
+    .eg-sp { flex: 1 1 0; min-width: 0; }
+    .eg-brand { min-width: 0; flex: 0 1 auto; }
+    .eg-brand span { overflow: hidden; text-overflow: ellipsis; }
+    .eg-pulse { flex: none; width: 20px; justify-content: center; }
+    .eg-bar > .btn { flex: none; min-height: 40px; height: 40px; }
+    .eg-bar > .theme-btn, .eg-bar > .icon { width: 40px; min-width: 40px; padding: 0; }
+    .eg-bar > .tg-btn { padding: 0 8px; }
+  }
+  @media (max-width: 370px) { .eg-brand span { display: none; } } /* small phones (360 px Android): the logo alone */
 </style>
 </head>
 <body data-view="market">
