@@ -267,6 +267,30 @@
     if (bar && window.ResizeObserver) new ResizeObserver(() => { setStick(); soon(); }).observe(bar);
   }
 
+  // ---------- chart card: floating 1 / 3 / 5 day switch ----------
+  // Shown while the chart card is on screen but its top (with the forecast card's switch above it) has scrolled away.
+  {
+    const hz = document.getElementById('pc-hz'), card = document.getElementById('pc-card');
+    if (hz && card) {
+      let ticking = false;
+      const update = () => {
+        ticking = false;
+        if (!hz.offsetParent) { hz.classList.remove('on'); return; }
+        const line = parseFloat(getComputedStyle(hz).top) || 0, r = card.getBoundingClientRect();
+        const on = r.top < line - 4 && r.bottom > line + 120;
+        if (on !== hz.classList.contains('on')) {
+          hz.classList.toggle('on', on); hz.setAttribute('aria-hidden', String(!on));
+          hz.querySelectorAll('button').forEach((b) => b.tabIndex = on ? 0 : -1);
+        }
+      };
+      const soon = () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } };
+      window.addEventListener('scroll', soon, { passive: true });
+      window.addEventListener('resize', soon);
+      document.querySelectorAll('#pc-view button').forEach((b) => b.addEventListener('click', () => setTimeout(soon, 0)));
+      soon();
+    }
+  }
+
   // ---------- key levels on a price scale ----------
   // Levels as ticks on a vertical price scale (red resistance, green support), the live price as a dashed line with
   // a pill, and the forecast range for the chosen horizon as a shaded bar: dark = likely (68%), light = possible

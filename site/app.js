@@ -696,7 +696,7 @@
           ctx.beginPath(); ctx.arc(xe, yc, 4, 0, 2 * Math.PI); ctx.fillStyle = C.main; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = C.panel; ctx.stroke();
           // labels: target day above the fan, "Now" at the bottom of the divider
           ctx.font = `600 11px ${C.font}`; ctx.textBaseline = 'bottom'; ctx.lineJoin = 'round';
-          const lbl = d.targetShort, rx = Math.min(xe - 6, mediaSize.width - 4), ly = Math.max(14, y9h - 6);
+          const y6h = y(d.end.h68), lbl = d.targetShort, rx = Math.min(xe - 6, mediaSize.width - 4), ly = Math.max(14, (y6h ?? y9h) - 6);
           ctx.textAlign = 'right'; ctx.lineWidth = 3; ctx.strokeStyle = C.panel; ctx.strokeText(lbl, rx, ly); ctx.fillStyle = C.main; ctx.fillText(lbl, rx, ly); ctx.textAlign = 'left';
         }
         ctx.font = `500 10px ${C.font}`; ctx.textBaseline = 'bottom';
