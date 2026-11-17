@@ -264,6 +264,14 @@
   .pc-fck-n { font-size: 12px; margin-top: 4px !important; }
   .chips i.pc-fc-chip { height: 8px; background: color-mix(in srgb, var(--fg) 30%, transparent); border-top: 1px solid var(--fg); border-bottom: 1px solid var(--fg); box-sizing: border-box; }
   .view-live .pc-forecast, .view-forecast .pc-live { display: none; }
+  /* Forecast view: a copy of the 1 / 3 / 5 day switch floats at the top right of the screen once the chart card's top has
+     scrolled away, and leaves with the card (sticky inside it; its own height is cancelled by the negative margin so it takes no space) */
+  .pc-hz { position: sticky; top: calc(var(--eg-stick, 0px) + env(safe-area-inset-top, 0px) + 8px); z-index: 25; height: 52px; margin: 0 0 -52px; display: flex; justify-content: flex-end; pointer-events: none; }
+  .pc-hz .seg { box-shadow: var(--float); border: 1px solid var(--line); background: color-mix(in srgb, var(--panel2) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    opacity: 0; translate: 0 -8px; visibility: hidden; transition: opacity .18s ease, translate .18s ease, visibility 0s linear .18s; }
+  .pc-hz.on .seg { opacity: 1; translate: 0 0; visibility: visible; pointer-events: auto; transition: opacity .18s ease, translate .18s ease, visibility 0s; }
+  .view-live .pc-hz { display: none; }
+  @media (prefers-reduced-motion: reduce) { .pc-hz .seg { transition: none; } }
   .tv-box { height: 560px; border: 1px solid var(--line); border-radius: 0; overflow: hidden; background: var(--panel2); }
   .tv-box .tradingview-widget-container, .tv-box .tradingview-widget-container__widget { width: 100%; height: 100%; }
   .tv-sym { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 12px 0 0; }
@@ -1178,6 +1186,7 @@
         </div>
 
         <section class="card view-live" id="pc-card">
+    <div class="pc-hz" id="pc-hz" aria-hidden="true"><nav class="seg" role="tablist" aria-label="Forecast horizon"><button role="tab" data-h="1" tabindex="-1">1 day</button><button role="tab" data-h="3" tabindex="-1">3 days</button><button role="tab" data-h="5" tabindex="-1">5 days</button></nav></div>
     <div class="pc-head">
       <h2>Chart</h2>
       <div class="chips" id="pc-view" role="group" aria-label="Chart view">
@@ -1476,7 +1485,7 @@
 </div>
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
-<script src="app.js?v=11"></script>
-<script src="edison.js?v=28"></script>
+<script src="app.js?v=12"></script>
+<script src="edison.js?v=29"></script>
 </body>
 </html>
