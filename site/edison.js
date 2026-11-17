@@ -96,8 +96,11 @@
 
   // ---------- detail tabs (News, Timeframes, Key levels, Events, Sources, Method) ----------
   const tabs = [...document.querySelectorAll('.eg-tablist [role="tab"]')];
-  function setTab(t, focus) {
-    const keep = tabHeadStuck(); // switching while the row is stuck: show the new panel from its top, under the row
+  function setTab(t, focus, user) {
+    // a tab tapped while the row is stuck: show the new panel from its top, under the row. Only for a tap or a key:
+    // the page also calls setTab on every redraw (each refresh, and each resize, which iOS fires whenever its toolbar
+    // shows or hides while scrolling), and those must never move the page.
+    const keep = user && tabHeadStuck();
     let b = tabs.find((x) => x.dataset.tab === t && !x.hidden) || tabs.find((x) => !x.hidden);
     tabs.forEach((x) => { const on = x === b; x.setAttribute('aria-selected', String(on)); x.tabIndex = on ? 0 : -1; $(x.getAttribute('aria-controls')).hidden = !on; });
     put('eg-tab', b.dataset.tab);
@@ -108,12 +111,12 @@
     if (focus) b.focus({ preventScroll: true });
   }
   tabs.forEach((b, i) => {
-    b.addEventListener('click', () => setTab(b.dataset.tab));
+    b.addEventListener('click', () => setTab(b.dataset.tab, false, true));
     b.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
       e.preventDefault();
       const vis = tabs.filter((x) => !x.hidden), k = vis.indexOf(b);
-      setTab(vis[(k + (e.key === 'ArrowRight' ? 1 : vis.length - 1)) % vis.length].dataset.tab, true);
+      setTab(vis[(k + (e.key === 'ArrowRight' ? 1 : vis.length - 1)) % vis.length].dataset.tab, true, true);
     });
   });
   // "Patterns and hit rates" in the timeframes card jumps to the Timeframes tab (app.js then scrolls to it)
