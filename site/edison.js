@@ -30,8 +30,8 @@
     if (was && was !== v) document.body.dataset.dir = VIEWS.indexOf(v) > VIEWS.indexOf(was) ? 'fwd' : 'back'; // slide in from that side
     document.body.dataset.view = v; put('eg-view', v);
     document.querySelectorAll('.eg-nav button').forEach((b) => { if (b.dataset.go === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    drawBadge(); // first: the badge changes the Alerts button's width, and the pill is sized from it
     movePill(!was);
-    drawBadge();
     if (v === 'alerts') loadFeed();
     if (v === 'record' && S.DATA) requestAnimationFrame(() => drawTrackViz(S.DATA, S.H)); // measured once the page is visible
     if (v === 'markets') syncMarketsView();
@@ -895,8 +895,10 @@
     if (btn) {
       let b = btn.querySelector('.eg-badge');
       if (!b) { b = el('span', { class: 'eg-badge', 'aria-hidden': 'true' }); btn.append(b); }
+      const before = btn.offsetWidth;
       b.hidden = !n;
       b.textContent = n > 99 ? '99+' : String(n);
+      if (btn.offsetWidth !== before) movePill(true); // the tabs moved: keep the selection pill on the current tab
       if (n) btn.setAttribute('aria-label', `Alerts, ${n} new`); else btn.removeAttribute('aria-label');
       if (n > BADGE_N) replay(b, 'eg-badge-pop');
     }
