@@ -1,5 +1,5 @@
 // Edison Growth: layout extras on top of the shared page code (app.js).
-// app.js fills every element by id exactly as on Classic; this file adds the views (Markets, Market, Alerts, Track record),
+// app.js fills every element by id (it was written for the Classic page, now archived in archive/classic/); this file adds the views (Markets, Market, Alerts, Track record),
 // the detail tabs, the Plan a trade drawer, the market tiles, the all-markets alert feed and a few summaries.
 // It reads data only through window.MW, never changes the data files, and keeps its own settings under 'eg-*' keys.
 (() => {
@@ -664,7 +664,7 @@
     $('eg-tiles').hidden = MV !== 'tiles';
     $('ov').hidden = MV !== 'table';
     if (MV === 'table' && !$('ov').open) {
-      // open the table without changing Classic's remembered open/closed state for it
+      // open the table without changing app.js's remembered open/closed state for it
       let prev = null; try { prev = localStorage.getItem('ov-open'); } catch { /* none */ }
       $('ov').open = true;
       setTimeout(() => { try { if (prev == null) localStorage.removeItem('ov-open'); else localStorage.setItem('ov-open', prev); } catch { /* ignore */ } }, 60);
@@ -853,9 +853,9 @@
 
   // ---------- first-visit tour ----------
   const TOUR = [
-    ['Welcome to Edison Growth', 'Same data, password and settings as Classic, arranged in four places: Markets, Market, Alerts and Track record. You can switch back to Classic from the top bar any time.'],
+    ['Welcome to Edison Growth', 'Every market in four places: Markets, Market, Alerts and Track record. Pick one from the top bar (the bottom bar on phones).'],
     ['The range comes first', 'The forecast leads with the likely range, where about 68% of closes land. The model\'s up/down lean is a small line under it: it has been right about half the time, so treat it as context.'],
-    ['Plan a trade', 'Plan a trade opens the risk helper beside the chart, with the inputs you saved in Classic. Entry, stop and target are drawn on the Forecast view of the chart.']
+    ['Plan a trade', 'Plan a trade opens the risk helper beside the chart. Your inputs stay in this browser. Entry, stop and target are drawn on the Forecast view of the chart.']
   ];
   let tourStep = 0;
   function showTour(i) {

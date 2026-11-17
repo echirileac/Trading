@@ -334,7 +334,7 @@
     else b.className = 'banner';
   }
 
-  // Edison Growth (edison.html) runs this same file and listens for these events to draw its own extras; Classic ignores them.
+  // Edison Growth (index.html + edison.js) listens for these events to draw its own extras.
   const mwState = () => ({ DATA, INDEX, H, CUR_ID });
   const emit = (name) => { try { document.dispatchEvent(new CustomEvent(name, { detail: mwState() })); } catch { /* old browser */ } };
   // A table box that scrolls sideways can be reached with the keyboard (and is announced as a region); one that fits is not a tab stop.
