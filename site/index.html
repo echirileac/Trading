@@ -259,7 +259,15 @@
   .eg-chartnote { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
 
   /* detail tabs */
-  .eg-tablist { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; margin: -8px -4px 18px; scrollbar-width: none; }
+  .eg-tablist { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; margin: 0; scrollbar-width: none; }
+  /* the tab row sticks to the top of the screen while the card is on screen (under the top bar on computers, where that
+     bar is sticky) and leaves with the card. The wrapper spans the card's full width so stories never show beside it;
+     it gets the card's background only once stuck, so its square corners never cover the card's rounded ones. */
+  .eg-tabs { --cp: 22px; }
+  .eg-tabsentry { height: 0; }
+  .eg-tabhead { position: sticky; top: calc(var(--eg-stick, 0px) + env(safe-area-inset-top, 0px)); z-index: 20; margin: -8px calc(-1 * var(--cp)) 18px; padding: 0 calc(var(--cp) - 4px); transition: background-color .2s ease, box-shadow .2s ease; }
+  .eg-tabhead.stuck { background: var(--panel); box-shadow: 0 1px 0 var(--line), 0 8px 16px -12px rgb(0 0 0 / .45); }
+  .eg-tabs .eg-panel, .eg-tabs .eg-panel .card { scroll-margin-top: calc(var(--eg-stick, 0px) + env(safe-area-inset-top, 0px) + 64px); }
   .eg-tablist button { appearance: none; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font: 500 14px var(--font); padding: 14px 14px 12px; cursor: pointer; white-space: nowrap; }
   .eg-tablist button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
   /* tabs keep their full label and the row scrolls sideways when they do not fit (phones) */
@@ -652,6 +660,7 @@
     .theme-btn span, #tg-lbl { display: none; }
     .eg-pulse span { display: none; }
     .card { padding: 18px; border-radius: 0; }
+    .eg-tabs { --cp: 18px; }
     .price { font-size: 48px; }
     .ranges .r-likely b { font-size: 32px; }
     .ranges { gap: 12px 24px; }
@@ -1199,6 +1208,8 @@
   </section>
 
         <section class="card eg-tabs" aria-label="Market details">
+          <div class="eg-tabsentry" aria-hidden="true"></div>
+          <div class="eg-tabhead">
           <div class="eg-tablist" role="tablist" aria-label="Market details">
             <button type="button" role="tab" id="t-news" data-tab="news" aria-controls="p-news">News</button>
             <button type="button" role="tab" id="t-tf" data-tab="tf" aria-controls="p-tf">Timeframes</button>
@@ -1206,6 +1217,7 @@
             <button type="button" role="tab" id="t-events" data-tab="events" aria-controls="p-events">Events</button>
             <button type="button" role="tab" id="t-sources" data-tab="sources" aria-controls="p-sources">Sources</button>
             <button type="button" role="tab" id="t-method" data-tab="method" aria-controls="p-method">Method</button>
+          </div>
           </div>
           <div class="eg-panel needs-data" role="tabpanel" id="p-news" aria-labelledby="t-news" data-panel="news">
             <p class="note" id="news-note"></p>
@@ -1451,6 +1463,6 @@
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=10"></script>
-<script src="edison.js?v=26"></script>
+<script src="edison.js?v=27"></script>
 </body>
 </html>

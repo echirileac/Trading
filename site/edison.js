@@ -97,13 +97,15 @@
   // ---------- detail tabs (News, Timeframes, Key levels, Events, Sources, Method) ----------
   const tabs = [...document.querySelectorAll('.eg-tablist [role="tab"]')];
   function setTab(t, focus) {
+    const keep = tabHeadStuck(); // switching while the row is stuck: show the new panel from its top, under the row
     let b = tabs.find((x) => x.dataset.tab === t && !x.hidden) || tabs.find((x) => !x.hidden);
     tabs.forEach((x) => { const on = x === b; x.setAttribute('aria-selected', String(on)); x.tabIndex = on ? 0 : -1; $(x.getAttribute('aria-controls')).hidden = !on; });
     put('eg-tab', b.dataset.tab);
     if (b.dataset.tab === 'levels' && S.DATA) drawLevelViz(S.DATA, S.H); // measured only once the tab is visible
     if (b.dataset.tab === 'method' && S.DATA && S.DATA.forecast) drawMethod(S.DATA, S.H); // the chart is sized to the visible panel
     tabIntoView(b, !focus);
-    if (focus) b.focus();
+    if (keep) tabHeadToTop();
+    if (focus) b.focus({ preventScroll: true });
   }
   tabs.forEach((b, i) => {
     b.addEventListener('click', () => setTab(b.dataset.tab));
@@ -232,6 +234,34 @@
     tabRow.addEventListener('scroll', tabEdges, { passive: true });
     window.addEventListener('resize', tabEdges);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(tabEdges);
+  }
+  // ---------- detail tabs: the tab row sticks to the top while the card is on screen ----------
+  // CSS does the sticking; the script only says where (right under the top bar on computers, where that bar is sticky;
+  // the top of the screen on phones, where it scrolls away) and marks the row "stuck" so it gets a background and a hairline.
+  const TAB_HEAD = document.querySelector('.eg-tabhead'), TAB_SENTRY = document.querySelector('.eg-tabsentry');
+  function stickTop() { return TAB_HEAD ? parseFloat(getComputedStyle(TAB_HEAD).top) || 0 : 0; }
+  function tabHeadStuck() { // where the row would be without sticking (8px above the marker, see the CSS margin) is above its sticky line
+    if (!TAB_HEAD || !TAB_SENTRY || !TAB_HEAD.offsetParent) return false;
+    return TAB_SENTRY.getBoundingClientRect().top - 8 < stickTop() - 1;
+  }
+  function tabHeadToTop() {
+    const d = TAB_SENTRY.getBoundingClientRect().top - 8 - stickTop();
+    if (d < 0) window.scrollTo({ top: window.scrollY + d, behavior: 'auto' });
+  }
+  if (TAB_HEAD) {
+    const bar = document.querySelector('.eg-bar');
+    const setStick = () => { // the top bar's bottom edge plus a small gap when it is sticky, else 0
+      const sticky = bar && getComputedStyle(bar).position === 'sticky';
+      const v = sticky ? Math.round((parseFloat(getComputedStyle(bar).top) || 0) + bar.offsetHeight + 8) : 0;
+      document.documentElement.style.setProperty('--eg-stick', v + 'px');
+    };
+    let ticking = false;
+    const update = () => { ticking = false; TAB_HEAD.classList.toggle('stuck', tabHeadStuck()); };
+    const soon = () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } };
+    setStick(); update();
+    window.addEventListener('scroll', soon, { passive: true });
+    window.addEventListener('resize', () => { setStick(); soon(); });
+    if (bar && window.ResizeObserver) new ResizeObserver(() => { setStick(); soon(); }).observe(bar);
   }
 
   // ---------- key levels on a price scale ----------
