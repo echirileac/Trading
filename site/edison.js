@@ -776,7 +776,9 @@
     }
     const ms = I.markets, open = ms.filter((m) => m.market === 'open').length, off = ms.filter((m) => m.tgOff).length;
     const nx = ms.filter((m) => m.next).sort((a, b) => ((a.next.at || a.next.date) < (b.next.at || b.next.date) ? -1 : 1))[0];
-    $('eg-mk-sum').textContent = `${ms.length} market${ms.length > 1 ? 's' : ''} · ${open} open${off ? ` · Telegram off for ${off}` : ''}${nx ? ` · next: ${nx.next.name.replace(/ \(expected date\)/, '')} (${nameOf(nx)}), ${whenOf(nx.next)}` : ''}`;
+    // two short lines: the counts, then the next release on its own line
+    $('eg-mk-sum').replaceChildren(`${ms.length} market${ms.length > 1 ? 's' : ''} · ${open} open${off ? ` · Telegram off for ${off}` : ''}`,
+      ...(nx ? [el('span', { class: 'eg-mk-next' }, `Next: ${nx.next.name.replace(/ \(expected date\)/, '')} (${nameOf(nx)}) · ${whenOf(nx.next)}`)] : []));
   }
 
   // ---------- alerts: one feed for every market ----------
