@@ -1023,6 +1023,20 @@
      (page heads: horizon / tiles-table / Add market; forecast card: horizon; chart: Live / Forecast;
      top bar on phones: lock). Filter chips stay left, like the text they filter. */
   .eg-tools { margin-left: auto; justify-content: flex-end; }
+  .eg-mk-next { display: block; margin-top: 2px; }
+  /* Markets page head on phones: "+ Add market" sits on the title's line, on the right; the horizon and tiles/table
+     switches share one full-width toolbar row below the summary (horizon stretches, view switch stays compact),
+     so nothing wraps onto a lone line and no empty gap is left on the left. */
+  @media (max-width: 760px) {
+    .eg-view[data-view="markets"] > .eg-pagehead { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; row-gap: 0; align-items: center; }
+    .eg-view[data-view="markets"] > .eg-pagehead > div:first-child, .eg-view[data-view="markets"] .eg-tools { display: contents; }
+    .eg-view[data-view="markets"] .eg-pagehead h1 { grid-area: 1 / 1 / 2 / -1; padding-right: 150px; } /* shares the line with Add market, which overlays its right end */
+    .eg-view[data-view="markets"] .eg-pagehead p { grid-area: 2 / 1 / 3 / -1; margin-top: 6px; line-height: 1.45; }
+    #eg-add { grid-area: 1 / 1 / 2 / -1; justify-self: end; min-height: 40px; padding: 0 16px; background: var(--accent-soft); color: var(--accent-text); border-color: transparent; font-weight: 600; }
+    .eg-view[data-view="markets"] .eg-tools > .seg { grid-area: 3 / 1; margin-top: 16px; grid-auto-columns: 1fr; width: 100%; }
+    .eg-view[data-view="markets"] .eg-tools > .eg-seg { grid-area: 3 / 2; margin-top: 16px; }
+    .eg-view[data-view="markets"] .eg-tools > .seg button { padding-inline: 8px; }
+  }
   .fc-head > .seg, .pc-head > #pc-view { margin-left: auto; }
   .eg-bar { justify-content: flex-end; } /* the spacer fills the first line, so only a wrapped line moves right */
   .seg { max-width: 100%; }
