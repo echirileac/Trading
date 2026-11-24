@@ -64,11 +64,22 @@
       "exchange": "NASDAQ",
       "type": "Common Stock",
       "provider": "twelvedata",
-      "newsQuery": "Take-Two Interactive stock",
+      "newsQuery": "Take-Two",
       "keywords": [
-        "Take-Two Interactive",
-        "TTWO"
-      ]
+        "Take-Two",
+        "TTWO",
+        "Rockstar Games",
+        "Grand Theft Auto",
+        "GTA 6",
+        "GTA VI",
+        "2K Games",
+        "Zynga"
+      ],
+      "extraQueries": [
+        "GTA 6 Rockstar",
+        "Take-Two shares"
+      ],
+      "newsContext": "Take-Two owns Rockstar Games (Grand Theft Auto, GTA 6), 2K and Zynga; news about these games and studios counts as news about Take-Two."
     },
     {
       "id": "NVDA-NASDAQ",
