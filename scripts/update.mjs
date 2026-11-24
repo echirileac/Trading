@@ -373,7 +373,10 @@ const TRUSTED = [
   'reuters', 'bloomberg', 'natural gas intelligence', 'ngi', 'fxempire', 'fx empire', 'barchart', 'nasdaq', 'energy intelligence',
   's&p global', 'spglobal', 'eia', 'energy information administration', 'investing.com', 'marketwatch', 'wall street journal', 'wsj',
   'cnbc', 'financial times', 'argus', 'rbn energy', 'trading economics', 'tradingeconomics', 'oilprice', 'associated press', 'ap news',
-  'rigzone', 'icis', 'platts', 'kpler', 'american gas association', 'aga', 'world oil', 'hart energy', 'forbes', 'yahoo finance', 'morningstar'
+  'rigzone', 'icis', 'platts', 'kpler', 'american gas association', 'aga', 'world oil', 'hart energy', 'forbes', 'yahoo finance', 'morningstar',
+  // stock coverage: these write most of the day-to-day news on mid-cap companies
+  "barron's", 'barrons', 'motley fool', 'fool.com', 'benzinga', 'zacks', 'seeking alpha', 'seekingalpha', 'tipranks', 'thestreet',
+  "investor's business daily", 'investors.com', 'business insider', 'quartz', 'axios'
 ];
 const QUERIES = [
   'natural gas futures when:3d',
@@ -606,9 +609,15 @@ function profileFor(m) {
   const kw = (m.keywords && m.keywords.length ? m.keywords : [m.name.split(/[\s(),.\-\/]+/).filter((w) => w.length > 3 && !/^(inc|corp|class|common|stock|spot|the|limited|group|holdings?|plc|index|performance|ordinary|shares?)$/i.test(w)).slice(0, 3).join(' '), ...m.symbol.split(/[\/:]/).filter((w) => w.length > 2)]).filter(Boolean);
   const relevant = new RegExp(kw.map((k) => `\\b${escapeRe(k)}`).join('|'), 'i');
   const q = m.newsQuery || kw[0];
+  const stock = m.category === 'equity' || m.category === 'etf';
+  // Stocks also search by ticker ("TTWO stock"), since many headlines use it; extraQueries in watchlist.json add
+  // searches for things that move a stock without naming it (a product launch, a subsidiary).
+  const queries = [`"${q}" when:3d`, `${q.replace(/ price$/i, '')} price outlook when:3d`,
+    ...(stock && m.symbol && !m.symbol.includes('/') ? [`${m.symbol} stock when:3d`] : []),
+    ...(m.extraQueries || []).map((x) => (/\bwhen:\d+d\b/.test(x) ? x : `${x} when:3d`))];
   return {
     id: m.id,
-    queries: [`"${q}" when:3d`, `${q.replace(/ price$/i, '')} price outlook when:3d`],
+    queries: [...new Set(queries)],
     relevant, lex: lexFor(m.category),
     sentence: new RegExp(`${relevant.source}|price|market|demand|supply|rate|forecast|outlook|investor|trader`, 'i'),
     directFeeds: m.category === 'energy' || m.category === 'metal' ? GENERAL_FEEDS : [],
@@ -1327,7 +1336,7 @@ async function aiScoreNews(m, news, prevNews, now) {
   if (todo.length && !GROQ_KEY) news.scorer = { kind: 'keywords', error: 'no GROQ_API_KEY' };
   else if (todo.length && retryOk && newsAiCallsLeft > 0) {
     newsAiCallsLeft--;
-    const what = `${m.name} (${m.symbol}${m.exchange ? ', ' + m.exchange : ''}${m.category === 'etf' ? ', ETF' : m.category === 'equity' ? ' shares' : ''})`;
+    const what = `${m.name} (${m.symbol}${m.exchange ? ', ' + m.exchange : ''}${m.category === 'etf' ? ', ETF' : m.category === 'equity' ? ' shares' : ''})${m.newsContext ? `. ${m.newsContext}` : ''}`;
     const user = `Market: ${what}\nHeadlines:\n` + todo.map((it, k) => `${k + 1}. [${it.source}, ${Math.max(0, Math.round((now - Date.parse(it.publishedAt)) / 36e5))}h ago] ${it.title}`).join('\n');
     const errors = [];
     let done = false;
