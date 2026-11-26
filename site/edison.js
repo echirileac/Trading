@@ -182,7 +182,7 @@
     const now = Date.now();
     const evs = (D.events || []).filter((e) => (e.at ? Date.parse(e.at) : Date.parse(e.date + 'T23:59:59Z')) >= now)
       .sort((a, b) => (a.at || a.date) < (b.at || b.date) ? -1 : 1);
-    if (evs[0]) return { name: evs[0].name.replace(/ \(expected date\)/, ''), when: whenOf(evs[0]) };
+    if (evs[0]) return { name: evs[0].name.replace(/ \(expected date\)/, ''), when: whenOf(evs[0]) + (evs[0].moved && evs[0].usual ? ` · ${evs[0].expected ? 'expected to move' : 'moved'} from ${MW.dayName(evs[0].usual.date)}${evs[0].why ? ` (${evs[0].why})` : ''}` : '') };
     const ed = D.meta && D.meta.earnings && D.meta.earnings.date;
     if (ed && Date.parse(ed + 'T23:59:59Z') >= now) return { name: 'Earnings report', when: whenOf({ date: ed, allDay: true }) };
     return null;
