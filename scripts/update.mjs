@@ -816,18 +816,135 @@ function buildForecast(px, news, now, opts = { calendar: 'ng' }) {
 }
 
 // ---------- scheduled events ----------
-// What is known ahead of time and can move a market: weekly EIA reports, Fed decisions, a stock's next earnings date.
-// They are shown on the forecast and given to the analyst. Ranges are NOT widened for them: over the last year the EIA
-// report days were no more volatile at the close than other days (Thursday 0.96x for natural gas, Wednesday 1.13x for Brent).
-const FOMC_DAYS = ['2026-12-09', '2027-01-27', '2027-03-17', '2027-04-28', '2027-06-09', '2027-07-28', '2027-09-15', '2027-10-27', '2027-12-08', '2028-01-26']; // decision days (14:00 New York), from federalreserve.gov; 2027 is tentative
-// US Bureau of Labor Statistics release schedules (8:30 New York), from bls.gov/schedule; BLS can move a date.
-const CPI_DAYS = ['2026-12-10', '2027-01-13', '2027-02-11', '2027-03-10', '2027-04-13', '2027-05-12', '2027-06-10', '2027-07-14', '2027-08-11', '2027-09-14', '2027-10-14', '2027-11-10', '2027-12-10'];
-const JOBS_DAYS = ['2026-12-04', '2027-01-08', '2027-02-05', '2027-03-05', '2027-04-02', '2027-05-07', '2027-06-04', '2027-07-02', '2027-08-06', '2027-09-03', '2027-10-08', '2027-11-05', '2027-12-03'];
+// What is known ahead of time and can move a market: weekly EIA reports, Fed decisions, CPI and jobs reports, a stock's
+// next earnings date. They are shown on the forecast and given to the analyst. Ranges are NOT widened for them: over the
+// last year the EIA report days were no more volatile at the close than other days (Thursday 0.96x for natural gas,
+// Wednesday 1.13x for Brent).
+//
+// Release days move from time to time (US holidays, government closures, a rescheduled Fed meeting), so the dates are
+// read from the publishers' own schedule pages a few times a day (loadCalendars) and kept in data/calendar.json:
+//   EIA natural gas storage report  ir.eia.gov/ngs/schedule.html                 (Thursday 10:30 New York + exceptions)
+//   EIA weekly petroleum report     eia.gov/petroleum/supply/weekly/schedule.php (Wednesday 10:30 New York + exceptions)
+//   Fed decision days               federalreserve.gov/monetarypolicy/fomccalendars.htm
+//   CPI and jobs report days        bls.gov/schedule/news_release/cpi.htm, empsit.htm
+// If a page cannot be read, the last copy that was read is used; if there has never been one, the lists below and the
+// usual holiday rules are used, and a moved date is marked as expected (not confirmed).
+const FOMC_DAYS = ['2026-12-09', '2027-01-27', '2027-03-17', '2027-04-28', '2027-06-09', '2027-07-28', '2027-09-15', '2027-10-27', '2027-11-17', '2028-01-26']; // fallback: decision days (14:00 New York), federalreserve.gov, 26 Nov 2026; 2027 is tentative
+const CPI_DAYS = ['2026-12-10', '2027-01-13', '2027-02-11', '2027-03-10', '2027-04-13', '2027-05-12', '2027-06-10', '2027-07-14', '2027-08-11', '2027-09-14', '2027-10-14', '2027-11-10', '2027-12-10']; // fallback, bls.gov
+const JOBS_DAYS = ['2026-12-04', '2027-01-08', '2027-02-05', '2027-03-05', '2027-04-02', '2027-05-07', '2027-06-04', '2027-07-02', '2027-08-06', '2027-09-03', '2027-10-08', '2027-11-05', '2027-12-03']; // fallback, bls.gov
+const CAL_SOURCES = {
+  eiaGas: { name: 'Release schedule: EIA gas storage report', url: 'https://ir.eia.gov/ngs/schedule.html', parse: (h) => parseEiaSchedule(h, false) },
+  eiaOil: { name: 'Release schedule: EIA weekly oil report', url: 'https://www.eia.gov/petroleum/supply/weekly/schedule.php', parse: (h) => parseEiaSchedule(h, true) },
+  fomc: { name: 'Fed meeting calendar', url: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm', parse: parseFomc },
+  cpi: { name: 'Release schedule: US CPI (BLS)', url: 'https://www.bls.gov/schedule/news_release/cpi.htm', parse: parseBls },
+  jobs: { name: 'Release schedule: US jobs report (BLS)', url: 'https://www.bls.gov/schedule/news_release/empsit.htm', parse: parseBls },
+};
+const CAL_EVERY_H = 2, CAL_RETRY_MIN = 60; // a page is read every 2 hours; after a failure it is tried again in an hour
+let CAL = {};                                // the schedules in use for this build (set by loadCalendars)
+
+const MONTH_RE = '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+const monthNo = (s) => ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(String(s).slice(0, 3).toLowerCase()) + 1;
+const DATE_ONLY = new RegExp(`^${MONTH_RE}\\.? (\\d{1,2}), (\\d{4})\\b`, 'i');
+const TIME_ONLY = /^(\d{1,2}):(\d{2}) ?([ap])\.? ?m\.?$/i;
+const WEEKDAY_ONLY = /^(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day$/i;
+function pageTokens(html) { // the page's visible text pieces, in order (one per table cell / heading / line)
+  return String(html).replace(/<(script|style|noscript)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ')
+    .split(/<[^>]+>/).map((t) => decodeEntities(t)).filter((t) => t && t !== '*');
+}
+function tokDate(t) { const m = String(t).match(DATE_ONLY); return m ? `${m[3]}-${pad2(monthNo(m[1]))}-${pad2(+m[2])}` : null; }
+function tokTime(t) { const m = String(t).trim().match(TIME_ONLY); if (!m) return null; let h = +m[1] % 12; if (/p/i.test(m[3])) h += 12; return `${pad2(h)}:${m[2]}`; }
+// EIA holiday tables: [week ending (oil only)] | release date [(Updated)] | weekday | time | holiday
+function parseEiaSchedule(html, withWeek) {
+  const tk = pageTokens(html), rows = [];
+  for (let i = 0; i < tk.length; i++) {
+    const d1 = tokDate(tk[i]);
+    if (!d1) continue;
+    let j = i + 1, week = null, date = d1;
+    while (j < tk.length && /^[-–(]*\s*\(?updated\)?\s*$|^[-–]$/i.test(tk[j])) j++;
+    const d2 = tokDate(tk[j]);
+    if (d2) { week = d1; date = d2; j++; while (j < tk.length && /^[-–(]*\s*\(?updated\)?\s*$|^[-–]$/i.test(tk[j])) j++; }
+    if (withWeek && !week) continue;
+    if (!WEEKDAY_ONLY.test(tk[j] || '')) continue;
+    const time = tokTime(tk[j + 1]);
+    if (!time) continue;
+    const next = tk[j + 2] || '';
+    const note = tokDate(next) || tokTime(next) ? '' : next.replace(/\s*[-–]?\s*\(updated\)\s*/i, '').slice(0, 60);
+    rows.push({ ...(week ? { week } : {}), date, time, note });
+    i = j + 1;
+  }
+  if (!rows.length) throw new Error('no release dates found on the page');
+  return rows;
+}
+// BLS schedule tables: reference month | release date | release time
+function parseBls(html) {
+  const tk = pageTokens(html), rows = [];
+  for (let i = 0; i + 2 < tk.length; i++) {
+    const ref = tk[i].match(new RegExp(`^${MONTH_RE} (\\d{4})$`, 'i'));
+    if (!ref) continue;
+    const date = tokDate(tk[i + 1]), time = tokTime(tk[i + 2]);
+    if (date && time) rows.push({ ref: `${ref[2]}-${pad2(monthNo(ref[1]))}`, date, time });
+  }
+  if (!rows.length) throw new Error('no release dates found on the page');
+  return rows;
+}
+// Fed calendar: "2026 FOMC Meetings", then month cells ("January", "Apr/May") and day cells ("27-28", "8-9*")
+function parseFomc(html) {
+  const tk = pageTokens(html), rows = [];
+  let year = 0;
+  for (let i = 0; i < tk.length; i++) {
+    const y = tk[i].match(/^(\d{4}) FOMC Meetings$/i);
+    if (y) { year = +y[1]; continue; }
+    if (!year) continue;
+    const mo = tk[i].match(new RegExp(`^${MONTH_RE}(?:/${MONTH_RE})?$`, 'i'));
+    const dd = (tk[i + 1] || '').match(/^(\d{1,2})\s*[-–]\s*(\d{1,2})\*?(?:\s|$)/);
+    if (!mo || !dd || /unscheduled|notation|cancel/i.test(tk[i + 1] + ' ' + (tk[i + 2] || ''))) continue;
+    const m2 = monthNo(mo[2] || mo[1]);
+    rows.push({ date: `${year}-${pad2(m2)}-${pad2(+dd[2])}`, time: '14:00' });
+  }
+  const per = rows.reduce((o, r) => ((o[r.date.slice(0, 4)] = (o[r.date.slice(0, 4)] || 0) + 1), o), {});
+  const good = rows.filter((r) => per[r.date.slice(0, 4)] >= 6 && per[r.date.slice(0, 4)] <= 10); // 8 meetings a year
+  if (!good.length) throw new Error('no meeting dates found on the page');
+  return [...new Map(good.map((r) => [r.date, r])).values()];
+}
+// Reads the schedule pages (each every CAL_EVERY_H hours) and keeps the last good copy in data/calendar.json.
+async function loadCalendars(base, now) {
+  let prev = null;
+  try {
+    if (base && !OFFLINE) prev = unseal(await get(`${base}data/calendar.json?t=${now}`, { type: 'json', retries: 0 }));
+    else prev = unseal(JSON.parse(await readFile(join(DATA_DIR, 'calendar.json'), 'utf8')));
+  } catch { /* first run */ }
+  const cal = { v: 1 };
+  await Promise.all(Object.entries(CAL_SOURCES).map(async ([k, s]) => {
+    const p = prev?.v === 1 ? prev[k] : null;
+    const fresh = p?.okAt && now - Date.parse(p.okAt) < CAL_EVERY_H * 36e5 && (!p.tried || p.tried === p.okAt);
+    const waiting = p?.tried && p.tried !== p.okAt && now - Date.parse(p.tried) < CAL_RETRY_MIN * 60e3;
+    if (fresh || waiting) { cal[k] = p; return; }
+    const tried = new Date(now).toISOString();
+    try {
+      const rows = s.parse(await get(s.url, { timeout: 12000, retries: 0 }));
+      cal[k] = { rows, okAt: tried, tried };
+    } catch (e) {
+      cal[k] = { rows: p?.rows || [], okAt: p?.okAt || null, tried, error: String(e.message || e).slice(0, 160) };
+      console.log(`::warning title=${s.name}::not read (${cal[k].error})${p?.rows?.length ? `; using the copy from ${p.okAt}` : '; using the built-in dates and holiday rules'}`);
+    }
+  }));
+  CAL = cal;
+  await save('calendar.json', cal);
+  return cal;
+}
+function calSource(k) { // a line for the page's Data sources list
+  const c = CAL[k], s = CAL_SOURCES[k];
+  if (!c) return null;
+  const ok = !!(c.rows?.length && c.okAt);
+  return { name: s.name, ok, url: s.url, error: ok ? (c.error ? `last read ${c.okAt.slice(0, 16).replace('T', ' ')} UTC (newest read failed: ${c.error})` : undefined) : (c.error || 'not read yet') + ': using the usual day and holiday rules' };
+}
 let CAL_WARNED = false;
-function calendarsRunningOut(now) { // remind in the log a month before a date list ends
+function calendarsRunningOut(now) { // remind in the log a month before a built-in list ends (only matters while a page cannot be read)
   if (CAL_WARNED) return; CAL_WARNED = true;
-  for (const [name, list] of [['Fed decision days (FOMC_DAYS)', FOMC_DAYS], ['CPI dates (CPI_DAYS)', CPI_DAYS], ['jobs report dates (JOBS_DAYS)', JOBS_DAYS]])
-    if (Date.parse(list.at(-1)) - now < 30 * 864e5) console.log(`::warning title=Calendar::${name} end on ${list.at(-1)}: add the next dates in scripts/update.mjs`);
+  for (const [k, name, list] of [['fomc', 'Fed decision days (FOMC_DAYS)', FOMC_DAYS], ['cpi', 'CPI dates (CPI_DAYS)', CPI_DAYS], ['jobs', 'jobs report dates (JOBS_DAYS)', JOBS_DAYS]]) {
+    const end = CAL[k]?.rows?.length ? CAL[k].rows.map((r) => r.date).sort().at(-1) : list.at(-1);
+    if (Date.parse(end) - now < 30 * 864e5) console.log(`::warning title=Calendar::${name} end on ${end}: the schedule page has no later dates yet${CAL[k]?.rows?.length ? '' : ' and could not be read; add the next dates in scripts/update.mjs'}`);
+  }
 }
 const pad2 = (n) => String(n).padStart(2, '0');
 function nyToUtc(date, h, min) { // a New York wall-clock time as a UTC instant (handles daylight saving)
@@ -835,31 +952,84 @@ function nyToUtc(date, h, min) { // a New York wall-clock time as a UTC instant 
   const guess = Date.UTC(y, m - 1, d, h + 5, min);
   return nyParts(new Date(guess)).h === h ? guess : guess - 36e5;
 }
-function usHolidays(y) { // US federal holidays: EIA reports usually move a day in these weeks
+const nyAt = (date, hhmm) => new Date(nyToUtc(date, +hhmm.slice(0, 2), +hhmm.slice(3, 5))).toISOString();
+const addDays = (date, n) => ymd(Date.parse(date + 'T12:00:00Z') + n * 864e5);
+const dayLabel = (date) => new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const HOL_US = new Map();
+function usHolidays(y) { // US federal holidays (observed days: Saturday -> Friday, Sunday -> Monday) as date -> name
+  if (HOL_US.has(y)) return HOL_US.get(y);
   const nth = (mon, wd, n) => { const first = new Date(Date.UTC(y, mon, 1)).getUTCDay(); return 1 + ((wd - first + 7) % 7) + 7 * (n - 1); };
   const lastMon = (mon) => { const last = new Date(Date.UTC(y, mon + 1, 0)); return last.getUTCDate() - ((last.getUTCDay() + 6) % 7); };
-  return new Set([[0, 1], [0, nth(0, 1, 3)], [1, nth(1, 1, 3)], [4, lastMon(4)], [5, 19], [6, 4], [8, nth(8, 1, 1)], [9, nth(9, 1, 2)], [10, 11], [10, nth(10, 4, 4)], [11, 25]].map(([mo, d]) => `${y}-${pad2(mo + 1)}-${pad2(d)}`));
+  const out = new Map();
+  const fixed = (yy, mo, d, name) => { const t = Date.UTC(yy, mo, d), wd = new Date(t).getUTCDay(); const o = ymd(t + (wd === 6 ? -864e5 : wd === 0 ? 864e5 : 0)); if (o.startsWith(String(y))) out.set(o, name); };
+  fixed(y, 0, 1, "New Year's Day"); fixed(y + 1, 0, 1, "New Year's Day"); fixed(y, 5, 19, 'Juneteenth'); fixed(y, 6, 4, 'Independence Day'); fixed(y, 10, 11, 'Veterans Day'); fixed(y, 11, 25, 'Christmas Day');
+  for (const [mo, d, name] of [[0, nth(0, 1, 3), 'Martin Luther King Jr. Day'], [1, nth(1, 1, 3), "Presidents' Day"], [4, lastMon(4), 'Memorial Day'], [8, nth(8, 1, 1), 'Labor Day'], [9, nth(9, 1, 2), 'Columbus Day'], [10, nth(10, 4, 4), 'Thanksgiving Day']])
+    out.set(`${y}-${pad2(mo + 1)}-${pad2(d)}`, name);
+  HOL_US.set(y, out);
+  return out;
 }
-function marketEvents(m, now, earnings) {
-  calendarsRunningOut(now);
+const holidayOn = (date) => usHolidays(+date.slice(0, 4)).get(date) || null;
+// One weekly EIA report: its usual day each week, replaced by the published exception when there is one, else by the
+// usual holiday rule (marked expected). Each event carries `slot` (its usual date) so a later change can be told apart.
+function weeklyEia(kind, from, to) {
+  const gas = kind === 'gas', usualWd = gas ? 4 : 3, usualTime = '10:30';
+  const c = CAL[gas ? 'eiaGas' : 'eiaOil'], alts = c?.rows || [];
+  const known = alts.reduce((y, r) => Math.max(y, +r.date.slice(0, 4)), 0); // years the page already covers
+  const usual = [];
+  for (let d = addDays(from, -7); d <= addDays(to, 7); d = addDays(d, 1)) if (new Date(d + 'T12:00:00Z').getUTCDay() === usualWd) usual.push(d);
+  // pair each published exception with the usual day it replaces: the oil table names the data week (release = week end + 5 days);
+  // the gas table does not, so the nearest free usual day is taken, closest pairs first
+  const pairs = [];
+  for (const a of alts) for (const u of usual) {
+    if (!gas && a.week) { if (addDays(a.week, 5) === u) pairs.push([0, a, u]); continue; }
+    const dist = Math.abs(Date.parse(a.date) - Date.parse(u)) / 864e5;
+    if (dist <= 6) pairs.push([dist, a, u]);
+  }
+  pairs.sort((x, y) => x[0] - y[0]);
+  const byUsual = new Map(), used = new Set();
+  for (const [, a, u] of pairs) if (!byUsual.has(u) && !used.has(a)) { byUsual.set(u, a); used.add(a); }
+  const id = gas ? 'eia-gas' : 'eia-oil', name = gas ? 'EIA natural gas storage report' : 'EIA weekly oil inventories', out = [];
+  for (const u of usual) {
+    const base = { id, name, slot: `${id}:${u}`, usual: { date: u, at: nyAt(u, usualTime) } };
+    const a = byUsual.get(u);
+    if (a) { out.push({ ...base, date: a.date, at: nyAt(a.date, a.time), moved: true, why: a.note || null, note: `Moved from ${dayLabel(u)}${a.note ? ` (${a.note})` : ''}` }); continue; }
+    if (+u.slice(0, 4) <= known) { out.push({ ...base, date: u, at: nyAt(u, usualTime), note: '' }); continue; }
+    // the page does not cover this year yet (or was never read): EIA's usual holiday moves
+    //   gas: holiday on Thursday -> Wednesday 12:00; on Tuesday or Wednesday -> Friday 10:30
+    //   oil: holiday on Monday, Tuesday or Wednesday -> Thursday 12:00
+    const wk = [-3, -2, -1, 0, 1].map((k) => addDays(u, k - (gas ? 0 : -1))); // Monday..Friday of that week
+    const hit = (i) => holidayOn(wk[i]);
+    let date = u, time = usualTime, why = null;
+    if (gas && hit(3)) { date = wk[2]; time = '12:00'; why = hit(3); }
+    else if (gas && (hit(1) || hit(2))) { date = wk[4]; why = hit(1) || hit(2); }
+    else if (!gas && (hit(0) || hit(1) || hit(2))) { date = wk[3]; time = '12:00'; why = hit(0) || hit(1) || hit(2); }
+    out.push(why ? { ...base, date, at: nyAt(date, time), moved: true, expected: true, why, note: `Expected to move from ${dayLabel(u)} (${why}); EIA has not confirmed it yet` } : { ...base, date: u, at: nyAt(u, usualTime), note: '' });
+  }
+  return out.filter((e) => e.date >= from && e.date <= to);
+}
+// Fed, CPI and jobs dates: from the schedule page when it has been read, else from the built-in list
+function listed(k, list, time) {
+  const rows = CAL[k]?.rows?.length ? CAL[k].rows : list.map((date) => ({ date, time }));
+  return rows.map((r) => ({ ...r, ref: r.ref || (k === 'fomc' ? r.date.slice(0, 7) : ymd(Date.UTC(+r.date.slice(0, 4), +r.date.slice(5, 7) - 2, 1)).slice(0, 7)) }));
+}
+function marketKind(m) {
   const text = `${m.id} ${m.name} ${(m.keywords || []).join(' ')}`;
   const gas = m.id === 'NATGAS' || /natural gas|nat-?gas/i.test(text);
-  const oil = !gas && m.category === 'energy' && /brent|crude|wti|\boil\b/i.test(text);
-  const p = nyParts(new Date(now)), today = Date.UTC(p.y, p.m - 1, p.d), out = [];
-  for (let k = 0; k <= 9; k++) {
-    const d = new Date(today + k * 864e5), date = d.toISOString().slice(0, 10), wd = d.getUTCDay();
-    const hol = usHolidays(d.getUTCFullYear());
-    // a federal holiday earlier in the same week (or on the day) pushes the weekly EIA reports
-    const shifted = [...Array(wd).keys()].some((b) => hol.has(new Date(d.getTime() - b * 864e5).toISOString().slice(0, 10)));
-    const note = shifted ? 'US holiday week: the release usually moves by a day' : '';
-    if (gas && wd === 4) out.push({ id: 'eia-gas', name: 'EIA natural gas storage report', date, at: new Date(nyToUtc(date, 10, 30)).toISOString(), note });
-    if (oil && wd === 3) out.push({ id: 'eia-oil', name: 'EIA weekly oil inventories', date, at: new Date(nyToUtc(date, 10, 30)).toISOString(), note });
-    if (FOMC_DAYS.includes(date) && !gas) out.push({ id: 'fomc', name: 'Fed interest-rate decision', date, at: new Date(nyToUtc(date, 14, 0)).toISOString(), note: '' });
-    if (CPI_DAYS.includes(date) && !gas) out.push({ id: 'cpi', name: 'US inflation report (CPI)', date, at: new Date(nyToUtc(date, 8, 30)).toISOString(), note: '' });
-    if (JOBS_DAYS.includes(date) && !gas) out.push({ id: 'jobs', name: 'US jobs report (payrolls)', date, at: new Date(nyToUtc(date, 8, 30)).toISOString(), note: '' });
-    if (earnings?.date === date) out.push({ id: 'earnings', name: 'Earnings report (expected date)', date, at: new Date(nyToUtc(date, 9, 30)).toISOString(), allDay: true, note: 'Ranges do not include the earnings move' });
+  return { gas, oil: !gas && m.category === 'energy' && /brent|crude|wti|\boil\b/i.test(text) };
+}
+const calKeys = (m) => { const { gas, oil } = marketKind(m); return gas ? ['eiaGas'] : [...(oil ? ['eiaOil'] : []), 'fomc', 'cpi', 'jobs']; };
+function marketEvents(m, now, earnings) {
+  calendarsRunningOut(now);
+  const { gas, oil } = marketKind(m);
+  const p = nyParts(new Date(now)), today = `${p.y}-${pad2(p.m)}-${pad2(p.d)}`, end = addDays(today, 9), out = [];
+  if (gas) out.push(...weeklyEia('gas', addDays(today, -1), end));
+  if (oil) out.push(...weeklyEia('oil', addDays(today, -1), end));
+  if (!gas) {
+    for (const [k, id, name, list, time] of [['fomc', 'fomc', 'Fed interest-rate decision', FOMC_DAYS, '14:00'], ['cpi', 'cpi', 'US inflation report (CPI)', CPI_DAYS, '08:30'], ['jobs', 'jobs', 'US jobs report (payrolls)', JOBS_DAYS, '08:30']])
+      for (const r of listed(k, list, time)) if (r.date >= addDays(today, -1) && r.date <= end) out.push({ id, name, date: r.date, at: nyAt(r.date, r.time), slot: `${id}:${r.ref}`, note: '' });
   }
-  return out.filter((e) => e.allDay ? e.date >= `${p.y}-${pad2(p.m)}-${pad2(p.d)}` : Date.parse(e.at) > now - 36e5);
+  if (earnings?.date && earnings.date >= today && earnings.date <= end) out.push({ id: 'earnings', name: 'Earnings report (expected date)', date: earnings.date, at: nyAt(earnings.date, '09:30'), allDay: true, slot: 'earnings', note: 'Ranges do not include the earnings move' });
+  return out.filter((e) => e.allDay ? e.date >= today : Date.parse(e.at) > now - 36e5).sort((a, b) => (a.at < b.at ? -1 : 1));
 }
 // Next earnings date for US stocks, asked once a day from Nasdaq's public page data (free, no key; best effort).
 async function earningsDate(m, prev, now) {
@@ -881,6 +1051,7 @@ async function earningsDate(m, prev, now) {
 async function attachEvents(m, out, prev, now) {
   const earn = await earningsDate(m, prev, now);
   if (earn) { out.meta.earnings = earn; out.sources.push({ name: earn.pending && !earn.date ? 'Next earnings date (Nasdaq): not announced yet' : 'Next earnings date (Nasdaq)', ok: !!earn.ok, error: earn.error }); }
+  for (const k of calKeys(m)) { const src = calSource(k); if (src) out.sources.push(src); }
   out.events = marketEvents(m, now, earn);
   for (const h of Object.values(out.forecast.horizons)) h.events = out.events.filter((e) => e.date <= h.targetDate).map((e) => e.id);
 }
@@ -1500,18 +1671,49 @@ function alertsFor(m, out, prev, now) {
     }
   }
 
-  // 5. Scheduled events: a reminder shortly before (all-day events such as earnings: from 18:00 UTC the day before)
+  // 5. Scheduled events. Release days move (US holidays, closures, a rescheduled meeting or earnings date), so:
+  //    a. a changed day or time for a release already announced here -> one "new time" alert
+  //    b. a release that moves away from its usual day -> one heads-up when it is 7 days or less away
+  //    c. a reminder shortly before, at the real time (all-day events such as earnings: from 18:00 UTC the day before)
+  const zone = ALERT_TZ.split('/').pop().replace(/_/g, ' ');
+  const whenOf = (e, at = e.at, date = e.date) => (e.allDay ? dayLabel(date) : `${tzTime(at, { weekday: 'short', day: 'numeric', month: 'short' })} ${zone} time`);
+  const why = (e) => (e.expected ? ` (${e.why}; ${/^eia/.test(e.id) ? 'EIA has' : 'the publisher has'} not confirmed it yet)` : e.why ? ` (${e.why})` : '');
+  st.evAt ||= {};
+  for (const e of out.events || []) {
+    if (!e.slot) continue;
+    const was = st.evAt[e.slot], mark = e.allDay ? e.date : e.at, future = (e.allDay ? Date.parse(e.date + 'T23:59:59Z') : Date.parse(e.at)) > now;
+    if (was && was !== mark && future) {
+      const old = e.allDay ? dayLabel(was) : `${tzTime(was, { weekday: 'short', day: 'numeric', month: 'short' })}`;
+      const txt = `now ${whenOf(e)}, was ${old}${why(e)}`;
+      if (fire('event', `evchg:${e.slot}:${mark}`, `${e.name}: ${txt}`, { event: `chg:${e.slot}:${mark}`, eventName: `${e.name.replace(/ \(expected date\)/, '')} rescheduled`, eventWhen: txt })) st.sent[`evmove:${e.slot}:${mark}`] ||= new Date(now).toISOString();
+    }
+    st.evAt[e.slot] = mark;
+  }
+  for (const e of out.events || []) {
+    if (!e.moved || !e.usual || e.allDay) continue;
+    const at = Date.parse(e.at);
+    if (at - now > 7 * 864e5 || at - now <= ALERT_EVENT_LEAD_MIN * 60e3) continue; // inside the reminder window the reminder says it
+    const txt = `${e.expected ? 'expected ' : ''}on ${whenOf(e)} instead of ${tzTime(e.usual.at, { weekday: 'short', day: 'numeric', month: 'short' })}${why(e)}`;
+    fire('event', `evmove:${e.slot}:${e.at}`, `${e.name} moves: ${txt}`, { event: `mv:${e.slot}:${e.at}`, eventName: `${e.name} moves`, eventWhen: txt });
+  }
   for (const e of out.events || []) {
     const at = Date.parse(e.at);
     const due = e.allDay ? now >= Date.parse(e.date + 'T00:00:00Z') - 6 * 36e5 && now < Date.parse(e.date + 'T00:00:00Z') + 864e5
       : at > now && at - now <= ALERT_EVENT_LEAD_MIN * 60e3;
     if (!due) continue;
-    const when = e.allDay ? `on ${new Date(e.date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })} (time not announced)` : `at ${tzTime(at)} ${ALERT_TZ.split('/').pop().replace(/_/g, ' ')} time (in ${Math.max(1, Math.round((at - now) / 60e3))} min)`;
-    fire('event', `ev:${e.id}:${e.date}`, `${e.name} ${when}`, { event: `${e.id}:${e.date}`, eventName: e.name, eventWhen: when });
+    const when = e.allDay ? `on ${dayLabel(e.date)} (time not announced)`
+      : `at ${tzTime(at)} ${zone} time (in ${Math.max(1, Math.round((at - now) / 60e3))} min)${e.moved ? ` · moved from ${dayLabel(e.usual.date)}${why(e)}` : ''}`;
+    const key = e.allDay ? `${e.id}:${e.date}` : `${e.id}:${e.at}`;
+    if (!e.allDay && now - Date.parse(st.sent[`ev:${e.id}:${e.date}`] || 0) < 2 * 36e5) continue; // already reminded under the older key format
+    fire('event', `ev:${key}`, `${e.name} ${when}`, { event: key, eventName: e.name, eventWhen: when });
   }
+  for (const [k, t] of Object.entries(st.evAt)) if (now - Date.parse(t.length === 10 ? t + 'T23:59:59Z' : t) > 2 * 864e5) delete st.evAt[k];
 
-  // forget sent markers older than 3 days, except the ones that hold state
-  for (const [k, t] of Object.entries(st.sent)) if (now - Date.parse(t) > 3 * 864e5 && !/^(lvl:|flip$|analyst$)/.test(k)) delete st.sent[k];
+  // forget sent markers older than 3 days, except the ones that hold state; move and reschedule notes are kept until the release is past
+  for (const [k, t] of Object.entries(st.sent)) {
+    const ev = k.match(/^ev(?:move|chg):.*:(\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z)?)$/);
+    if (ev ? now - Date.parse(ev[1].length === 10 ? ev[1] + 'T23:59:59Z' : ev[1]) > 864e5 : now - Date.parse(t) > 3 * 864e5 && !/^(lvl:|flip$|analyst$)/.test(k)) delete st.sent[k];
+  }
   let nStep = 0, nOther = 0; // step alerts can be frequent: keep them from pushing the other alerts off the page
   const log = [...found.slice().reverse(), ...(prevA?.log || [])].filter((x) => now - Date.parse(x.t) < 7 * 864e5)
     .filter((x) => (x.type === 'step' ? nStep++ < ALERT_STEP_LOG_KEEP : nOther++ < ALERT_LOG_KEEP));
@@ -1729,6 +1931,7 @@ async function main() {
   const futures = (watch.markets || []).filter((m) => m.provider === 'cnbc');
   console.log(LOCK_KEY ? '::notice title=Password lock::on - data files are published encrypted' : 'Password lock: off (no SITE_PASSWORD secret)');
   const index = { generatedAt: new Date(now).toISOString(), keyConfigured: !!TD_KEY, maxMarkets: 8, markets: [] };
+  try { await loadCalendars(base, now); } catch (e) { console.log(`::warning title=Release schedules::${e.message}`); }
 
   try { const out = await buildNatgas(base, now); index.markets.push(summary(out, NATGAS)); console.log(`OK NATGAS${okDetail(out)}`); for (const s of out.sources) if (!s.ok) console.log(`::warning title=NATGAS ${s.name}::${(s.error || 'no answer').replace(/\n/g, ' ')}`); }
   catch (e) { index.markets.push(summary(null, NATGAS, e.message)); console.log(`::error title=NATGAS failed::${e.message}`); FAILED.length = 0; }
