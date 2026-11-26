@@ -291,6 +291,35 @@
     }
   }
 
+  // ---------- track record: floating 1 / 3 / 5 day switch ----------
+  // Every card on the Track record page follows the horizon, so the switch floats from when the page's own switch has
+  // scrolled under the top bar until the last card leaves the screen.
+  {
+    const hz = document.getElementById('tr-hz'), body = document.getElementById('tr-body');
+    const own = document.querySelector('.eg-view[data-view="record"] .eg-pagehead .seg');
+    if (hz && body && own) {
+      let ticking = false;
+      const update = () => {
+        ticking = false;
+        let on = false;
+        if (hz.offsetParent) {
+          const line = parseFloat(getComputedStyle(hz).top) || 0;
+          on = own.getBoundingClientRect().bottom < line && body.getBoundingClientRect().bottom > line + 120;
+        }
+        if (on !== hz.classList.contains('on')) {
+          hz.classList.toggle('on', on); hz.setAttribute('aria-hidden', String(!on));
+          hz.querySelectorAll('button').forEach((b) => b.tabIndex = on ? 0 : -1);
+        }
+      };
+      const soon = () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } };
+      window.addEventListener('scroll', soon, { passive: true });
+      window.addEventListener('resize', soon);
+      document.addEventListener('mw:render', () => setTimeout(soon, 0));
+      new MutationObserver(soon).observe(document.body, { attributes: true, attributeFilter: ['data-view'] });
+      soon();
+    }
+  }
+
   // ---------- key levels on a price scale ----------
   // Levels as ticks on a vertical price scale (red resistance, green support), the live price as a dashed line with
   // a pill, and the forecast range for the chosen horizon as a shaded bar: dark = likely (68%), light = possible

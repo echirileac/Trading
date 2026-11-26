@@ -272,6 +272,8 @@
   .pc-hz.on .seg { opacity: 1; translate: 0 0; visibility: visible; pointer-events: auto; transition: opacity .18s ease, translate .18s ease, visibility 0s; }
   .view-live .pc-hz { display: none; }
   @media (prefers-reduced-motion: reduce) { .pc-hz .seg { transition: none; } }
+  /* Track record: the same floating switch, from when the page's own switch scrolls away until the last card ends */
+  .tr-cards { display: grid; gap: 18px; min-width: 0; }
   .tv-box { height: 560px; border: 1px solid var(--line); border-radius: 0; overflow: hidden; background: var(--panel2); }
   .tv-box .tradingview-widget-container, .tv-box .tradingview-widget-container__widget { width: 100%; height: 100%; }
   .tv-sym { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 12px 0 0; }
@@ -1389,6 +1391,9 @@
     <div class="eg-pagehead"><div><h1 id="eg-tr-h">Track record</h1><p id="eg-tr-sub">How the forecasts for this market have done.</p></div>
       <div class="eg-tools"><nav class="seg" role="tablist" aria-label="Forecast horizon"><button role="tab" data-h="1">1 day</button><button role="tab" data-h="3">3 days</button><button role="tab" data-h="5">5 days</button></nav></div>
     </div>
+    <div class="tr-body" id="tr-body">
+    <div class="pc-hz" id="tr-hz" aria-hidden="true"><nav class="seg" role="tablist" aria-label="Forecast horizon"><button role="tab" data-h="1" tabindex="-1">1 day</button><button role="tab" data-h="3" tabindex="-1">3 days</button><button role="tab" data-h="5" tabindex="-1">5 days</button></nav></div>
+    <div class="tr-cards">
     <section class="card needs-data" id="eg-trv" hidden aria-labelledby="eg-trv-h">
       <h2 class="eg-h2" id="eg-trv-h">At a glance</h2>
       <div class="trv-score" id="eg-trv-score"></div>
@@ -1406,6 +1411,8 @@
       <h3 class="sub" id="track-log-title">Logged forecasts</h3>
       <div class="tbl-wrap"><table class="tr-log" id="track-log"></table></div>
     </section>
+    </div>
+    </div>
   </section>
 
   </main>
@@ -1500,6 +1507,6 @@
 
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=12"></script>
-<script src="edison.js?v=29"></script>
+<script src="edison.js?v=30"></script>
 </body>
 </html>
