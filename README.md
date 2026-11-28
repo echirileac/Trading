@@ -93,6 +93,16 @@ The site's page (`site/index.html`): four places (Markets, Market, Alerts, Track
 - **Classic is archived** in `archive/classic/` (not published) and on the branch `archive/classic-final`; see `archive/classic/README.md`.
 - When changing page code, raise the `?v=` number of `app.js` / `edison.js` in `site/index.html` so browsers load the new file.
 
+## iPhone app (added November 2026)
+
+The site installs as an app from Safari: open it on the iPhone, tap **Share**, then **Add to Home Screen**. It gets the Edison icon, opens full screen without Safari's bars, and opens even without a connection, showing the last data it loaded (the freshness dot says how old). Free, no App Store, no Mac. Android Chrome and desktop Chrome/Edge offer "Install app" the same way.
+
+- **First open:** the app keeps its own storage, separate from Safari, so it asks for the password once (leave "Remember on this device" ticked).
+- **Refresh:** data refreshes by itself every minute and whenever the app comes back to the front; tapping the Edison logo reloads.
+- **Updates:** nothing to reinstall. Every change merged here reaches the app the next time it opens online.
+- **Alerts** still arrive on Telegram.
+- **Files:** `site/manifest.webmanifest` (name, icon, colours), `site/sw.js` (offline copy: always tries the network first and uses the saved copy only when it fails; other sites are not touched), `site/pwa.js` (registers it and shows a one-time "Add to Home Screen" tip in iPhone Safari), `site/icon-*.png`. When changing `sw.js` so that old saved copies must go, raise `CACHE` (`edison-app-v1`).
+
 ## Trading calendars (added November 2026)
 
 Forecast target dates and the track record count real trading sessions. Weekends are skipped, and so are exchange holidays: the NYSE calendar (including Good Friday and the Saturday/Sunday observance rules) for stocks, ETFs and natural gas, whose CME settlements follow the same days; ICE closures (New Year's Day, Good Friday, Christmas) for Brent; none for currencies, spot metals and crypto. Checked against NYSE's published 2026-2028 calendar. Half-days (the day after Thanksgiving, Christmas Eve) count as normal sessions.

@@ -8,6 +8,11 @@
 <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Edison">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0B0B12">
 <meta name="color-scheme" content="dark light">
 <script>
@@ -1088,6 +1093,26 @@
     .eg-bar > .tg-btn { padding: 0 8px; }
   }
   @media (max-width: 370px) { .eg-brand span { display: none; } } /* small phones (360 px Android): the logo alone */
+
+  /* Home-screen app (pwa.js, sw.js, manifest.webmanifest). On iOS the page runs under a see-through status bar with white
+     text, so content starts below the notch and a dark strip sits behind the clock in both themes. In Safari the top
+     inset is 0, so nothing changes there. */
+  .wrap { padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
+  .lock { padding-top: calc(24px + env(safe-area-inset-top, 0px)); }
+  .eg-bar { top: calc(10px + env(safe-area-inset-top, 0px)); }
+  @media (min-width: 761px) {
+    .search.open { top: calc(84px + env(safe-area-inset-top, 0px)); }
+    .eg-drawer { margin-top: env(safe-area-inset-top, 0px); } /* iPad app: the trade planner starts below the clock */
+  }
+  html.is-app body::before { content: ''; position: fixed; z-index: 90; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: #0B0B12; pointer-events: none; }
+  html.is-app { -webkit-tap-highlight-color: transparent; }
+  html.is-app body { overscroll-behavior-y: none; }
+  .app-hint { display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--r, 0); padding: 12px 8px 12px 14px; }
+  .app-hint img { flex: none; width: 40px; height: 40px; border-radius: 9px; }
+  .app-hint p { flex: 1; margin: 0; display: grid; gap: 2px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+  .app-hint p > b { color: var(--fg); font-size: 14px; font-weight: 600; }
+  .app-hint svg[aria-label] { width: 15px; height: 15px; vertical-align: -2px; color: var(--accent-text); }
+  .app-hint .btn { flex: none; border-color: transparent; }
 </style>
 </head>
 <body data-view="market">
@@ -1508,5 +1533,6 @@
 <script src="vendor/lightweight-charts-4.2.3.js"></script>
 <script src="app.js?v=12"></script>
 <script src="edison.js?v=30"></script>
+<script src="pwa.js?v=1"></script>
 </body>
 </html>
